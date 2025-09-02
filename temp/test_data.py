@@ -75,7 +75,7 @@ def masked_lm_loss_function(
     batched_key = jax.random.split(key, batch_size)
     logits = jax.vmap(model)(**x, key = batched_key)
 
-    label_mask = jnp.where(y > 0, 1.0, 0.0)
+    label_mask = jnp.where(y != ignore_index, 1.0, 0.0)
 
     loss = optax.softmax_cross_entropy_with_integer_labels(logits, y) * label_mask # (..., ) (..., )
 
@@ -114,8 +114,8 @@ def train_step(model, batch, optimizer: Optimizer, *, key):
 
 key, train_key = jax.random.split(key)
 tx = optax.chain(
-    optax.clip_by_global_norm(1.0),
-    optax.adam(3e-4),
+    # optax.clip_by_global_norm(1.0),
+    optax.adam(learning_rate=1e-4, eps=1e-8),
 )
 optimizer = Optimizer(tx, model)
 
@@ -129,3 +129,5 @@ for i, batch in enumerate(datasets):
     )
     model, optimizer, loss = train_step(model, batch, optimizer, key=subkey)
     print(f"iter={i} loss={loss}")
+    if i > 3:
+        break

@@ -1,65 +1,64 @@
 from typing import TypeVar
+
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jax import lax
 from jaxtyping import PRNGKeyArray
 
+from ._utils import promote_dtype
+
+
 Array = jax.Array
 A = TypeVar('A')
 
 
-def first_from(*args: A | None, error_msg: str) -> A:
-  for arg in args:
-    if arg is not None:
-      return arg
-  raise ValueError(error_msg)
 
 class Dropout(eqx.Module):
     p: float 
     inference: bool 
+    dtype: jnp.dtype = eqx.field(static=True)
+    params_dtype: jnp.dtype = eqx.field(static=True)
 
     def __init__(
         self,
         p: float = 0.5,
         *,
         inference: bool = False,
+        dtype: jnp.dtype = jnp.float32,
+        params_dtype: jnp.dtype = jnp.float32,
     ):
         if not 0.0 <= p <= 1.0:
             raise ValueError(f"Dropout probability must be between 0 and 1, got {p}")
         
         self.p = p
         self.inference = inference
+        self.dtype = dtype
+        self.params_dtype = params_dtype
 
     def __call__(
         self, 
         x: Array, 
         *, 
         key: PRNGKeyArray | None = None,
-        inference: bool | None = None
     ) -> Array:
 
-        inference = first_from(
-            inference,
-            self.inference,
-            error_msg="""No `inference` argument was provided to Dropout 
-                as either a __call__ argument or class attribute""",
-        )
 
-        if inference: 
+        if self.inference: 
             return x 
 
-        if not inference and key is None:
+        if not self.inference and key is None:
             raise RuntimeError(
                 "Dropout requires a key when running in non-inference mode."
             )
 
         if self.p == 1.0:
-            return jnp.zeros_like(x)
+            (x_,) = promote_dtype(x, dtype=self.dtype)
+            return jnp.zeros_like(x_)
         
-        keep_prob = 1.0 - lax.stop_gradient(self.p) 
-        mask = jax.random.bernoulli(key, keep_prob, shape=x.shape)
-        output = jnp.where(mask, x / keep_prob, 0.0)
+        (x_,) = promote_dtype(x, dtype=self.dtype)
+        keep_prob = 1.0 - lax.stop_gradient(jnp.asarray(self.p, dtype=self.dtype))
+        mask = jax.random.bernoulli(key, keep_prob, shape=x_.shape)
+        output = jnp.where(mask, x_ / keep_prob, jnp.asarray(0.0, dtype=self.dtype))
         
         return output
-

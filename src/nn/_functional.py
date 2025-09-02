@@ -4,9 +4,8 @@ from typing import cast
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Bool, Float, Int, PRNGKeyArray
-from jax.experimental.pallas.ops.tpu import all_gather
 
-from ._dropout import Dropout
+from ._utils import promote_dtype
 
 
 def dot_product_attention_weights(
@@ -14,6 +13,8 @@ def dot_product_attention_weights(
     key: Float[Array, "kv_seq qk_size"],
     mask: Bool[Array, "q_seq kv_seq"] | None = None,
 ) -> Float[Array, "q_seq kv_seq"]:
+    # Compute in a promoted compute dtype to avoid integer/float mismatches.
+    query, key = promote_dtype(query, key)
     query = query / math.sqrt(query.shape[-1])
     logits = jnp.einsum("sd,Sd->sS", query, key)
     if mask is not None:
@@ -37,14 +38,14 @@ def dot_product_attention(
     key_: Float[Array, "kv_seq qk_size"],
     value: Float[Array, "kv_seq v_size"],
     mask: Bool[Array, "q_seq kv_seq"] | None = None,
-    dropout: Dropout | None = None,
+    dropout = None,
     *,
     key: PRNGKeyArray | None = None,
-    inference: bool | None = None,
 ) -> Float[Array, "q_seq v_size"]:
+    query, key_, value = promote_dtype(query, key_, value)
     weights = dot_product_attention_weights(query, key_, mask)
     if dropout is not None:
-        weights = dropout(weights, key=key, inference=inference)
+        weights = dropout(weights, key=key)
     attn = jnp.einsum("sS,Sd->sd", weights, value)
     return attn
 
@@ -53,4 +54,3 @@ def make_2D_attention_mask(seq_attention_mask: Int[Array, " seq_len"], attention
     attn_mask = (seq_attention_mask[:, None] * seq_attention_mask[None, :]).astype(jnp.int32)
     attn_mask = jnp.broadcast_to(attn_mask[:, None, :], (attn_mask.shape[0], attention_heads, attn_mask.shape[1]))
     return attn_mask
-

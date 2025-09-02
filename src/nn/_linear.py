@@ -1,8 +1,11 @@
 import equinox as eqx
 import jax
-from jax.nn.initializers import Initializer, normal, zeros, kaiming_normal
 import jax.numpy as jnp
+from jax.nn.initializers import Initializer, kaiming_normal, zeros
 from jaxtyping import PRNGKeyArray
+
+from ._utils import promote_dtype
+
 
 default_init = kaiming_normal()
 
@@ -13,6 +16,8 @@ class Linear(eqx.Module):
     in_features: eqx.field(static = True)
     out_features: eqx.field(static = True)
     use_bias: eqx.field(static = True)
+    dtype: jnp.dtype = eqx.field(static=True)
+    params_dtype: jnp.dtype = eqx.field(static=True)
 
 
     def __init__(
@@ -22,7 +27,8 @@ class Linear(eqx.Module):
         use_bias: bool = True,
         *,
         initializer: Initializer = None,
-        dtype = jnp.float32,
+        dtype: jnp.dtype = jnp.float32,
+        params_dtype: jnp.dtype = jnp.float32,
         key: PRNGKeyArray = None
     ):
         wkey , bkey = jax.random.split(key, 2)
@@ -34,17 +40,23 @@ class Linear(eqx.Module):
         self.use_bias = use_bias
         self.bias = None
 
-        self.weight = initializer(wkey, (out_features, in_features), dtype = dtype)
+        self.dtype = dtype
+        self.params_dtype = params_dtype
+
+        self.weight = initializer(wkey, (out_features, in_features), dtype=self.params_dtype)
 
         if use_bias:
-            self.bias = zeros(bkey, (out_features,), dtype=dtype)
+            self.bias = zeros(bkey, (out_features,), dtype=self.params_dtype)
 
     def __call__(
         self,
         x: jax.Array,
     ):
-        output = self.weight @ x
+        w, x_ = promote_dtype(self.weight, x, dtype=self.dtype)
+        output = w @ x_
         if self.use_bias:
-            output = output + self.bias
+            (b,) = promote_dtype(self.bias, dtype=self.dtype) if self.bias is not None else (None,)
+            if b is not None:
+                output = output + b
 
         return output
