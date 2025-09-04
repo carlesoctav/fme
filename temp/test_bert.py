@@ -1,10 +1,9 @@
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-
 from transformers.models.bert.configuration_bert import BertConfig
 
-from src.models.bert.modeling_bert import BertModelForMaskedLM
+from src.models.bert.modeling_bert import BertForMaskedLM
 
 
 def main():
@@ -22,7 +21,7 @@ def main():
     )
 
     key = jax.random.PRNGKey(0)
-    model = BertModelForMaskedLM(config, key=key)
+    model = BertForMaskedLM(config, key=key)
 
     seq_len = 10
     input_ids = jax.random.randint(key, (seq_len,), minval=0, maxval=config.vocab_size)

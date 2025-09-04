@@ -4,19 +4,6 @@ import grain
 import numpy as np
 from transformers import PreTrainedTokenizerBase
 
-
-def make_attention_mask(seq_attention_mask: np.ndarray) -> np.ndarray:
-    if seq_attention_mask.ndim == 1:
-        seq_i32 = seq_attention_mask.astype(np.int32)
-        return (seq_i32[:, None] * seq_i32[None, :]).astype(np.int32)
-    elif seq_attention_mask.ndim == 2:
-        seq_i32 = seq_attention_mask.astype(np.int32)
-        return (seq_i32[:, :, None] * seq_i32[:, None, :]).astype(np.int32)
-    else:
-        raise ValueError(
-            f"seq_attention_mask must be 1D or 2D, got {seq_attention_mask.ndim}D"
-        )
-
 @dataclass
 class DataTransformsMakeAttentionMask(grain.transforms.RandomMap):
     tokenizer: PreTrainedTokenizerBase

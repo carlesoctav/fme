@@ -4,11 +4,12 @@ from typing import Any
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import transformers
 from equinox import field
 from jaxtyping import Array, Float, Int, PRNGKeyArray
 from transformers.models.bert.configuration_bert import BertConfig
 
-from src import nn
+from src import HuggingFaceCompatibleModule, nn
 from src.nn import functional as F
 
 
@@ -121,7 +122,7 @@ class BertSelfAttention(eqx.Module):
         self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
-        self.dropout = nn.Dropout(config.hidden_dropout_prob, dtype=dtype, params_dtype=params_dtype)
+        self.dropout = nn.Dropout(config.attention_probs_dropout_prob, dtype=dtype, params_dtype=params_dtype)
 
         # array
         self.query = nn.Linear(
@@ -181,9 +182,11 @@ class BertSelfAttention(eqx.Module):
                 q_heads, k_heads, v_heads, key=keys
             )  # (seq_len, num_attention_heads, attention_head_size)
         else:
-            attention_mask = F.make_2D_attention_mask(
+
+            attention_mask = F.make_3D_attention_mask(
                 attention_mask, self.num_attention_heads
             )
+
             attn_fn = partial(F.dot_product_attention, dropout=self.dropout)
             attn_heads = jax.vmap(attn_fn, in_axes=1, out_axes=1)(
                 q_heads, k_heads, v_heads, attention_mask, key=keys
@@ -381,7 +384,7 @@ class BertLayer(eqx.Module):
     def __call__(
         self,
         hidden_states: Float[Array, "seq_len hidden_size"],
-        attention_mask: Float[Array, " seq_len"],
+        attention_mask: Float[Array, " seq_len"] | None = None,
         *,
         key: PRNGKeyArray | None = None,
     ):
@@ -440,7 +443,7 @@ class BertEncoder(eqx.Module):
         return hidden_states
 
 
-class BertModel(eqx.Module):
+class BertModel(eqx.Module, HuggingFaceCompatibleModule[transformers.BertModel]):
     embeddings: BertEmbeddings
     encoder: BertEncoder
     config: BertConfig | None = field(static=True)
@@ -489,10 +492,104 @@ class BertModel(eqx.Module):
         return hidden_states
 
 
-class BertModelForMaskedLM(eqx.Module):
+class BertPredictionHeadTransform(eqx.Module):
+    dense: nn.Linear
+    LayerNorm: nn.LayerNorm
+
+    def __init__(
+        self,
+        config: BertConfig,
+        *,
+        dtype: jnp.dtype = jnp.float32,
+        params_dtype: jnp.dtype = jnp.float32,
+        key: PRNGKeyArray,
+    ):
+        dense_key, ln_key = jax.random.split(key, 2)
+        self.dense = nn.Linear(
+            config.hidden_size,
+            config.hidden_size,
+            dtype=dtype,
+            params_dtype=params_dtype,
+            key=dense_key,
+        )
+        self.LayerNorm = nn.LayerNorm(
+            config.hidden_size,
+            eps=config.layer_norm_eps,
+            dtype=dtype,
+            params_dtype=params_dtype,
+            key=ln_key,
+        )
+
+    def __call__(
+        self,
+        hidden_states: Float[Array, "seq_len hidden_size"],
+        *,
+        key: PRNGKeyArray | None = None,
+    ) -> Float[Array, "seq_len hidden_size"]:
+        hidden_states = jax.vmap(self.dense)(hidden_states)
+        hidden_states = jax.nn.gelu(hidden_states)
+        hidden_states = jax.vmap(self.LayerNorm)(hidden_states)
+        return hidden_states
+
+
+class BertLMPredictionHead(eqx.Module):
+    transform: BertPredictionHeadTransform
+    bias: jax.Array
+
+    def __init__(
+        self,
+        config: BertConfig,
+        *,
+        dtype: jnp.dtype = jnp.float32,
+        params_dtype: jnp.dtype = jnp.float32,
+        key: PRNGKeyArray,
+    ):
+        self.transform = BertPredictionHeadTransform(
+            config, dtype=dtype, params_dtype=params_dtype, key=key
+        )
+        self.bias = jnp.zeros((config.vocab_size,), dtype=params_dtype)
+
+    def __call__(
+        self,
+        hidden_states: Float[Array, "seq_len hidden_size"],
+        embedding_weight: Float[Array, "vocab_size hidden_size"],
+        *,
+        key: PRNGKeyArray | None = None,
+    ) -> Float[Array, "seq_len vocab_size"]:
+        hs = self.transform(hidden_states, key=key)
+        logits = hs @ embedding_weight.T
+        logits = logits + self.bias
+        return logits
+
+
+class BertOnlyMLMHead(eqx.Module):
+    predictions: BertLMPredictionHead
+
+    def __init__(
+        self,
+        config: BertConfig,
+        *,
+        dtype: jnp.dtype = jnp.float32,
+        params_dtype: jnp.dtype = jnp.float32,
+        key: PRNGKeyArray,
+    ):
+        self.predictions = BertLMPredictionHead(
+            config, dtype=dtype, params_dtype=params_dtype, key=key
+        )
+
+    def __call__(
+        self,
+        sequence_output: Float[Array, "seq_len hidden_size"],
+        embedding_weight: Float[Array, "vocab_size hidden_size"],
+        *,
+        key: PRNGKeyArray | None = None,
+    ) -> Float[Array, "seq_len vocab_size"]:
+        return self.predictions(sequence_output, embedding_weight, key=key)
+
+
+class BertForMaskedLM(eqx.Module, HuggingFaceCompatibleModule):
     bert: BertModel
-    transforms: nn.Linear
-    decoder: nn.Linear
+    cls: BertOnlyMLMHead
     config: BertConfig | None = eqx.field(static=True)
 
     def __init__(
@@ -501,27 +598,17 @@ class BertModelForMaskedLM(eqx.Module):
         *,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
-        store_config: bool = False,
+        store_config: bool = True,
         key: PRNGKeyArray,
     ):
-        bert_key, transforms_key, decoder_key = jax.random.split(key, 3)
+        bert_key, cls_key = jax.random.split(key, 2)
         self.bert = BertModel(
             config, dtype=dtype, params_dtype=params_dtype, store_config=False, key=bert_key
         )
-        self.transforms = nn.Linear(
-            config.hidden_size,
-            config.hidden_size,
-            dtype=dtype,
-            params_dtype=params_dtype,
-            key=transforms_key,
+        self.cls = BertOnlyMLMHead(
+            config, dtype=dtype, params_dtype=params_dtype, key=cls_key
         )
-        self.decoder = nn.Linear(
-            config.hidden_size,
-            config.vocab_size,
-            dtype=dtype,
-            params_dtype=params_dtype,
-            key=decoder_key,
-        )
+
         if store_config:
             self.config = config
         else:
@@ -536,20 +623,22 @@ class BertModelForMaskedLM(eqx.Module):
         *,
         key: PRNGKeyArray | None = None,
     ):
-        bert_key, transforms_key, decoder_key = (
-            jax.random.split(key, 3) if key is not None else (None, None, None)
+        bert_key, cls_key = (
+            jax.random.split(key, 2) if key is not None else (None, None)
         )
 
         sequence_output = self.bert(
             input_ids, position_ids, token_type_ids, attention_mask, key=bert_key
         )  # (seq len, hidden_size)
-        transforms_before_decode = jax.vmap(self.transforms)(
-            sequence_output
-        )  # (seq len, hidden_size)
-        transforms_before_decode = jax.nn.gelu(
-            transforms_before_decode
-        )  # TODO: should be configurable
-        logits = jax.vmap(self.decoder)(
-            transforms_before_decode
-        )  # (seq len, vocab_size)
+
+        # decoder tied weights: use embedding matrix for projection
+        w = self.bert.embeddings.word_embeddings.weight  # (vocab_size, hidden_size)
+        logits = self.cls(sequence_output, w, key=cls_key)
         return logits
+
+    # Map HF state dict keys as-is for this class, except skip tied decoder weight
+    @classmethod
+    def normalize_hf_key_for_eqx(cls, key: str) -> str | None:  # type: ignore[override]
+        if key.startswith("cls.predictions.decoder.weight"):
+            return None
+        return key

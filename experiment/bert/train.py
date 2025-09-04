@@ -1,11 +1,11 @@
 import equinox as eqx
 import jax
 from transformers.models.bert.configuration_bert import BertConfig
-from src.models.bert.modeling_bert import BertModel, BertModelForMaskedLM
+from src.models.bert.modeling_bert import BertModel, BertForMaskedLM
 from src.losses import softmax_cross_entropy_with_integer_labels
 import jax.numpy as jnp
 
-def masked_lm_loss_function(model: BertModelForMaskedLM, *args, ignore_index: int = -100):
+def masked_lm_loss_function(model: BertForMaskedLM, *args, ignore_index: int = -100):
     """Compute masked LM loss, ignoring positions with label == ignore_index.
 
     - Vectorizes the model over batch.
@@ -37,7 +37,7 @@ def main():
     )
 
     key = jax.random.PRNGKey(0)
-    model = BertModelForMaskedLM(config, key=key, store_config = True)
+    model = BertForMaskedLM(config, key=key, store_config = True)
     model = eqx.nn.inference_mode(model)
     batch_size = 4
     seq_len = 10
@@ -56,7 +56,7 @@ def main():
     mask = jax.random.uniform(key, (batch_size, seq_len)) < 0.8
     batch_labels = jnp.where(mask, -100, batch_labels)
     print(f"DEBUGPRINT[192]: train.py:51: batch_labels={batch_labels}")
-    masked_lm_loss_function(model, batch_input,  (batch_labels, mask))
+    masked_lm_loss_function(model, batch_input,  (batch_labels, mask), ignore_index)
 
 
 main()

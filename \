@@ -1,0 +1,84 @@
+from collections.abc import Callable
+from typing import Any
+
+import equinox as eqx
+import jax
+from jax import make_mesh, P, shard_map, tree_util as jtu
+from jax.experimental.shard_map import shard_map
+from jax.sharding import PartitionSpec as P
+from optax import adam
+from transformers.models.bert.configuration_bert import BertConfig
+
+from src.distributed._utils import simulate_CPU_devices
+from src.models.bert.modeling_bert import BertModel
+
+
+simulate_CPU_devices()
+
+is_array = lambda x: isinstance(x, jax.Array)
+
+class filter_shard_map(eqx.Module):
+    f: Callable
+    mesh: Any
+    in_specs: Any
+    out_specs: Any
+    check_rep: bool
+
+    def __call__(self, *args):
+        arr, static = eqx.partition(args, eqx.is_array)
+
+        def _f(_args):
+            a = eqx.combine(_args, static)
+            return self.f(*a)
+        
+        return shard_map(_f, self.mesh, in_specs=self.in_specs, out_specs=self.out_specs, check_rep=self.check_rep)(arr)
+
+def loss_fn(module, *args):
+    pass
+
+
+def annotate_params(tree):
+    def _f(leaf):
+        return P()
+    return jtu.tree_map(_f, tree)
+
+
+def get_partition_spec(tree):
+    pass
+
+
+def make_module(module, *module_args, mesh, mode="dp", debug=False, **module_kwargs) -> eqx.Module:
+    abstract_module = eqx.filter_eval_shape(module, *module_args, **module_kwargs)
+
+    @eqx.filter_jit
+    def _init_params():
+        real_module = module(*module_args, **module_kwargs)
+        real_module = eqx.filter_shard(real_module, pspec)
+        return real_module
+
+    if mode == "dp":
+        pspec = annotate_params(abstract_module)
+        init_fn = shard_map(_init_params, in_specs=(), out_specs=(pspec), mesh=mesh)
+    else:
+        raise ValueError("hallo")
+
+    with mesh:
+        _module = init_fn()
+
+    def printin(leaf):
+        jax.debug.visualize_array_sharding(leaf)
+
+
+    jtu.tree_map(printin, _module, is_leaf = lambda x: eqx.is_array(x))
+
+    return _module
+
+def main():
+    config = BertConfig(num_hidden_layers=1)
+    devices = jax.devices()
+    mesh = make_mesh((8, ), ("data",), devices = jax.devices())
+    module = make_module(BertModel, config, key=jax.random.key(1), mesh = mesh)
+    optimizer = adam(learning_rate = 1e-5,)
+
+if __name__ == "__main__":
+    main()

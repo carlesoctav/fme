@@ -3,19 +3,18 @@ import jax
 import jax.numpy as jnp
 from jax.nn.initializers import Initializer, kaiming_normal, zeros
 from jaxtyping import PRNGKeyArray
-
 from ._utils import promote_dtype
 
 
 default_init = kaiming_normal()
 
 
-class Linear(eqx.Module):
+class Linear(eqx.Module, strict = True):
     weight: jax.Array
     bias: jax.Array | None
-    in_features: eqx.field(static = True)
-    out_features: eqx.field(static = True)
-    use_bias: eqx.field(static = True)
+    in_features: int = eqx.field(static = True)
+    out_features: int = eqx.field(static = True)
+    use_bias: bool =  eqx.field(static = True)
     dtype: jnp.dtype = eqx.field(static=True)
     params_dtype: jnp.dtype = eqx.field(static=True)
 

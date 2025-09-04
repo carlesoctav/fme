@@ -12,7 +12,7 @@ from jaxtyping import Array, PyTree
 from optax import GradientTransformationExtraArgs
 from transformers import BertConfig
 
-from src.models.bert.modeling_bert import BertModelForMaskedLM
+from src.models.bert.modeling_bert import BertForMaskedLM
 
 
 config = BertConfig(
@@ -28,7 +28,7 @@ config = BertConfig(
 )
 
 key = jax.random.key(10)
-model = BertModelForMaskedLM(config, key=key, dtype=jnp.float32)
+model = BertForMaskedLM(config, key=key, dtype=jnp.float32)
 
 
 class Dataset(grain.MapDataset):
@@ -60,7 +60,7 @@ data_loader = grain.DataLoader(
 
 
 def masked_lm_loss_function(
-    model: BertModelForMaskedLM,
+    model: BertForMaskedLM,
     batch,
     *,
     ignore_index: int = -100,

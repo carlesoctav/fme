@@ -1,0 +1,25 @@
+
+
+class HuggingFaceCompatible
+    hf_class_type: 
+
+
+    # this thing can be replaced by the subclass lke the BertModel if there's any params mismatch
+    def normalize_hf_key_for_eqx(key: str):
+
+        return key
+
+
+class BertModel(HuggingFaceCompatible[transformers.BertModel], eqx.Module)
+
+class BertForMaskedLM(HuggingFaceCompatible[transformers.BertForMaskedLM],eqx.Module)
+
+
+by putting the generics, can we set the class_type, and use that on the HuggingFaceCompatible to use from_pretrained
+
+
+
+on the huggingfacecompatible with use the class_type to initalize" the module and get the state_dict,
+
+see _huggingface.py
+

@@ -1,29 +1,37 @@
-import jax.numpy as jnp
-from typing import  Callable
-import numpy as np
+import functools as ft
+from collections.abc import Callable
+
 import equinox as eqx
+from src.distributed._utils import simulate_CPU_devices
 import grain
 import jax
+from jax import P
+import jax.numpy as jnp
+import numpy as np
+import optax
 from datasets import load_dataset
 from grain._src.python.samplers import IndexSampler
 from grain.transforms import Batch
+from jaxtyping import Array, PyTree
+from optax import GradientTransformationExtraArgs
 from transformers import BertTokenizer
 from transformers.models.bert.configuration_bert import BertConfig
 
 from src.data import DataTransformsMakeAttentionMask
-from src.losses.cross_entropy import softmax_cross_entropy_with_integer_labels
-from src.models.bert.modeling_bert import BertForMaskedLM
-from optax import GradientTransformationExtraArgs
-from jaxtyping import PyTree, Array
-import optax
 from src.distributed import get_dp_partition_spec
+from src.models.bert.modeling_bert import BertForMaskedLM
+
+simulate_CPU_devices()
+devices = jax.devices()
+print(f"DEBUGPRINT[236]: test_data_but_dp.py:113: devices={devices}")
+mesh = jax.make_mesh((8,), ("data",), devices=jax.devices())
 
 
 ds = load_dataset("carlesoctav/en-id-parallel-sentences", split = "QED")
 tokenizer = BertTokenizer.from_pretrained("google-bert/bert-base-uncased")
 transformations = [
     DataTransformsMakeAttentionMask(tokenizer, columns = "text_en", max_length = 20),
-    Batch(batch_size=2, drop_remainder = True)
+    Batch(batch_size=16, drop_remainder = True)
 ]
 
 # datasets = (
@@ -80,14 +88,14 @@ def masked_lm_loss_function(
 
     loss = optax.softmax_cross_entropy_with_integer_labels(logits, y) * label_mask # (..., ) (..., )
 
-    return loss.sum()/ label_mask.sum(), metrics 
+    return loss.sum()/ label_mask.sum() 
 
 grad_fn = eqx.filter_value_and_grad(masked_lm_loss_function, has_aux=False)
 
 
 class Optimizer(eqx.Module):
     opt_state: PyTree[Array]
-    wrt: Callable[PyTree[Array], PyTree[Array]] = eqx.field(static=True)
+    wrt: Callable[[ PyTree[Array] ], bool] = eqx.field(static=True)
     step: int 
     tx: GradientTransformationExtraArgs = eqx.field(static=True)
 
@@ -106,12 +114,6 @@ class Optimizer(eqx.Module):
         return new_model, new_self
 
 
-@eqx.filter_jit
-def train_step(model, batch, optimizer: Optimizer, *, key):
-    loss, grads = grad_fn(model, batch, key=key)
-    model, optimizer = optimizer(grads, model)
-    return model, optimizer, loss
-
 
 key, train_key = jax.random.split(key)
 tx = optax.chain(
@@ -120,6 +122,21 @@ tx = optax.chain(
 )
 optimizer = Optimizer(tx, model)
 dp_partition_spec = get_dp_partition_spec(model) 
+
+@ft.partial(
+    jax.shard_map,
+    in_specs=(P(), P("data"), P(), P()),
+    out_specs=(P(), P(), P()),
+    mesh=mesh,
+)
+@eqx.filter_jit
+def train_step(model, batch, optimizer: Optimizer, key):
+    print(f"DEBUGPRINT[237]: test_data_but_dp.py:130: model={model}")
+    loss, grads = grad_fn(model, batch, key=key)
+    model, optimizer = optimizer(grads, model)
+    return model, optimizer, loss
+
+
 
 for i, batch in enumerate(datasets):
     print(f"DEBUGPRINT[215]: test_data.py:115: i={i}")
@@ -133,3 +150,4 @@ for i, batch in enumerate(datasets):
     print(f"iter={i} loss={loss}")
     if i > 3:
         break
+       

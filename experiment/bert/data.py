@@ -40,7 +40,6 @@ def main():
             .shuffle(seed = 42)
             .batch(batch_size = 4)
     )
-
     print(datasets[1])
 
 
