@@ -38,6 +38,8 @@ def make_module(module, *module_args, mesh, **module_kwargs):
     @nnx.shard_map(out_specs=(nnx.StateSharding(partition_spec)), in_specs =(), mesh = mesh)
     def partition():
         real_module = module(*module_args, **module_kwargs, rngs = nnx.Rngs(10))
+        with mesh:
+            jax.lax.with_sharding_constraint(nnx.state(real_module), partition_spec)
         return real_module 
 
     module: nnx.Module = partition()

@@ -1,20 +1,24 @@
 import equinox as eqx
-import jax.numpy as jnp
 import jax
-from jaxtyping import PRNGKeyArray, Int
+import jax.numpy as jnp
 from equinox import field, is_array_like
 from jax.nn.initializers import normal
+from jaxtyping import Array, Int, PRNGKeyArray
 
-Array = jax.Array
+from src import Darray
+from src.distributed import maybe_shard
+
 
 default_init = normal(stddev=0.02)
 
-class Embedding(eqx.Module, strict=True):
-    weight: Array
+class Embedding(eqx.Module):
+    weight: Darray
     num_embeddings: int = field(static=True) 
     embedding_dim: int = field(static=True)
     dtype: jnp.dtype = field(static=True)
     params_dtype: jnp.dtype = field(static=True)
+    input_pspec: jax.P | None = field(static = True)
+    output_pspec: jax.P | None = field(static = True)
 
     def __init__(
         self,
@@ -24,6 +28,9 @@ class Embedding(eqx.Module, strict=True):
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
         key: PRNGKeyArray,
+        weight_spec: str | tuple[str, ...] | None = None,
+        output_pspec: jax.P | None = None,
+        input_pspec: jax.P | None = None
     ):
         self.dtype = dtype
         self.params_dtype = params_dtype
@@ -33,18 +40,22 @@ class Embedding(eqx.Module, strict=True):
             wkey, (num_embeddings, embedding_dim), self.params_dtype
         )
 
-        self.weight = wvalue
+        self.weight = Darray(value=wvalue, pspec=weight_spec)
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
+        self.input_pspec = input_pspec
+        self.output_pspec = output_pspec
 
 
     def __call__(
         self,
-        x: Int[Array, " seq_len"] 
+        x: Int[Array, " ..."]
     ) -> Array:
-        if is_array_like(x) and jnp.shape(x) == ():
-            return self.weight[x].astype(self.dtype)
-        else:
-            raise ValueError(
-                "`Embedding()(x)` should be called with a scalar index `x`. "
-            )
+        """Lookup embeddings for arbitrary leading axes of indices.
+
+        If x has shape (...,), returns (..., embedding_dim).
+        """
+        x = maybe_shard(x, self.input_pspec)
+        weight = getattr(self.weight, "value", self.weight)
+        out = weight[x].astype(self.dtype)
+        return maybe_shard(out, self.output_pspec)

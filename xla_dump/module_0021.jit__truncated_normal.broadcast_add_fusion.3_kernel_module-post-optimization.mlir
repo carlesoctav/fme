@@ -1,0 +1,27 @@
+module @broadcast_add_fusion.3_kernel_module attributes {dlti.dl_spec = #dlti.dl_spec<index = 64 : i32>, xla.cpu_memory_region_name = "xla_cpu_emitter__loop_fusion_kernel_emitter__hlo_opcode__fusion"} {
+  func.func @broadcast_add_fusion.3(%arg0: tensor<2xi32> {llvm.align = 64 : index, llvm.dereferenceable = 8 : index, xla.invariant, xla.slice_index = 0 : index}, %arg1: tensor<512xi32> {llvm.align = 64 : index, llvm.dereferenceable = 2048 : index, xla.slice_index = 1 : index}) -> tensor<512xi32> attributes {xla.backend_kind = #xla.backend_kind<cpu>, xla.entry} {
+    %c16_i64 = arith.constant 16 : i64
+    %c32_i64 = arith.constant 32 : i64
+    %c0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
+    %c32 = arith.constant 32 : index
+    %c16 = arith.constant 16 : index
+    %extracted = tensor.extract %arg0[%c0] {llvm.noalias = [#llvm.alias_scope<id = distinct[0]<>, domain = <id = distinct[1]<>>, description = "xla.slice_index=1">]} : tensor<2xi32>
+    %0 = scf.for %arg2 = %c0 to %c32 step %c1 iter_args(%arg3 = %arg1) -> (tensor<512xi32>) {
+      %1 = arith.index_castui %arg2 : index to i64
+      %2 = arith.muli %1, %c16_i64 {xla.range = [-9223372036854775808 : index, 9223372036854775807 : index]} : i64
+      %3 = scf.for %arg4 = %c0 to %c16 step %c1 iter_args(%arg5 = %arg3) -> (tensor<512xi32>) {
+        %4 = arith.index_castui %arg4 : index to i64
+        %5 = arith.addi %2, %4 {xla.range = [-9223372036854775808 : index, 9223372036854775807 : index]} : i64
+        %6 = arith.shrui %5, %c32_i64 : i64
+        %7 = arith.trunci %6 : i64 to i32
+        %8 = arith.addi %7, %extracted {xla.range = [-9223372036854775808 : index, 9223372036854775807 : index]} : i32
+        %9 = xla.apply_indexing #xla.indexing_map<"(d0, d1) -> (d0 * 16 + d1), domain: d0 in [0, 31], d1 in [0, 15]">(%arg2, %arg4)
+        %inserted = tensor.insert %8 into %arg5[%9] {alias_scopes = [#llvm.alias_scope<id = distinct[0]<>, domain = <id = distinct[1]<>>, description = "xla.slice_index=1">]} : tensor<512xi32>
+        scf.yield %inserted : tensor<512xi32>
+      }
+      scf.yield %3 : tensor<512xi32>
+    }
+    return %0 : tensor<512xi32>
+  }
+}

@@ -1,0 +1,29 @@
+i hate this wrapper thing
+
+can we just use this make new_module with the same name but now inherits other trhings
+
+cls = type(module)
+
+class TP{cls}(cls, eqx.module, ModuleWithShardingConstraint):
+    shard_in: tuple[tuple[str, ...] | str | none, ...]
+    shard_out: tuple[tuple[str, ...] | str | none, ...]
+
+
+    @ft.wraps(original_call)
+    def __call__(args, kwargs):
+        args, kwargs = with_sharding_constraint(args, kwargs)
+        output = original_call(agrs, kwargs)
+        output = with_sharding_constraint(output)
+
+        return output
+
+
+is this possible, the thing that i dont understand what if the input is not just
+single, 1D array but:
+1. multiple args, kwargs,
+2. the input is vmapped, so we use
+jax.vmap(TPMOdel)(x)
+
+
+see ~/personal/axlearn and take inspiration for this, since i think axlearn has sharding_input and sharidng output cosntraint
+

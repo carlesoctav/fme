@@ -1,0 +1,25 @@
+Total bytes used: 5348 (5.2KiB)
+
+Allocations sorted by size:
+
+cumulative_size; total_size - cumulative_size; allocation
+------------------------------------------------------------------------------
+    2.0KiB( 38%);     3.2KiB; allocation 0: size 2.0KiB, maybe-live-out:
+    4.0KiB( 77%);     1.2KiB; allocation 1: size 2.0KiB, constant:
+    4.5KiB( 86%);       740B; allocation 2: size 512B, maybe-live-out:
+    5.0KiB( 96%);       228B; allocation 3: size 512B, constant:
+    5.1KiB( 98%);       100B; allocation 4: size 128B, maybe-live-out:
+    5.2KiB( 99%);        36B; allocation 5: size 64B, maybe-live-out:
+    5.2KiB(100%);         4B; allocation 6: size 32B, output shape is |(f32[16,8], f32[16], f32[32,16], f32[32])|, maybe-live-out:
+    5.2KiB(100%);         0B; allocation 7: size 4B, constant:
+
+
+Allocations sorted by size with their values:
+allocation 0: size 2.0KiB, maybe-live-out:
+allocation 1: size 2.0KiB, constant:
+allocation 2: size 512B, maybe-live-out:
+allocation 3: size 512B, constant:
+allocation 4: size 128B, maybe-live-out:
+allocation 5: size 64B, maybe-live-out:
+allocation 6: size 32B, output shape is |(f32[16,8], f32[16], f32[32,16], f32[32])|, maybe-live-out:
+allocation 7: size 4B, constant:

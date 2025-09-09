@@ -1,0 +1,19 @@
+import dataclasses as dc
+class Placement:
+    pass
+
+@dc.dataclass(frozen = True)
+class Shard(Placement):
+    dim: int
+
+@dc.dataclass(frozen = True)
+class Replicate(Placement):
+    pass
+
+
+
+class RowParallel():
+    pass
+
+class ColumnParallel():
+    pass

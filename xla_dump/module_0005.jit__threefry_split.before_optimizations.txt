@@ -1,0 +1,154 @@
+HloModule jit__threefry_split, entry_computation_layout={(u32[2]{0})->u32[2,2]{1,0}}, allow_spmd_sharding_propagation_to_parameters={true}, allow_spmd_sharding_propagation_to_output={true}
+
+%closed_call.97 (Arg_0.37: s32[], Arg_1.38: u32[2], Arg_2.39: u32[2], Arg_3.40: u32[], Arg_4.41: u32[], Arg_5.42: u32[], Arg_6.43: u32[4], Arg_7.44: u32[4]) -> (s32[], u32[2], u32[2], u32[], u32[], /*index=5*/u32[], u32[4], u32[4]) {
+  %Arg_0.37 = s32[] parameter(0)
+  %constant.46 = s32[] constant(1)
+  %add.47 = s32[] add(%Arg_0.37, %constant.46), metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %Arg_1.38 = u32[2]{0} parameter(1)
+  %Arg_2.39 = u32[2]{0} parameter(2)
+  %add.50 = u32[2]{0} add(%Arg_1.38, %Arg_2.39), metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %Arg_6.43 = u32[4]{0} parameter(6)
+  %slice.48 = u32[1]{0} slice(%Arg_6.43), slice={[0:1]}, metadata={op_name="slice" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %squeeze.49 = u32[] reshape(%slice.48), metadata={op_name="squeeze" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %shift_left.51 = u32[2]{0} broadcast(%squeeze.49), dimensions={}, metadata={op_name="shift_left" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %shift_left.52 = u32[2]{0} shift-left(%Arg_2.39, %shift_left.51), metadata={op_name="shift_left" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %constant.45 = u32[] constant(32)
+  %sub.53 = u32[] subtract(%constant.45, %squeeze.49), metadata={op_name="sub" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %shift_right_logical.54 = u32[2]{0} broadcast(%sub.53), dimensions={}, metadata={op_name="shift_right_logical" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %shift_right_logical.55 = u32[2]{0} shift-right-logical(%Arg_2.39, %shift_right_logical.54), metadata={op_name="shift_right_logical" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %or.56 = u32[2]{0} or(%shift_left.52, %shift_right_logical.55), metadata={op_name="or" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %xor.57 = u32[2]{0} xor(%add.50, %or.56), metadata={op_name="xor" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %add.60 = u32[2]{0} add(%add.50, %xor.57), metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %slice.58 = u32[1]{0} slice(%Arg_6.43), slice={[1:2]}, metadata={op_name="slice" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %squeeze.59 = u32[] reshape(%slice.58), metadata={op_name="squeeze" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %shift_left.61 = u32[2]{0} broadcast(%squeeze.59), dimensions={}, metadata={op_name="shift_left" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %shift_left.62 = u32[2]{0} shift-left(%xor.57, %shift_left.61), metadata={op_name="shift_left" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %sub.63 = u32[] subtract(%constant.45, %squeeze.59), metadata={op_name="sub" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %shift_right_logical.64 = u32[2]{0} broadcast(%sub.63), dimensions={}, metadata={op_name="shift_right_logical" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %shift_right_logical.65 = u32[2]{0} shift-right-logical(%xor.57, %shift_right_logical.64), metadata={op_name="shift_right_logical" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %or.66 = u32[2]{0} or(%shift_left.62, %shift_right_logical.65), metadata={op_name="or" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %xor.67 = u32[2]{0} xor(%add.60, %or.66), metadata={op_name="xor" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %add.70 = u32[2]{0} add(%add.60, %xor.67), metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %slice.68 = u32[1]{0} slice(%Arg_6.43), slice={[2:3]}, metadata={op_name="slice" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %squeeze.69 = u32[] reshape(%slice.68), metadata={op_name="squeeze" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %shift_left.71 = u32[2]{0} broadcast(%squeeze.69), dimensions={}, metadata={op_name="shift_left" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %shift_left.72 = u32[2]{0} shift-left(%xor.67, %shift_left.71), metadata={op_name="shift_left" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %sub.73 = u32[] subtract(%constant.45, %squeeze.69), metadata={op_name="sub" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %shift_right_logical.74 = u32[2]{0} broadcast(%sub.73), dimensions={}, metadata={op_name="shift_right_logical" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %shift_right_logical.75 = u32[2]{0} shift-right-logical(%xor.67, %shift_right_logical.74), metadata={op_name="shift_right_logical" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %or.76 = u32[2]{0} or(%shift_left.72, %shift_right_logical.75), metadata={op_name="or" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %xor.77 = u32[2]{0} xor(%add.70, %or.76), metadata={op_name="xor" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %add.80 = u32[2]{0} add(%add.70, %xor.77), metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %Arg_3.40 = u32[] parameter(3)
+  %add.88 = u32[2]{0} broadcast(%Arg_3.40), dimensions={}, metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %add.89 = u32[2]{0} add(%add.80, %add.88), metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %slice.78 = u32[1]{0} slice(%Arg_6.43), slice={[3:4]}, metadata={op_name="slice" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %squeeze.79 = u32[] reshape(%slice.78), metadata={op_name="squeeze" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %shift_left.81 = u32[2]{0} broadcast(%squeeze.79), dimensions={}, metadata={op_name="shift_left" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %shift_left.82 = u32[2]{0} shift-left(%xor.77, %shift_left.81), metadata={op_name="shift_left" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %sub.83 = u32[] subtract(%constant.45, %squeeze.79), metadata={op_name="sub" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %shift_right_logical.84 = u32[2]{0} broadcast(%sub.83), dimensions={}, metadata={op_name="shift_right_logical" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %shift_right_logical.85 = u32[2]{0} shift-right-logical(%xor.77, %shift_right_logical.84), metadata={op_name="shift_right_logical" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %or.86 = u32[2]{0} or(%shift_left.82, %shift_right_logical.85), metadata={op_name="or" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %xor.87 = u32[2]{0} xor(%add.80, %or.86), metadata={op_name="xor" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %Arg_4.41 = u32[] parameter(4)
+  %add.90 = u32[2]{0} broadcast(%Arg_4.41), dimensions={}, metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %add.91 = u32[2]{0} add(%xor.87, %add.90), metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %add.92 = s32[] add(%Arg_0.37, %constant.46), metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %convert_element_type.93 = u32[] convert(%add.92), metadata={op_name="convert_element_type" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %add.94 = u32[2]{0} broadcast(%convert_element_type.93), dimensions={}, metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %add.95 = u32[2]{0} add(%add.91, %add.94), metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %Arg_5.42 = u32[] parameter(5)
+  %Arg_7.44 = u32[4]{0} parameter(7)
+  ROOT %tuple.96 = (s32[], u32[2]{0}, u32[2]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) tuple(%add.47, %add.89, %add.95, %Arg_4.41, %Arg_5.42, /*index=5*/%Arg_3.40, %Arg_7.44, %Arg_6.43)
+}
+
+%region_0.109 (arg_tuple.26: (s32[], s32[], u32[2], u32[2], u32[], /*index=5*/u32[], u32[], u32[4], u32[4])) -> (s32[], s32[], u32[2], u32[2], u32[], /*index=5*/u32[], u32[], u32[4], u32[4]) {
+  %arg_tuple.26 = (s32[], s32[], u32[2]{0}, u32[2]{0}, u32[], /*index=5*/u32[], u32[], u32[4]{0}, u32[4]{0}) parameter(0)
+  %get-tuple-element.27 = s32[] get-tuple-element(%arg_tuple.26), index=0
+  %constant.36 = s32[] constant(1)
+  %add.107 = s32[] add(%get-tuple-element.27, %constant.36), metadata={op_name="while/body/add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %get-tuple-element.28 = s32[] get-tuple-element(%arg_tuple.26), index=1
+  %get-tuple-element.29 = u32[2]{0} get-tuple-element(%arg_tuple.26), index=2
+  %get-tuple-element.30 = u32[2]{0} get-tuple-element(%arg_tuple.26), index=3
+  %get-tuple-element.31 = u32[] get-tuple-element(%arg_tuple.26), index=4
+  %get-tuple-element.32 = u32[] get-tuple-element(%arg_tuple.26), index=5
+  %get-tuple-element.33 = u32[] get-tuple-element(%arg_tuple.26), index=6
+  %get-tuple-element.34 = u32[4]{0} get-tuple-element(%arg_tuple.26), index=7
+  %get-tuple-element.35 = u32[4]{0} get-tuple-element(%arg_tuple.26), index=8
+  %closed_call.98 = (s32[], u32[2]{0}, u32[2]{0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) call(%get-tuple-element.28, %get-tuple-element.29, %get-tuple-element.30, %get-tuple-element.31, %get-tuple-element.32, /*index=5*/%get-tuple-element.33, %get-tuple-element.34, %get-tuple-element.35), to_apply=%closed_call.97, metadata={op_name="while/body/closed_call" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %closed_call.99 = s32[] get-tuple-element(%closed_call.98), index=0, metadata={op_name="while/body/closed_call" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %closed_call.100 = u32[2]{0} get-tuple-element(%closed_call.98), index=1, metadata={op_name="while/body/closed_call" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %closed_call.101 = u32[2]{0} get-tuple-element(%closed_call.98), index=2, metadata={op_name="while/body/closed_call" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %closed_call.102 = u32[] get-tuple-element(%closed_call.98), index=3, metadata={op_name="while/body/closed_call" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %closed_call.103 = u32[] get-tuple-element(%closed_call.98), index=4, metadata={op_name="while/body/closed_call" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %closed_call.104 = u32[] get-tuple-element(%closed_call.98), index=5, metadata={op_name="while/body/closed_call" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %closed_call.105 = u32[4]{0} get-tuple-element(%closed_call.98), index=6, metadata={op_name="while/body/closed_call" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %closed_call.106 = u32[4]{0} get-tuple-element(%closed_call.98), index=7, metadata={op_name="while/body/closed_call" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  ROOT %tuple.108 = (s32[], s32[], u32[2]{0}, u32[2]{0}, u32[], /*index=5*/u32[], u32[], u32[4]{0}, u32[4]{0}) tuple(%add.107, %closed_call.99, %closed_call.100, %closed_call.101, %closed_call.102, /*index=5*/%closed_call.103, %closed_call.104, %closed_call.105, %closed_call.106)
+}
+
+%region_1.122 (arg_tuple.110: (s32[], s32[], u32[2], u32[2], u32[], /*index=5*/u32[], u32[], u32[4], u32[4])) -> pred[] {
+  %arg_tuple.110 = (s32[], s32[], u32[2]{0}, u32[2]{0}, u32[], /*index=5*/u32[], u32[], u32[4]{0}, u32[4]{0}) parameter(0)
+  %get-tuple-element.112 = s32[] get-tuple-element(%arg_tuple.110), index=1
+  %get-tuple-element.113 = u32[2]{0} get-tuple-element(%arg_tuple.110), index=2
+  %get-tuple-element.114 = u32[2]{0} get-tuple-element(%arg_tuple.110), index=3
+  %get-tuple-element.115 = u32[] get-tuple-element(%arg_tuple.110), index=4
+  %get-tuple-element.116 = u32[] get-tuple-element(%arg_tuple.110), index=5
+  %get-tuple-element.117 = u32[] get-tuple-element(%arg_tuple.110), index=6
+  %get-tuple-element.118 = u32[4]{0} get-tuple-element(%arg_tuple.110), index=7
+  %get-tuple-element.119 = u32[4]{0} get-tuple-element(%arg_tuple.110), index=8
+  %get-tuple-element.111 = s32[] get-tuple-element(%arg_tuple.110), index=0
+  %constant.120 = s32[] constant(5)
+  ROOT %lt.121 = pred[] compare(%get-tuple-element.111, %constant.120), direction=LT, metadata={op_name="while/cond/lt" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+}
+
+%threefry2x32.135 (jit__threefry_split_.12: u32[], jit__threefry_split_.13: u32[], jit__threefry_split_.14: u32[2], jit__threefry_split_.15: u32[2]) -> (u32[2], u32[2]) {
+  %constant.16 = s32[] constant(0)
+  %jit__threefry_split_.14 = u32[2]{0} parameter(2), metadata={op_name="jit(_threefry_split)"}
+  %jit__threefry_split_.12 = u32[] parameter(0), metadata={op_name="jit(_threefry_split)"}
+  %add.22 = u32[2]{0} broadcast(%jit__threefry_split_.12), dimensions={}, metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %add.23 = u32[2]{0} add(%jit__threefry_split_.14, %add.22), metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %jit__threefry_split_.15 = u32[2]{0} parameter(3), metadata={op_name="jit(_threefry_split)"}
+  %jit__threefry_split_.13 = u32[] parameter(1), metadata={op_name="jit(_threefry_split)"}
+  %add.24 = u32[2]{0} broadcast(%jit__threefry_split_.13), dimensions={}, metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %add.25 = u32[2]{0} add(%jit__threefry_split_.15, %add.24), metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %xor.20 = u32[] xor(%jit__threefry_split_.12, %jit__threefry_split_.13), metadata={op_name="xor" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %constant.17 = u32[] constant(466688986)
+  %xor.21 = u32[] xor(%xor.20, %constant.17), metadata={op_name="xor" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %constant.18 = u32[4]{0} constant({13, 15, 26, 6})
+  %constant.19 = u32[4]{0} constant({17, 29, 16, 24})
+  %while.123 = (s32[], s32[], u32[2]{0}, u32[2]{0}, u32[], /*index=5*/u32[], u32[], u32[4]{0}, u32[4]{0}) tuple(%constant.16, %constant.16, %add.23, %add.25, %jit__threefry_split_.13, /*index=5*/%xor.21, %jit__threefry_split_.12, %constant.18, %constant.19), metadata={op_name="while" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %while.124 = (s32[], s32[], u32[2]{0}, u32[2]{0}, u32[], /*index=5*/u32[], u32[], u32[4]{0}, u32[4]{0}) while(%while.123), condition=%region_1.122, body=%region_0.109, metadata={op_name="while" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %while.125 = s32[] get-tuple-element(%while.124), index=0, metadata={op_name="while" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %while.126 = s32[] get-tuple-element(%while.124), index=1, metadata={op_name="while" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %while.129 = u32[] get-tuple-element(%while.124), index=4, metadata={op_name="while" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %while.130 = u32[] get-tuple-element(%while.124), index=5, metadata={op_name="while" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %while.131 = u32[] get-tuple-element(%while.124), index=6, metadata={op_name="while" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %while.132 = u32[4]{0} get-tuple-element(%while.124), index=7, metadata={op_name="while" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %while.133 = u32[4]{0} get-tuple-element(%while.124), index=8, metadata={op_name="while" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %while.127 = u32[2]{0} get-tuple-element(%while.124), index=2, metadata={op_name="while" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %while.128 = u32[2]{0} get-tuple-element(%while.124), index=3, metadata={op_name="while" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  ROOT %tuple.134 = (u32[2]{0}, u32[2]{0}) tuple(%while.127, %while.128)
+}
+
+ENTRY %main.142 (key.1: u32[2]) -> u32[2,2] {
+  %key.1 = u32[2]{0} parameter(0), metadata={op_name="key"}
+  %slice.4 = u32[1]{0} slice(%key.1), slice={[0:1]}, metadata={op_name="jit(_threefry_split)/slice" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %squeeze.5 = u32[] reshape(%slice.4), metadata={op_name="jit(_threefry_split)/squeeze" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %slice.6 = u32[1]{0} slice(%key.1), slice={[1:2]}, metadata={op_name="jit(_threefry_split)/slice" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %squeeze.7 = u32[] reshape(%slice.6), metadata={op_name="jit(_threefry_split)/squeeze" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %iota_2x32_shape.8 = u64[2]{0} iota(), iota_dimension=0, metadata={op_name="jit(_threefry_split)/iota_2x32_shape" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %constant.2 = u64[] constant(32)
+  %broadcast.3 = u64[2]{0} broadcast(%constant.2), dimensions={}
+  %iota_2x32_shape.9 = u64[2]{0} shift-right-logical(%iota_2x32_shape.8, %broadcast.3), metadata={op_name="jit(_threefry_split)/iota_2x32_shape" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %iota_2x32_shape.11 = u32[2]{0} convert(%iota_2x32_shape.9), metadata={op_name="jit(_threefry_split)/iota_2x32_shape" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %iota_2x32_shape.10 = u32[2]{0} convert(%iota_2x32_shape.8), metadata={op_name="jit(_threefry_split)/iota_2x32_shape" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %jit__threefry_split_.136 = (u32[2]{0}, u32[2]{0}) call(%squeeze.5, %squeeze.7, %iota_2x32_shape.11, %iota_2x32_shape.10), to_apply=%threefry2x32.135, metadata={op_name="jit(_threefry_split)" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %jit__threefry_split_.137 = u32[2]{0} get-tuple-element(%jit__threefry_split_.136), index=0, metadata={op_name="jit(_threefry_split)" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %broadcast_in_dim.139 = u32[2,1]{1,0} reshape(%jit__threefry_split_.137), metadata={op_name="jit(_threefry_split)/broadcast_in_dim" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %jit__threefry_split_.138 = u32[2]{0} get-tuple-element(%jit__threefry_split_.136), index=1, metadata={op_name="jit(_threefry_split)" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  %broadcast_in_dim.140 = u32[2,1]{1,0} reshape(%jit__threefry_split_.138), metadata={op_name="jit(_threefry_split)/broadcast_in_dim" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+  ROOT %concatenate.141 = u32[2,2]{1,0} concatenate(%broadcast_in_dim.139, %broadcast_in_dim.140), dimensions={1}, metadata={op_name="jit(_threefry_split)/concatenate" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=21 source_end_column=45}
+}
+

@@ -1,0 +1,11 @@
+HloModule jit__unstack, entry_computation_layout={(u32[2,2]{1,0})->(u32[2]{0}, u32[2]{0})}, allow_spmd_sharding_propagation_to_parameters={true}, allow_spmd_sharding_propagation_to_output={true,true}
+
+ENTRY %main.7 (x.1: u32[2,2]) -> (u32[2], u32[2]) {
+  %x.1 = u32[2,2]{1,0} parameter(0), metadata={op_name="x"}
+  %split.2 = u32[1,2]{1,0} slice(%x.1), slice={[0:1], [0:2]}, metadata={op_name="jit(_unstack)/split" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=8 source_end_column=18}
+  %squeeze.4 = u32[2]{0} reshape(%split.2), metadata={op_name="jit(_unstack)/squeeze" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=8 source_end_column=18}
+  %split.3 = u32[1,2]{1,0} slice(%x.1), slice={[1:2], [0:2]}, metadata={op_name="jit(_unstack)/split" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=8 source_end_column=18}
+  %squeeze.5 = u32[2]{0} reshape(%split.3), metadata={op_name="jit(_unstack)/squeeze" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=16 source_end_line=16 source_column=8 source_end_column=18}
+  ROOT %tuple.6 = (u32[2]{0}, u32[2]{0}) tuple(%squeeze.4, %squeeze.5)
+}
+

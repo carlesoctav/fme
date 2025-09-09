@@ -1,7 +1,8 @@
 import os
 import subprocess
 import sys
-
+import jax
+from jaxtyping import Array
 
 def set_XLA_flags_gpu():
     flags = os.environ.get("XLA_FLAGS", "")
@@ -30,4 +31,8 @@ def install_package(package: str) -> None:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", package])
 
 
+def maybe_shard(x: Array, pspec: jax.P):
+    if pspec is not None:
+        return jax.lax.with_sharding_constraint(x, pspec)
+    return x
 

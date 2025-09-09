@@ -1,0 +1,107 @@
+BufferAssignment:
+allocation 0: size 2048, maybe-live-out:
+ value: <5 copy.1 @0> (size=2048,offset=0): f32[32,16]{1,0}
+allocation 1: size 2048, constant:
+ value: <4 constant.9 @0> (size=2048,offset=0): f32[32,16]{1,0}
+allocation 2: size 512, maybe-live-out:
+ value: <1 copy @0> (size=512,offset=0): f32[16,8]{1,0}
+allocation 3: size 512, constant:
+ value: <0 constant.7 @0> (size=512,offset=0): f32[16,8]{1,0}
+allocation 4: size 128, maybe-live-out:
+ value: <6 broadcast.1 @0> (size=128,offset=0): f32[32]{0}
+allocation 5: size 64, maybe-live-out:
+ value: <3 broadcast.0 @0> (size=64,offset=0): f32[16]{0}
+allocation 6: size 32, output shape is |(f32[16,8], f32[16], f32[32,16], f32[32])|, maybe-live-out:
+ value: <7 tuple.1{} @0> (size=32,offset=0): (f32[16,8]{1,0}, f32[16]{0}, f32[32,16]{1,0}, f32[32]{0})
+allocation 7: size 4, constant:
+ value: <2 constant.8 @0> (size=4,offset=0): f32[]
+
+Total bytes used: 5348 (5.2KiB)
+
+Used values:
+<0 constant.7 @0>
+ positions:
+  constant.7
+ uses:
+  copy, operand 0
+ from instruction: %constant.7 = f32[16,8]{1,0} constant({...}), metadata={op_name="jit(init)/sharding_constraint" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=51 source_end_line=51 source_column=26 source_end_column=26}
+<1 copy @0>
+ positions:
+  copy
+  tuple.1 {0}
+ uses:
+  tuple.1, operand 0
+ from instruction: %copy = f32[16,8]{1,0} copy(%constant.7)
+<2 constant.8 @0>
+ positions:
+  constant.8
+ uses:
+  broadcast.0, operand 0
+  broadcast.1, operand 0
+ from instruction: %constant.8 = f32[] constant(0)
+<3 broadcast.0 @0>
+ positions:
+  broadcast.0
+  tuple.1 {1}
+ uses:
+  tuple.1, operand 1
+ from instruction: %broadcast.0 = f32[16]{0} broadcast(%constant.8), dimensions={}, metadata={op_name="broadcast.3"}
+<4 constant.9 @0>
+ positions:
+  constant.9
+ uses:
+  copy.1, operand 0
+ from instruction: %constant.9 = f32[32,16]{1,0} constant({...}), metadata={op_name="jit(init)/sharding_constraint" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/temp/test_my_great_tp_plan.py" source_line=51 source_end_line=51 source_column=26 source_end_column=26}
+<5 copy.1 @0>
+ positions:
+  copy.1
+  tuple.1 {2}
+ uses:
+  tuple.1, operand 2
+ from instruction: %copy.1 = f32[32,16]{1,0} copy(%constant.9)
+<6 broadcast.1 @0>
+ positions:
+  broadcast.1
+  tuple.1 {3}
+ uses:
+  tuple.1, operand 3
+ from instruction: %broadcast.1 = f32[32]{0} broadcast(%constant.8), dimensions={}, metadata={op_name="broadcast.6"}
+<7 tuple.1{} @0>
+ positions:
+  tuple.1 {}
+ uses:
+ from instruction: %tuple.1 = (f32[16,8]{1,0}, f32[16]{0}, f32[32,16]{1,0}, f32[32]{0}) tuple(%copy, %broadcast.0, %copy.1, %broadcast.1)
+
+
+HloLiveRange (max 8):
+  InstructionSequence:
+    0:constant.7
+    1:constant.8
+    2:constant.9
+    3:copy
+    4:broadcast.0
+    5:broadcast.1
+    6:copy.1
+    7:tuple.1
+  BufferLiveRange:
+    constant.7{}:0-3
+    copy{}:3-8
+    constant.8{}:1-5
+    broadcast.0{}:4-8
+    constant.9{}:2-6
+    copy.1{}:6-8
+    broadcast.1{}:5-8
+    tuple.1{}:7-8
+  Live ranges at 7 (peak):
+    copy.1{}: 2048 bytes (cumulative: 2048 bytes)
+    copy{}: 512 bytes (cumulative: 2560 bytes)
+    broadcast.1{}: 128 bytes (cumulative: 2688 bytes)
+    broadcast.0{}: 64 bytes (cumulative: 2752 bytes)
+    tuple.1{}: 32 bytes (cumulative: 2784 bytes)
+  Stack trace breakdown for peak usage: 2 784 bytes
+    main.11_spmd (100.0%, total: 2 784 bytes, current: 0 bytes, remaining: 2 784 bytes)
+      ├── copy.1 (73.6%, total: 2 048 bytes, current: 2 048 bytes, remaining: 736 bytes)
+      ├── copy (18.4%, total: 512 bytes, current: 512 bytes, remaining: 224 bytes)
+      ├── broadcast.6 (4.6%, total: 128 bytes, current: 128 bytes, remaining: 96 bytes)
+      ├── broadcast.3 (2.3%, total: 64 bytes, current: 64 bytes, remaining: 32 bytes)
+      └── tuple.1 (1.1%, total: 32 bytes, current: 32 bytes, remaining: 0 bytes)

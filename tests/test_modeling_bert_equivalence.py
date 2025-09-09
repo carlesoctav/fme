@@ -189,24 +189,24 @@ def make_config(**overrides):
     )
 
 
-def vmap_embeddings(jx_emb: BertEmbeddings, input_ids: jnp.ndarray, position_ids: jnp.ndarray, token_type_ids: jnp.ndarray, *, key):
-    # input tensors: (batch, seq_len)
-    batch = input_ids.shape[0]
-    keys = jax.random.split(key, batch)
-    fn = lambda ids, pos, tt, k: jx_emb(ids, pos, tt, key=k)
-    return jax.vmap(fn)(input_ids, position_ids, token_type_ids, keys)
+def vmap_embeddings(
+    jx_emb: BertEmbeddings,
+    input_ids: jnp.ndarray,
+    position_ids: jnp.ndarray,
+    token_type_ids: jnp.ndarray,
+    *,
+    key,
+):
+    # The module now supports arbitrary leading axes; call directly on batched inputs.
+    return jx_emb(input_ids, position_ids, token_type_ids, key=key)
 
 
 def vmap_call(module, hidden_states: jnp.ndarray, attention_mask: jnp.ndarray | None, *, key):
-    # module signature: (seq_len, hidden_size) and optional attention_mask (seq_len,), returns (seq_len, hidden_size)
-    batch = hidden_states.shape[0]
-    keys = jax.random.split(key, batch)
+    # The modules accept batched inputs natively; call directly.
     if attention_mask is None:
-        fn = lambda hs, k: module(hs, key=k)
-        return jax.vmap(fn)(hidden_states, keys)
+        return module(hidden_states, key=key)
     else:
-        fn = lambda hs, am, k: module(hs, am, key=k)
-        return jax.vmap(fn)(hidden_states, attention_mask, keys)
+        return module(hidden_states, attention_mask, key=key)
 
 
 # --------------------------
@@ -422,12 +422,8 @@ def test_bert_self_output_equivalence_random():
     jx_so = BertSelfOutput(cfg, key=key)
     jx_so = copy_self_output_weights(jx_so, th_so)
 
-    # vmap over batch
-    def call_so(hs, it, k):
-        return jx_so(hs, it, key=k)
-
-    keys = jax.random.split(key, bs)
-    jx_out = jax.vmap(call_so)(hidden_states_jx, input_tensor_jx, keys)
+    # Direct call over batched inputs
+    jx_out = jx_so(hidden_states_jx, input_tensor_jx, key=key)
 
     compare_close(jx_out, th_out.numpy(), atol=1e-3, rtol=1e-3)
 
@@ -471,11 +467,7 @@ def test_bert_output_equivalence_random():
     jx_out_mod = BertOutput(cfg, key=key)
     jx_out_mod = copy_output_weights(jx_out_mod, th_out_mod)
 
-    def call_out(hs, it, k):
-        return jx_out_mod(hs, it, key=k)
-
-    keys = jax.random.split(key, bs)
-    jx_out = jax.vmap(call_out)(hidden_states_jx, input_tensor_jx, keys)
+    jx_out = jx_out_mod(hidden_states_jx, input_tensor_jx, key=key)
 
     compare_close(jx_out, th_out.numpy(), atol=1e-3, rtol=1e-3)
 
@@ -646,14 +638,12 @@ def test_bert_mlm_equivalence_single_no_padding():
     jx_mlm = BertForMaskedLM(cfg, key=key)
     jx_mlm = copy_full_bert_for_mlm(jx_mlm, th_mlm)
 
-    # vmap over batch (bs=1 here is fine)
-    def call_mlm(ids, pos, tt, am, k):
-        return jx_mlm(ids, pos, tt, am, key=k)
-
-    bs = input_ids.shape[0]
-    keys = jax.random.split(key, bs)
-    jx_logits = jax.vmap(call_mlm)(
-        arr(input_ids.numpy()), arr(position_ids.numpy()), arr(token_type_ids.numpy()), arr(attention_mask.numpy()), keys
+    jx_logits = jx_mlm(
+        arr(input_ids.numpy()),
+        arr(position_ids.numpy()),
+        arr(token_type_ids.numpy()),
+        arr(attention_mask.numpy()),
+        key=key,
     )
 
     compare_close(jx_logits, th_logits.numpy(), atol=1e-3, rtol=1e-3)
@@ -685,13 +675,12 @@ def test_bert_mlm_equivalence_with_padding(texts):
     jx_mlm = BertForMaskedLM(cfg, key=key)
     jx_mlm = copy_full_bert_for_mlm(jx_mlm, th_mlm)
 
-    def call_mlm(ids, pos, tt, am, k):
-        return jx_mlm(ids, pos, tt, am, key=k)
-
-    bs = input_ids.shape[0]
-    keys = jax.random.split(key, bs)
-    jx_logits = jax.vmap(call_mlm)(
-        arr(input_ids.numpy()), arr(position_ids.numpy()), arr(token_type_ids.numpy()), arr(attention_mask.numpy()), keys
+    jx_logits = jx_mlm(
+        arr(input_ids.numpy()),
+        arr(position_ids.numpy()),
+        arr(token_type_ids.numpy()),
+        arr(attention_mask.numpy()),
+        key=key,
     )
 
     # Compare only non-pad rows to avoid query-masking differences

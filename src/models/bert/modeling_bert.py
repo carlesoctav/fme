@@ -4,13 +4,15 @@ from typing import Any
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-import transformers
 from equinox import field
 from jaxtyping import Array, Float, Int, PRNGKeyArray
+import transformers
 from transformers.models.bert.configuration_bert import BertConfig
-
+from jax import P
+from jax.interpreters.pxla import thread_resources
 from src import HuggingFaceCompatibleModule, nn
 from src.nn import functional as F
+from src.distributed import maybe_shard
 
 
 Pytree = Any
@@ -69,26 +71,23 @@ class BertEmbeddings(eqx.Module):
 
     def __call__(
         self,
-        input_ids: Int[Array, " seq_len"],
-        position_ids: Int[Array, " seq_len"],
-        token_type_ids: Int[Array, " seq_len"],
+        input_ids: Int[Array, " ..."],
+        position_ids: Int[Array, " ..."],
+        token_type_ids: Int[Array, " ..."],
         *,
         key: PRNGKeyArray | None = None,
-    ) -> Float[Array, "seq_len hidden_size"]:
+    ) -> Float[Array, " ... hidden_size"]:
         d_key = jax.random.split(key, 1)[0] if key is not None else None
 
-        inputs_embeddings = jax.vmap(self.word_embeddings)(input_ids)
-        position_embeddings = jax.vmap(self.position_embeddings)(position_ids)
-        token_type_embeddings = jax.vmap(self.token_type_embeddings)(token_type_ids)
+        inputs_embeddings = self.word_embeddings(input_ids)
+        position_embeddings = self.position_embeddings(position_ids)
+        token_type_embeddings = self.token_type_embeddings(token_type_ids)
 
         embeddings = inputs_embeddings + token_type_embeddings + position_embeddings
 
-        embeddings = jax.vmap(self.LayerNorm)(embeddings)
+        embeddings = self.LayerNorm(embeddings)
 
-        embeddings = self.dropout(
-            embeddings,
-            key=d_key,
-        )
+        embeddings = self.dropout(embeddings, key=d_key)
 
         return embeddings
 
@@ -101,6 +100,10 @@ class BertSelfAttention(eqx.Module):
     num_attention_heads: int = field(static=True)
     attention_head_size: int = field(static=True)
     all_head_size: int = field(static=True)
+    btnh_spec: Any = field(static=True, default=None)
+    bsnh_spec: Any = field(static=True, default=None)
+    bnts_spec: Any = field(static=True, default=None)
+    self_attn_out_spec: Any = field(static=True, default=None)
 
     def __init__(
         self,
@@ -109,6 +112,10 @@ class BertSelfAttention(eqx.Module):
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
         key: PRNGKeyArray,
+        btnh_spec: Any | None = None,
+        bsnh_spec: Any | None = None,
+        bnts_spec: Any | None = None,
+        self_attn_out_spec: Any | None = None, 
     ):
         q_key, v_key, k_key = jax.random.split(key, 3)
         if config.hidden_size % config.num_attention_heads != 0:
@@ -124,7 +131,6 @@ class BertSelfAttention(eqx.Module):
 
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob, dtype=dtype, params_dtype=params_dtype)
 
-        # array
         self.query = nn.Linear(
             config.hidden_size,
             self.all_head_size,
@@ -147,52 +153,49 @@ class BertSelfAttention(eqx.Module):
             key=v_key,
         )
 
+        self.btnh_spec = btnh_spec
+        self.bsnh_spec = bsnh_spec
+        self.bnts_spec = bnts_spec
+        self.self_attn_out_spec = self_attn_out_spec
+
     def __call__(
         self,
-        hidden_states: Float[Array, "seq_len hidden_size"],
-        attention_mask: Int[Array, " seq_len"] | None = None,
+        hidden_states: Float[Array, " ... seq_len hidden_size"],
+        attention_mask: Int[Array, " ... seq_len hidden_size"] | None = None,
         *,
         key: PRNGKeyArray | None = None,
-    ) -> Array:
-        seq_length = hidden_states.shape[0]
-        q = jax.vmap(self.query)(hidden_states)
-        k = jax.vmap(self.key)(hidden_states)
-        v = jax.vmap(self.value)(hidden_states)
+    ) -> Float[Array, " ... seq_len hidden_size"]: 
 
-        q_heads = q.reshape(
-            seq_length, self.num_attention_heads, self.attention_head_size
-        )
-        k_heads = k.reshape(
-            seq_length, self.num_attention_heads, self.attention_head_size
-        )
-        v_heads = v.reshape(
-            seq_length, self.num_attention_heads, self.attention_head_size
-        )
+        dropout_key = jax.random.split(key, 1)[0] if key is not None else None
 
-        keys = (
-            jax.random.split(key, self.num_attention_heads) if key is not None else None
-        )
+        if hidden_states.ndim ==1:
+            raise ValueError("hidden_states must have (..., seq_len, hidden_size) shape")
 
-        if attention_mask is None:
-            # Map over the head axis (axis=1) for q/k/v and over axis=0 for per-head PRNG keys.
-            attn_fn = partial(
-                F.dot_product_attention, mask=attention_mask, dropout=self.dropout
+        q = self.query(hidden_states)
+        k = self.key(hidden_states)
+        v = self.value(hidden_states)
+
+        def _to_heads(x):
+            return x.reshape(*x.shape[:-1], self.num_attention_heads, self.attention_head_size)
+
+        q_heads = _to_heads(q)
+        k_heads = _to_heads(k)
+        v_heads = _to_heads(v)
+
+        q_heads = maybe_shard(q_heads, self.btnh_spec) 
+        k_heads = maybe_shard(k_heads, self.bsnh_spec)
+        v_heads = maybe_shard(v_heads, self.bsnh_spec)
+
+        if attention_mask is not None:
+            attn_mask = F.make_4D_attention_mask(attention_mask, self.num_attention_heads)
+            attn_heads = F.dot_product_attention(
+                q_heads, k_heads, v_heads, mask=attn_mask, dropout=self.dropout, key=dropout_key
             )
-            attn_heads = jax.vmap(attn_fn, in_axes=1, out_axes=1)(
-                q_heads, k_heads, v_heads, key=keys
-            )  # (seq_len, num_attention_heads, attention_head_size)
         else:
+            attn_heads = F.dot_product_attention(q_heads, k_heads, v_heads, dropout=self.dropout, key=dropout_key) 
 
-            attention_mask = F.make_3D_attention_mask(
-                attention_mask, self.num_attention_heads
-            )
-
-            attn_fn = partial(F.dot_product_attention, dropout=self.dropout)
-            attn_heads = jax.vmap(attn_fn, in_axes=1, out_axes=1)(
-                q_heads, k_heads, v_heads, attention_mask, key=keys
-            )
-
-        attn = attn_heads.reshape(seq_length, -1)  # seq_len, hidden_size
+        attn = attn_heads.reshape(*attn_heads.shape[:-2], self.all_head_size)
+        attn_heads = maybe_shard(attn_heads, self.self_attn_out_spec) #(..., seq_len, nheads* head_size)
         return attn
 
 
@@ -235,9 +238,9 @@ class BertSelfOutput(eqx.Module):
     ):
         d_key = jax.random.split(key, 1)[0] if key is not None else None
 
-        hidden_states = jax.vmap(self.dense)(hidden_states)
+        hidden_states = self.dense(hidden_states)
         hidden_states = self.dropout(hidden_states, key=d_key)
-        hidden_states = jax.vmap(self.LayerNorm)(hidden_states + input_tensor)
+        hidden_states = self.LayerNorm(hidden_states + input_tensor)
         return hidden_states
 
 
@@ -266,13 +269,14 @@ class BertAttention(eqx.Module):
         self,
         hidden_states: Float[Array, "seq_len hidden_size"],
         attention_mask: Int[Array, " seq_len"] | None = None,
+        /,
         *,
         key: PRNGKeyArray | None = None,
     ):
         self_key, output_key = (
             jax.random.split(key, 2) if key is not None else (None, None)
         )
-        self_output = self.self(hidden_states, attention_mask, key=self_key)
+        self_output = self.self(hidden_states, attention_mask, key=self_key) 
         attention_output = self.output(self_output, hidden_states, key=output_key)
         return attention_output
 
@@ -304,7 +308,7 @@ class BertIntermediate(eqx.Module):
         *,
         key: PRNGKeyArray | None = None,
     ) -> Float[Array, "seq_len intermediate_size"]:
-        hidden_states = jax.vmap(self.dense)(hidden_states)
+        hidden_states = self.dense(hidden_states)
         hidden_states = jax.nn.gelu(hidden_states)
 
         return hidden_states
@@ -348,10 +352,10 @@ class BertOutput(eqx.Module):
         key: PRNGKeyArray | None = None,
     ) -> Float[Array, "seq_len hidden_size"]:
         d_key = jax.random.split(key, 1)[0] if key is not None else None
-        hidden_states = jax.vmap(self.dense)(hidden_states)
+        hidden_states = self.dense(hidden_states)
 
         hidden_states = self.dropout(hidden_states, key=d_key)
-        hidden_states = jax.vmap(self.LayerNorm)(hidden_states + input_tensor)
+        hidden_states = self.LayerNorm(hidden_states + input_tensor)
         return hidden_states
 
 
@@ -432,7 +436,6 @@ class BertEncoder(eqx.Module):
         *,
         key: PRNGKeyArray | None = None,
     ) -> Float[Array, "seq_len hidden_size"]:
-        # TODO: think about jax scan
         layer_key = jax.random.split(key, len(self.layer)) if key is not None else None
         for i, layer_module in enumerate(self.layer):
             hidden_states = layer_module(
@@ -526,15 +529,15 @@ class BertPredictionHeadTransform(eqx.Module):
         *,
         key: PRNGKeyArray | None = None,
     ) -> Float[Array, "seq_len hidden_size"]:
-        hidden_states = jax.vmap(self.dense)(hidden_states)
+        hidden_states = self.dense(hidden_states)
         hidden_states = jax.nn.gelu(hidden_states)
-        hidden_states = jax.vmap(self.LayerNorm)(hidden_states)
+        hidden_states = self.LayerNorm(hidden_states)
         return hidden_states
 
 
 class BertLMPredictionHead(eqx.Module):
     transform: BertPredictionHeadTransform
-    bias: jax.Array
+    bias: Array
 
     def __init__(
         self,
@@ -557,7 +560,7 @@ class BertLMPredictionHead(eqx.Module):
         key: PRNGKeyArray | None = None,
     ) -> Float[Array, "seq_len vocab_size"]:
         hs = self.transform(hidden_states, key=key)
-        logits = hs @ embedding_weight.T
+        logits = jnp.einsum("...d, vd->...v", hs, embedding_weight)
         logits = logits + self.bias
         return logits
 
@@ -616,10 +619,10 @@ class BertForMaskedLM(eqx.Module, HuggingFaceCompatibleModule):
 
     def __call__(
         self,
-        input_ids: Int[Array, " seq_len"],
-        position_ids: Int[Array, " seq_len"],
-        token_type_ids: Int[Array, " seq_len"],
-        attention_mask: Int[Array, " seq_len"] | None = None,
+        input_ids: Int[Array, " ... seq_len"],
+        position_ids: Int[Array, "... seq_len"],
+        token_type_ids: Int[Array, "... seq_len"],
+        attention_mask: Int[Array, "... seq_len"] | None = None,
         *,
         key: PRNGKeyArray | None = None,
     ):
@@ -636,9 +639,8 @@ class BertForMaskedLM(eqx.Module, HuggingFaceCompatibleModule):
         logits = self.cls(sequence_output, w, key=cls_key)
         return logits
 
-    # Map HF state dict keys as-is for this class, except skip tied decoder weight
     @classmethod
-    def normalize_hf_key_for_eqx(cls, key: str) -> str | None:  # type: ignore[override]
+    def normalize_hf_key_for_eqx(cls, key: str) -> str | None: 
         if key.startswith("cls.predictions.decoder.weight"):
             return None
         return key

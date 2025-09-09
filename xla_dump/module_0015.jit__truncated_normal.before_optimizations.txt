@@ -1,0 +1,352 @@
+HloModule jit__truncated_normal, entry_computation_layout={(u32[2]{0}, s32[], s32[])->f32[16,8]{1,0}}, allow_spmd_sharding_propagation_to_parameters={true,true,true}, allow_spmd_sharding_propagation_to_output={true}, frontend_attributes={xla.sdy.meshes={empty_mesh = #sdy.mesh<[]>}}
+
+%closed_call.181 (Arg_0.121: s32[], Arg_1.122: u32[16,8], Arg_2.123: u32[16,8], Arg_3.124: u32[], Arg_4.125: u32[], Arg_5.126: u32[], Arg_6.127: u32[4], Arg_7.128: u32[4]) -> (s32[], u32[16,8], u32[16,8], u32[], u32[], /*index=5*/u32[], u32[4], u32[4]) {
+  %Arg_0.121 = s32[] parameter(0)
+  %constant.130 = s32[] constant(1)
+  %add.131 = s32[] add(%Arg_0.121, %constant.130), metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %Arg_1.122 = u32[16,8]{1,0} parameter(1)
+  %Arg_2.123 = u32[16,8]{1,0} parameter(2)
+  %add.134 = u32[16,8]{1,0} add(%Arg_1.122, %Arg_2.123), metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %Arg_6.127 = u32[4]{0} parameter(6)
+  %slice.132 = u32[1]{0} slice(%Arg_6.127), slice={[0:1]}, metadata={op_name="slice" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %squeeze.133 = u32[] reshape(%slice.132), metadata={op_name="squeeze" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %shift_left.135 = u32[16,8]{1,0} broadcast(%squeeze.133), dimensions={}, metadata={op_name="shift_left" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %shift_left.136 = u32[16,8]{1,0} shift-left(%Arg_2.123, %shift_left.135), metadata={op_name="shift_left" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.129 = u32[] constant(32)
+  %sub.137 = u32[] subtract(%constant.129, %squeeze.133), metadata={op_name="sub" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %shift_right_logical.138 = u32[16,8]{1,0} broadcast(%sub.137), dimensions={}, metadata={op_name="shift_right_logical" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %shift_right_logical.139 = u32[16,8]{1,0} shift-right-logical(%Arg_2.123, %shift_right_logical.138), metadata={op_name="shift_right_logical" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %or.140 = u32[16,8]{1,0} or(%shift_left.136, %shift_right_logical.139), metadata={op_name="or" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %xor.141 = u32[16,8]{1,0} xor(%add.134, %or.140), metadata={op_name="xor" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %add.144 = u32[16,8]{1,0} add(%add.134, %xor.141), metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %slice.142 = u32[1]{0} slice(%Arg_6.127), slice={[1:2]}, metadata={op_name="slice" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %squeeze.143 = u32[] reshape(%slice.142), metadata={op_name="squeeze" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %shift_left.145 = u32[16,8]{1,0} broadcast(%squeeze.143), dimensions={}, metadata={op_name="shift_left" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %shift_left.146 = u32[16,8]{1,0} shift-left(%xor.141, %shift_left.145), metadata={op_name="shift_left" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %sub.147 = u32[] subtract(%constant.129, %squeeze.143), metadata={op_name="sub" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %shift_right_logical.148 = u32[16,8]{1,0} broadcast(%sub.147), dimensions={}, metadata={op_name="shift_right_logical" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %shift_right_logical.149 = u32[16,8]{1,0} shift-right-logical(%xor.141, %shift_right_logical.148), metadata={op_name="shift_right_logical" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %or.150 = u32[16,8]{1,0} or(%shift_left.146, %shift_right_logical.149), metadata={op_name="or" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %xor.151 = u32[16,8]{1,0} xor(%add.144, %or.150), metadata={op_name="xor" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %add.154 = u32[16,8]{1,0} add(%add.144, %xor.151), metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %slice.152 = u32[1]{0} slice(%Arg_6.127), slice={[2:3]}, metadata={op_name="slice" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %squeeze.153 = u32[] reshape(%slice.152), metadata={op_name="squeeze" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %shift_left.155 = u32[16,8]{1,0} broadcast(%squeeze.153), dimensions={}, metadata={op_name="shift_left" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %shift_left.156 = u32[16,8]{1,0} shift-left(%xor.151, %shift_left.155), metadata={op_name="shift_left" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %sub.157 = u32[] subtract(%constant.129, %squeeze.153), metadata={op_name="sub" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %shift_right_logical.158 = u32[16,8]{1,0} broadcast(%sub.157), dimensions={}, metadata={op_name="shift_right_logical" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %shift_right_logical.159 = u32[16,8]{1,0} shift-right-logical(%xor.151, %shift_right_logical.158), metadata={op_name="shift_right_logical" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %or.160 = u32[16,8]{1,0} or(%shift_left.156, %shift_right_logical.159), metadata={op_name="or" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %xor.161 = u32[16,8]{1,0} xor(%add.154, %or.160), metadata={op_name="xor" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %add.164 = u32[16,8]{1,0} add(%add.154, %xor.161), metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %Arg_3.124 = u32[] parameter(3)
+  %add.172 = u32[16,8]{1,0} broadcast(%Arg_3.124), dimensions={}, metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %add.173 = u32[16,8]{1,0} add(%add.164, %add.172), metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %slice.162 = u32[1]{0} slice(%Arg_6.127), slice={[3:4]}, metadata={op_name="slice" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %squeeze.163 = u32[] reshape(%slice.162), metadata={op_name="squeeze" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %shift_left.165 = u32[16,8]{1,0} broadcast(%squeeze.163), dimensions={}, metadata={op_name="shift_left" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %shift_left.166 = u32[16,8]{1,0} shift-left(%xor.161, %shift_left.165), metadata={op_name="shift_left" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %sub.167 = u32[] subtract(%constant.129, %squeeze.163), metadata={op_name="sub" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %shift_right_logical.168 = u32[16,8]{1,0} broadcast(%sub.167), dimensions={}, metadata={op_name="shift_right_logical" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %shift_right_logical.169 = u32[16,8]{1,0} shift-right-logical(%xor.161, %shift_right_logical.168), metadata={op_name="shift_right_logical" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %or.170 = u32[16,8]{1,0} or(%shift_left.166, %shift_right_logical.169), metadata={op_name="or" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %xor.171 = u32[16,8]{1,0} xor(%add.164, %or.170), metadata={op_name="xor" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %Arg_4.125 = u32[] parameter(4)
+  %add.174 = u32[16,8]{1,0} broadcast(%Arg_4.125), dimensions={}, metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %add.175 = u32[16,8]{1,0} add(%xor.171, %add.174), metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %add.176 = s32[] add(%Arg_0.121, %constant.130), metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %convert_element_type.177 = u32[] convert(%add.176), metadata={op_name="convert_element_type" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %add.178 = u32[16,8]{1,0} broadcast(%convert_element_type.177), dimensions={}, metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %add.179 = u32[16,8]{1,0} add(%add.175, %add.178), metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %Arg_5.126 = u32[] parameter(5)
+  %Arg_7.128 = u32[4]{0} parameter(7)
+  ROOT %tuple.180 = (s32[], u32[16,8]{1,0}, u32[16,8]{1,0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) tuple(%add.131, %add.173, %add.179, %Arg_4.125, %Arg_5.126, /*index=5*/%Arg_3.124, %Arg_7.128, %Arg_6.127)
+}
+
+%region_0.193 (arg_tuple.110: (s32[], s32[], u32[16,8], u32[16,8], u32[], /*index=5*/u32[], u32[], u32[4], u32[4])) -> (s32[], s32[], u32[16,8], u32[16,8], u32[], /*index=5*/u32[], u32[], u32[4], u32[4]) {
+  %arg_tuple.110 = (s32[], s32[], u32[16,8]{1,0}, u32[16,8]{1,0}, u32[], /*index=5*/u32[], u32[], u32[4]{0}, u32[4]{0}) parameter(0)
+  %get-tuple-element.111 = s32[] get-tuple-element(%arg_tuple.110), index=0
+  %constant.120 = s32[] constant(1)
+  %add.191 = s32[] add(%get-tuple-element.111, %constant.120), metadata={op_name="while/body/add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %get-tuple-element.112 = s32[] get-tuple-element(%arg_tuple.110), index=1
+  %get-tuple-element.113 = u32[16,8]{1,0} get-tuple-element(%arg_tuple.110), index=2
+  %get-tuple-element.114 = u32[16,8]{1,0} get-tuple-element(%arg_tuple.110), index=3
+  %get-tuple-element.115 = u32[] get-tuple-element(%arg_tuple.110), index=4
+  %get-tuple-element.116 = u32[] get-tuple-element(%arg_tuple.110), index=5
+  %get-tuple-element.117 = u32[] get-tuple-element(%arg_tuple.110), index=6
+  %get-tuple-element.118 = u32[4]{0} get-tuple-element(%arg_tuple.110), index=7
+  %get-tuple-element.119 = u32[4]{0} get-tuple-element(%arg_tuple.110), index=8
+  %closed_call.182 = (s32[], u32[16,8]{1,0}, u32[16,8]{1,0}, u32[], u32[], /*index=5*/u32[], u32[4]{0}, u32[4]{0}) call(%get-tuple-element.112, %get-tuple-element.113, %get-tuple-element.114, %get-tuple-element.115, %get-tuple-element.116, /*index=5*/%get-tuple-element.117, %get-tuple-element.118, %get-tuple-element.119), to_apply=%closed_call.181, metadata={op_name="while/body/closed_call" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %closed_call.183 = s32[] get-tuple-element(%closed_call.182), index=0, metadata={op_name="while/body/closed_call" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %closed_call.184 = u32[16,8]{1,0} get-tuple-element(%closed_call.182), index=1, metadata={op_name="while/body/closed_call" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %closed_call.185 = u32[16,8]{1,0} get-tuple-element(%closed_call.182), index=2, metadata={op_name="while/body/closed_call" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %closed_call.186 = u32[] get-tuple-element(%closed_call.182), index=3, metadata={op_name="while/body/closed_call" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %closed_call.187 = u32[] get-tuple-element(%closed_call.182), index=4, metadata={op_name="while/body/closed_call" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %closed_call.188 = u32[] get-tuple-element(%closed_call.182), index=5, metadata={op_name="while/body/closed_call" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %closed_call.189 = u32[4]{0} get-tuple-element(%closed_call.182), index=6, metadata={op_name="while/body/closed_call" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %closed_call.190 = u32[4]{0} get-tuple-element(%closed_call.182), index=7, metadata={op_name="while/body/closed_call" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  ROOT %tuple.192 = (s32[], s32[], u32[16,8]{1,0}, u32[16,8]{1,0}, u32[], /*index=5*/u32[], u32[], u32[4]{0}, u32[4]{0}) tuple(%add.191, %closed_call.183, %closed_call.184, %closed_call.185, %closed_call.186, /*index=5*/%closed_call.187, %closed_call.188, %closed_call.189, %closed_call.190)
+}
+
+%region_1.206 (arg_tuple.194: (s32[], s32[], u32[16,8], u32[16,8], u32[], /*index=5*/u32[], u32[], u32[4], u32[4])) -> pred[] {
+  %arg_tuple.194 = (s32[], s32[], u32[16,8]{1,0}, u32[16,8]{1,0}, u32[], /*index=5*/u32[], u32[], u32[4]{0}, u32[4]{0}) parameter(0)
+  %get-tuple-element.196 = s32[] get-tuple-element(%arg_tuple.194), index=1
+  %get-tuple-element.197 = u32[16,8]{1,0} get-tuple-element(%arg_tuple.194), index=2
+  %get-tuple-element.198 = u32[16,8]{1,0} get-tuple-element(%arg_tuple.194), index=3
+  %get-tuple-element.199 = u32[] get-tuple-element(%arg_tuple.194), index=4
+  %get-tuple-element.200 = u32[] get-tuple-element(%arg_tuple.194), index=5
+  %get-tuple-element.201 = u32[] get-tuple-element(%arg_tuple.194), index=6
+  %get-tuple-element.202 = u32[4]{0} get-tuple-element(%arg_tuple.194), index=7
+  %get-tuple-element.203 = u32[4]{0} get-tuple-element(%arg_tuple.194), index=8
+  %get-tuple-element.195 = s32[] get-tuple-element(%arg_tuple.194), index=0
+  %constant.204 = s32[] constant(5)
+  ROOT %lt.205 = pred[] compare(%get-tuple-element.195, %constant.204), direction=LT, metadata={op_name="while/cond/lt" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+}
+
+%threefry2x32.219 (Linear.96: u32[], Linear.97: u32[], Linear.98: u32[16,8], Linear.99: u32[16,8]) -> (u32[16,8], u32[16,8]) {
+  %constant.100 = s32[] constant(0)
+  %Linear.98 = u32[16,8]{1,0} parameter(2), metadata={op_name="Linear.__init__"}
+  %Linear.96 = u32[] parameter(0), metadata={op_name="Linear.__init__"}
+  %add.106 = u32[16,8]{1,0} broadcast(%Linear.96), dimensions={}, metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %add.107 = u32[16,8]{1,0} add(%Linear.98, %add.106), metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %Linear.99 = u32[16,8]{1,0} parameter(3), metadata={op_name="Linear.__init__"}
+  %Linear.97 = u32[] parameter(1), metadata={op_name="Linear.__init__"}
+  %add.108 = u32[16,8]{1,0} broadcast(%Linear.97), dimensions={}, metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %add.109 = u32[16,8]{1,0} add(%Linear.99, %add.108), metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %xor.104 = u32[] xor(%Linear.96, %Linear.97), metadata={op_name="xor" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.101 = u32[] constant(466688986)
+  %xor.105 = u32[] xor(%xor.104, %constant.101), metadata={op_name="xor" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.102 = u32[4]{0} constant({13, 15, 26, 6})
+  %constant.103 = u32[4]{0} constant({17, 29, 16, 24})
+  %while.207 = (s32[], s32[], u32[16,8]{1,0}, u32[16,8]{1,0}, u32[], /*index=5*/u32[], u32[], u32[4]{0}, u32[4]{0}) tuple(%constant.100, %constant.100, %add.107, %add.109, %Linear.97, /*index=5*/%xor.105, %Linear.96, %constant.102, %constant.103), metadata={op_name="while" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %while.208 = (s32[], s32[], u32[16,8]{1,0}, u32[16,8]{1,0}, u32[], /*index=5*/u32[], u32[], u32[4]{0}, u32[4]{0}) while(%while.207), condition=%region_1.206, body=%region_0.193, metadata={op_name="while" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %while.209 = s32[] get-tuple-element(%while.208), index=0, metadata={op_name="while" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %while.210 = s32[] get-tuple-element(%while.208), index=1, metadata={op_name="while" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %while.213 = u32[] get-tuple-element(%while.208), index=4, metadata={op_name="while" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %while.214 = u32[] get-tuple-element(%while.208), index=5, metadata={op_name="while" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %while.215 = u32[] get-tuple-element(%while.208), index=6, metadata={op_name="while" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %while.216 = u32[4]{0} get-tuple-element(%while.208), index=7, metadata={op_name="while" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %while.217 = u32[4]{0} get-tuple-element(%while.208), index=8, metadata={op_name="while" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %while.211 = u32[16,8]{1,0} get-tuple-element(%while.208), index=2, metadata={op_name="while" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %while.212 = u32[16,8]{1,0} get-tuple-element(%while.208), index=3, metadata={op_name="while" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  ROOT %tuple.218 = (u32[16,8]{1,0}, u32[16,8]{1,0}) tuple(%while.211, %while.212)
+}
+
+%_uniform.241 (Arg_0.68: u32[2], Arg_1.69: f32[], Arg_2.70: f32[]) -> f32[16,8] {
+  %Arg_1.69 = f32[] parameter(1)
+  %broadcast_in_dim.81 = f32[1,1]{1,0} reshape(%Arg_1.69), metadata={op_name="broadcast_in_dim" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %max.237 = f32[1,1]{1,0} broadcast(%broadcast_in_dim.81), dimensions={0,1}, metadata={op_name="max" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %max.238 = f32[] reshape(%max.237), metadata={op_name="max" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %max.239 = f32[16,8]{1,0} broadcast(%max.238), dimensions={}, metadata={op_name="max" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %Arg_0.68 = u32[2]{0} parameter(0)
+  %slice.83 = u32[1]{0} slice(%Arg_0.68), slice={[0:1]}, metadata={op_name="slice" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %squeeze.84 = u32[] reshape(%slice.83), metadata={op_name="squeeze" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %slice.85 = u32[1]{0} slice(%Arg_0.68), slice={[1:2]}, metadata={op_name="slice" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %squeeze.86 = u32[] reshape(%slice.85), metadata={op_name="squeeze" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %iota_2x32_shape.87 = u64[16]{0} iota(), iota_dimension=0, metadata={op_name="iota_2x32_shape" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %iota_2x32_shape.88 = u64[16,8]{1,0} broadcast(%iota_2x32_shape.87), dimensions={0}, metadata={op_name="iota_2x32_shape" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.79 = u64[] constant(8)
+  %iota_2x32_shape.80 = u64[16,8]{1,0} broadcast(%constant.79), dimensions={}, metadata={op_name="iota_2x32_shape" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %iota_2x32_shape.91 = u64[16,8]{1,0} multiply(%iota_2x32_shape.88, %iota_2x32_shape.80), metadata={op_name="iota_2x32_shape" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %iota_2x32_shape.89 = u64[8]{0} iota(), iota_dimension=0, metadata={op_name="iota_2x32_shape" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %iota_2x32_shape.90 = u64[16,8]{1,0} broadcast(%iota_2x32_shape.89), dimensions={1}, metadata={op_name="iota_2x32_shape" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %iota_2x32_shape.92 = u64[16,8]{1,0} add(%iota_2x32_shape.91, %iota_2x32_shape.90), metadata={op_name="iota_2x32_shape" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.77 = u64[] constant(32)
+  %iota_2x32_shape.78 = u64[16,8]{1,0} broadcast(%constant.77), dimensions={}, metadata={op_name="iota_2x32_shape" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %iota_2x32_shape.93 = u64[16,8]{1,0} shift-right-logical(%iota_2x32_shape.92, %iota_2x32_shape.78), metadata={op_name="iota_2x32_shape" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %iota_2x32_shape.95 = u32[16,8]{1,0} convert(%iota_2x32_shape.93), metadata={op_name="iota_2x32_shape" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %iota_2x32_shape.94 = u32[16,8]{1,0} convert(%iota_2x32_shape.92), metadata={op_name="iota_2x32_shape" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %call.220 = (u32[16,8]{1,0}, u32[16,8]{1,0}) call(%squeeze.84, %squeeze.86, %iota_2x32_shape.95, %iota_2x32_shape.94), to_apply=%threefry2x32.219, metadata={source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %get-tuple-element.221 = u32[16,8]{1,0} get-tuple-element(%call.220), index=0, metadata={source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %get-tuple-element.222 = u32[16,8]{1,0} get-tuple-element(%call.220), index=1, metadata={source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %xor.223 = u32[16,8]{1,0} xor(%get-tuple-element.221, %get-tuple-element.222), metadata={op_name="xor" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.75 = u32[] constant(9)
+  %shift_right_logical.76 = u32[16,8]{1,0} broadcast(%constant.75), dimensions={}, metadata={op_name="shift_right_logical" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %shift_right_logical.224 = u32[16,8]{1,0} shift-right-logical(%xor.223, %shift_right_logical.76), metadata={op_name="shift_right_logical" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.73 = u32[] constant(1065353216)
+  %or.74 = u32[16,8]{1,0} broadcast(%constant.73), dimensions={}, metadata={op_name="or" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %or.225 = u32[16,8]{1,0} or(%shift_right_logical.224, %or.74), metadata={op_name="or" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %bitcast_convert_type.226 = f32[16,8]{1,0} bitcast-convert(%or.225), metadata={op_name="bitcast_convert_type" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.71 = f32[] constant(1)
+  %sub.72 = f32[16,8]{1,0} broadcast(%constant.71), dimensions={}, metadata={op_name="sub" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %sub.227 = f32[16,8]{1,0} subtract(%bitcast_convert_type.226, %sub.72), metadata={op_name="sub" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %Arg_2.70 = f32[] parameter(2)
+  %broadcast_in_dim.82 = f32[1,1]{1,0} reshape(%Arg_2.70), metadata={op_name="broadcast_in_dim" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %sub.228 = f32[1,1]{1,0} subtract(%broadcast_in_dim.82, %broadcast_in_dim.81), metadata={op_name="sub" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %mul.229 = f32[1,1]{1,0} broadcast(%sub.228), dimensions={0,1}, metadata={op_name="mul" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %mul.230 = f32[] reshape(%mul.229), metadata={op_name="mul" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %mul.231 = f32[16,8]{1,0} broadcast(%mul.230), dimensions={}, metadata={op_name="mul" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %mul.232 = f32[16,8]{1,0} multiply(%sub.227, %mul.231), metadata={op_name="mul" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %add.233 = f32[1,1]{1,0} broadcast(%broadcast_in_dim.81), dimensions={0,1}, metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %add.234 = f32[] reshape(%add.233), metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %add.235 = f32[16,8]{1,0} broadcast(%add.234), dimensions={}, metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %add.236 = f32[16,8]{1,0} add(%mul.232, %add.235), metadata={op_name="add" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  ROOT %max.240 = f32[16,8]{1,0} maximum(%max.239, %add.236), metadata={op_name="max" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+}
+
+%clip.334 (Arg_0.327: f32[16,8], Arg_1.328: f32[], Arg_2.329: f32[]) -> f32[16,8] {
+  %Arg_2.329 = f32[] parameter(2)
+  %min.332 = f32[16,8]{1,0} broadcast(%Arg_2.329), dimensions={}, metadata={op_name="min" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %Arg_1.328 = f32[] parameter(1)
+  %max.330 = f32[16,8]{1,0} broadcast(%Arg_1.328), dimensions={}, metadata={op_name="max" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %Arg_0.327 = f32[16,8]{1,0} parameter(0)
+  %max.331 = f32[16,8]{1,0} maximum(%max.330, %Arg_0.327), metadata={op_name="max" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  ROOT %min.333 = f32[16,8]{1,0} minimum(%min.332, %max.331), metadata={op_name="min" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+}
+
+ENTRY %main.336 (key.1: u32[2], lower.2: s32[], upper.3: s32[]) -> f32[16,8] {
+  %key.1 = u32[2]{0} parameter(0), metadata={op_name="key"}
+  %custom-call.61 = u32[2]{0} custom-call(%key.1), custom_call_target="Sharding", sharding={replicated}, frontend_attributes={xla.sdy.sharding="#sdy.sharding_per_value<[<@empty_mesh, [{}]>]>"}
+  %lower.2 = s32[] parameter(1), metadata={op_name="lower"}
+  %convert_element_type.62 = f32[] convert(%lower.2), metadata={op_name="jit(_truncated_normal)/convert_element_type" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.60 = f32[] constant(1.41421354)
+  %div.64 = f32[] divide(%convert_element_type.62, %constant.60), metadata={op_name="jit(_truncated_normal)/div" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf.65 = f32[] erf(%div.64), metadata={op_name="jit(_truncated_normal)/erf" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %upper.3 = s32[] parameter(2), metadata={op_name="upper"}
+  %convert_element_type.63 = f32[] convert(%upper.3), metadata={op_name="jit(_truncated_normal)/convert_element_type" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %div.66 = f32[] divide(%convert_element_type.63, %constant.60), metadata={op_name="jit(_truncated_normal)/div" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf.67 = f32[] erf(%div.66), metadata={op_name="jit(_truncated_normal)/erf" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %jit__uniform_.242 = f32[16,8]{1,0} call(%custom-call.61, %erf.65, %erf.67), to_apply=%_uniform.241, metadata={op_name="jit(_truncated_normal)/jit(_uniform)" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.278 = f32[16,8]{1,0} abs(%jit__uniform_.242), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.16 = f32[] constant(1)
+  %erf_inv.17 = f32[16,8]{1,0} broadcast(%constant.16), dimensions={}, metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.279 = pred[16,8]{1,0} compare(%erf_inv.278, %erf_inv.17), direction=EQ, metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.14 = f32[] constant(inf)
+  %erf_inv.15 = f32[16,8]{1,0} broadcast(%constant.14), dimensions={}, metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.280 = f32[16,8]{1,0} multiply(%jit__uniform_.242, %erf_inv.15), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.243 = f32[16,8]{1,0} negate(%jit__uniform_.242), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.244 = f32[16,8]{1,0} multiply(%jit__uniform_.242, %erf_inv.243), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.245 = f32[16,8]{1,0} log-plus-one(%erf_inv.244), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.246 = f32[16,8]{1,0} negate(%erf_inv.245), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.58 = f32[] constant(5)
+  %erf_inv.59 = f32[16,8]{1,0} broadcast(%constant.58), dimensions={}, metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.247 = pred[16,8]{1,0} compare(%erf_inv.246, %erf_inv.59), direction=LT, metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.20 = f32[] constant(1.50140941)
+  %erf_inv.21 = f32[16,8]{1,0} broadcast(%constant.20), dimensions={}, metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.18 = f32[] constant(2.83297682)
+  %erf_inv.19 = f32[16,8]{1,0} broadcast(%constant.18), dimensions={}, metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.274 = f32[16,8]{1,0} select(%erf_inv.247, %erf_inv.21, %erf_inv.19), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.24 = f32[] constant(0.246640727)
+  %erf_inv.25 = f32[16,8]{1,0} broadcast(%constant.24), dimensions={}, metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.22 = f32[] constant(1.00167406)
+  %erf_inv.23 = f32[16,8]{1,0} broadcast(%constant.22), dimensions={}, metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.271 = f32[16,8]{1,0} select(%erf_inv.247, %erf_inv.25, %erf_inv.23), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.28 = f32[] constant(-0.00417768164)
+  %erf_inv.29 = f32[16,8]{1,0} broadcast(%constant.28), dimensions={}, metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.26 = f32[] constant(0.00943887047)
+  %erf_inv.27 = f32[16,8]{1,0} broadcast(%constant.26), dimensions={}, metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.268 = f32[16,8]{1,0} select(%erf_inv.247, %erf_inv.29, %erf_inv.27), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.32 = f32[] constant(-0.00125372503)
+  %erf_inv.33 = f32[16,8]{1,0} broadcast(%constant.32), dimensions={}, metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.30 = f32[] constant(-0.0076224613)
+  %erf_inv.31 = f32[16,8]{1,0} broadcast(%constant.30), dimensions={}, metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.265 = f32[16,8]{1,0} select(%erf_inv.247, %erf_inv.33, %erf_inv.31), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.36 = f32[] constant(0.00021858087)
+  %erf_inv.37 = f32[16,8]{1,0} broadcast(%constant.36), dimensions={}, metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.34 = f32[] constant(0.00573950773)
+  %erf_inv.35 = f32[16,8]{1,0} broadcast(%constant.34), dimensions={}, metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.262 = f32[16,8]{1,0} select(%erf_inv.247, %erf_inv.37, %erf_inv.35), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.40 = f32[] constant(-4.39150654e-06)
+  %erf_inv.41 = f32[16,8]{1,0} broadcast(%constant.40), dimensions={}, metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.38 = f32[] constant(-0.00367342844)
+  %erf_inv.39 = f32[16,8]{1,0} broadcast(%constant.38), dimensions={}, metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.259 = f32[16,8]{1,0} select(%erf_inv.247, %erf_inv.41, %erf_inv.39), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.44 = f32[] constant(-3.5233877e-06)
+  %erf_inv.45 = f32[16,8]{1,0} broadcast(%constant.44), dimensions={}, metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.42 = f32[] constant(0.00134934322)
+  %erf_inv.43 = f32[16,8]{1,0} broadcast(%constant.42), dimensions={}, metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.256 = f32[16,8]{1,0} select(%erf_inv.247, %erf_inv.45, %erf_inv.43), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.48 = f32[] constant(3.43273939e-07)
+  %erf_inv.49 = f32[16,8]{1,0} broadcast(%constant.48), dimensions={}, metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.46 = f32[] constant(0.000100950558)
+  %erf_inv.47 = f32[16,8]{1,0} broadcast(%constant.46), dimensions={}, metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.253 = f32[16,8]{1,0} select(%erf_inv.247, %erf_inv.49, %erf_inv.47), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.52 = f32[] constant(2.81022636e-08)
+  %erf_inv.53 = f32[16,8]{1,0} broadcast(%constant.52), dimensions={}, metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.50 = f32[] constant(-0.000200214257)
+  %erf_inv.51 = f32[16,8]{1,0} broadcast(%constant.50), dimensions={}, metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.252 = f32[16,8]{1,0} select(%erf_inv.247, %erf_inv.53, %erf_inv.51), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.56 = f32[] constant(2.5)
+  %erf_inv.57 = f32[16,8]{1,0} broadcast(%constant.56), dimensions={}, metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.248 = f32[16,8]{1,0} subtract(%erf_inv.246, %erf_inv.57), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.249 = f32[16,8]{1,0} sqrt(%erf_inv.246), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.54 = f32[] constant(3)
+  %erf_inv.55 = f32[16,8]{1,0} broadcast(%constant.54), dimensions={}, metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.250 = f32[16,8]{1,0} subtract(%erf_inv.249, %erf_inv.55), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.251 = f32[16,8]{1,0} select(%erf_inv.247, %erf_inv.248, %erf_inv.250), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.254 = f32[16,8]{1,0} multiply(%erf_inv.252, %erf_inv.251), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.255 = f32[16,8]{1,0} add(%erf_inv.253, %erf_inv.254), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.257 = f32[16,8]{1,0} multiply(%erf_inv.255, %erf_inv.251), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.258 = f32[16,8]{1,0} add(%erf_inv.256, %erf_inv.257), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.260 = f32[16,8]{1,0} multiply(%erf_inv.258, %erf_inv.251), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.261 = f32[16,8]{1,0} add(%erf_inv.259, %erf_inv.260), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.263 = f32[16,8]{1,0} multiply(%erf_inv.261, %erf_inv.251), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.264 = f32[16,8]{1,0} add(%erf_inv.262, %erf_inv.263), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.266 = f32[16,8]{1,0} multiply(%erf_inv.264, %erf_inv.251), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.267 = f32[16,8]{1,0} add(%erf_inv.265, %erf_inv.266), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.269 = f32[16,8]{1,0} multiply(%erf_inv.267, %erf_inv.251), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.270 = f32[16,8]{1,0} add(%erf_inv.268, %erf_inv.269), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.272 = f32[16,8]{1,0} multiply(%erf_inv.270, %erf_inv.251), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.273 = f32[16,8]{1,0} add(%erf_inv.271, %erf_inv.272), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.275 = f32[16,8]{1,0} multiply(%erf_inv.273, %erf_inv.251), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.276 = f32[16,8]{1,0} add(%erf_inv.274, %erf_inv.275), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.277 = f32[16,8]{1,0} multiply(%erf_inv.276, %jit__uniform_.242), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %erf_inv.281 = f32[16,8]{1,0} select(%erf_inv.279, %erf_inv.280, %erf_inv.277), metadata={op_name="jit(_truncated_normal)/erf_inv" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.4 = f32[] constant(1.41421354)
+  %mul.5 = f32[16,8]{1,0} broadcast(%constant.4), dimensions={}, metadata={op_name="jit(_truncated_normal)/mul" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %mul.282 = f32[16,8]{1,0} multiply(%erf_inv.281, %mul.5), metadata={op_name="jit(_truncated_normal)/mul" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.285 = pred[] compare(%convert_element_type.62, %convert_element_type.62), direction=NE, metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.12 = f32[] constant(nan)
+  %nextafter.286 = s32[] bitcast-convert(%constant.12), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.13 = f32[] constant(inf)
+  %nextafter.289 = pred[] compare(%convert_element_type.62, %constant.13), direction=EQ, metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.284 = s32[] bitcast-convert(%constant.13), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.283 = s32[] bitcast-convert(%convert_element_type.62), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.10 = s32[] constant(2147483647)
+  %nextafter.287 = s32[] and(%nextafter.283, %constant.10), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.9 = s32[] constant(0)
+  %nextafter.290 = pred[] compare(%nextafter.287, %constant.9), direction=EQ, metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.288 = s32[] and(%nextafter.284, %constant.10), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.291 = pred[] compare(%nextafter.288, %constant.9), direction=EQ, metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.11 = s32[] constant(-2147483648)
+  %nextafter.293 = s32[] and(%nextafter.284, %constant.11), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.8 = s32[] constant(1)
+  %nextafter.294 = s32[] or(%nextafter.293, %constant.8), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.300 = s32[] select(%nextafter.291, %nextafter.284, %nextafter.294), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.296 = pred[] compare(%nextafter.287, %nextafter.288), direction=GT, metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.292 = s32[] and(%nextafter.283, %constant.11), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.295 = pred[] compare(%nextafter.292, %nextafter.293), direction=NE, metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.297 = pred[] or(%nextafter.296, %nextafter.295), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.7 = s32[] constant(-1)
+  %nextafter.298 = s32[] select(%nextafter.297, %constant.7, %constant.8), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.299 = s32[] add(%nextafter.283, %nextafter.298), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.301 = s32[] select(%nextafter.290, %nextafter.300, %nextafter.299), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.302 = s32[] select(%nextafter.289, %nextafter.284, %nextafter.301), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.303 = s32[] select(%nextafter.285, %nextafter.286, %nextafter.302), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.304 = f32[] bitcast-convert(%nextafter.303), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.307 = pred[] compare(%convert_element_type.63, %convert_element_type.63), direction=NE, metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.308 = s32[] bitcast-convert(%constant.12), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %constant.6 = f32[] constant(-inf)
+  %nextafter.311 = pred[] compare(%convert_element_type.63, %constant.6), direction=EQ, metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.306 = s32[] bitcast-convert(%constant.6), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.305 = s32[] bitcast-convert(%convert_element_type.63), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.309 = s32[] and(%nextafter.305, %constant.10), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.312 = pred[] compare(%nextafter.309, %constant.9), direction=EQ, metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.310 = s32[] and(%nextafter.306, %constant.10), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.313 = pred[] compare(%nextafter.310, %constant.9), direction=EQ, metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.315 = s32[] and(%nextafter.306, %constant.11), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.316 = s32[] or(%nextafter.315, %constant.8), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.322 = s32[] select(%nextafter.313, %nextafter.306, %nextafter.316), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.318 = pred[] compare(%nextafter.309, %nextafter.310), direction=GT, metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.314 = s32[] and(%nextafter.305, %constant.11), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.317 = pred[] compare(%nextafter.314, %nextafter.315), direction=NE, metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.319 = pred[] or(%nextafter.318, %nextafter.317), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.320 = s32[] select(%nextafter.319, %constant.7, %constant.8), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.321 = s32[] add(%nextafter.305, %nextafter.320), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.323 = s32[] select(%nextafter.312, %nextafter.322, %nextafter.321), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.324 = s32[] select(%nextafter.311, %nextafter.306, %nextafter.323), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.325 = s32[] select(%nextafter.307, %nextafter.308, %nextafter.324), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  %nextafter.326 = f32[] bitcast-convert(%nextafter.325), metadata={op_name="jit(_truncated_normal)/nextafter" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+  ROOT %jit_clip_.335 = f32[16,8]{1,0} call(%mul.282, %nextafter.304, %nextafter.326), to_apply=%clip.334, metadata={op_name="jit(_truncated_normal)/jit(clip)" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
+}
+
