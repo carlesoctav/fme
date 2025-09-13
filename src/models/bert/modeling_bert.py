@@ -12,7 +12,6 @@ from jax import P
 from jax.interpreters.pxla import thread_resources
 from src import HuggingFaceCompatibleModule, nn
 from src.nn import functional as F
-from src.distributed import maybe_shard
 
 
 Pytree = Any
@@ -182,9 +181,6 @@ class BertSelfAttention(eqx.Module):
         k_heads = _to_heads(k)
         v_heads = _to_heads(v)
 
-        q_heads = maybe_shard(q_heads, self.btnh_spec) 
-        k_heads = maybe_shard(k_heads, self.bsnh_spec)
-        v_heads = maybe_shard(v_heads, self.bsnh_spec)
 
         if attention_mask is not None:
             attn_mask = F.make_4D_attention_mask(attention_mask, self.num_attention_heads)
@@ -195,7 +191,6 @@ class BertSelfAttention(eqx.Module):
             attn_heads = F.dot_product_attention(q_heads, k_heads, v_heads, dropout=self.dropout, key=dropout_key) 
 
         attn = attn_heads.reshape(*attn_heads.shape[:-2], self.all_head_size)
-        attn_heads = maybe_shard(attn_heads, self.self_attn_out_spec) #(..., seq_len, nheads* head_size)
         return attn
 
 

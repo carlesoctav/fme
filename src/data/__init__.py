@@ -1,6 +1,6 @@
-from .transforms import DataTransformsMakeAttentionMask
+from .transforms import DataTransformsForMaskedLMGivenText
 
 
 __all__ = [
-    "DataTransformsMakeAttentionMask"
+    "DataTransformsForMaskedLMGivenText"
 ]

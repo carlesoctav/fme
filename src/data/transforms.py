@@ -5,7 +5,7 @@ import numpy as np
 from transformers import PreTrainedTokenizerBase
 
 @dataclass
-class DataTransformsMakeAttentionMask(grain.transforms.RandomMap):
+class DataTransformsForMaskedLMGivenText(grain.transforms.RandomMap):
     tokenizer: PreTrainedTokenizerBase
     columns: str
     max_length: int
@@ -115,23 +115,3 @@ class DataTransformsMakeAttentionMask(grain.transforms.RandomMap):
         )
 
         return output_ids, labels
-
-
-# class DataTransformsMakeAttentionMask(grain.transforms.Map):
-#     tokenizer: PreTrainedTokenizerBase
-#     column: str
-#
-#
-#     def map(self, x):
-#         if not self.column in x:
-#             raise ValueError(f"Column {self.column} not found in the input data.")
-#
-#         if self.column in x and self.column["input_ids"] not in x[self.column]:
-#                 raise ValueError(f"Column {self.column} not found in the input data. please tokenize first. with Transforms that create  input_ids") 
-#
-#
-#         if "attention_mask" in x[self.column]:
-#             x[self.column]["attention_mask"] = make_attention_mask(x[self.column]["attention_mask"])
-#         else:
-#             pass
-

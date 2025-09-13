@@ -6,7 +6,6 @@ from jax.nn.initializers import normal
 from jaxtyping import Array, Int, PRNGKeyArray
 
 from src import Darray
-from src.distributed import maybe_shard
 
 
 default_init = normal(stddev=0.02)
@@ -17,8 +16,6 @@ class Embedding(eqx.Module):
     embedding_dim: int = field(static=True)
     dtype: jnp.dtype = field(static=True)
     params_dtype: jnp.dtype = field(static=True)
-    input_pspec: jax.P | None = field(static = True)
-    output_pspec: jax.P | None = field(static = True)
 
     def __init__(
         self,
@@ -55,7 +52,6 @@ class Embedding(eqx.Module):
 
         If x has shape (...,), returns (..., embedding_dim).
         """
-        x = maybe_shard(x, self.input_pspec)
         weight = getattr(self.weight, "value", self.weight)
         out = weight[x].astype(self.dtype)
-        return maybe_shard(out, self.output_pspec)
+        return out 

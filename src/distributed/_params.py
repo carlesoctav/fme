@@ -10,7 +10,6 @@ import dataclasses as dc
 import logging
 
 from src import Darray
-from flax import nnx
 
 
 def is_darray(x: tp.Any) -> bool:

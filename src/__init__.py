@@ -5,11 +5,13 @@ except Exception:  # pragma: no cover
 
 from ._darray import Darray
 from ._filter import iter_module, apply_transforms
+from ._training import Optimizer
 
 
 __all__ = [
     "HuggingFaceCompatibleModule",
     "Darray",
     "iter_module", 
-    "apply_tranforms"
+    "apply_tranforms",
+    "Optimizer"
 ]

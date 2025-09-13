@@ -2,10 +2,9 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jax.nn.initializers import Initializer, kaiming_normal, zeros
-from jaxtyping import Array, PRNGKeyArray, Float
+from jaxtyping import Array, Float, PRNGKeyArray
 
 from src import Darray
-from src.distributed import maybe_shard
 
 from ._utils import promote_dtype
 
@@ -22,8 +21,6 @@ class Linear(eqx.Module):
     dtype: jnp.dtype = eqx.field(static=True)
     params_dtype: jnp.dtype = eqx.field(static=True)
     initializer: Initializer = eqx.field(static = True)
-    input_pspec: jax.P | None = eqx.field(static = True)
-    output_pspec: jax.P | None = eqx.field(static = True)
 
     def __init__(
         self,
@@ -59,8 +56,6 @@ class Linear(eqx.Module):
             b = zeros(bkey, (out_features,), dtype=self.params_dtype)
             self.bias = Darray(value=b, pspec=bias_spec)
 
-        self.input_pspec = input_pspec
-        self.output_pspec = output_pspec
 
     def __call__(
         self,
@@ -69,7 +64,6 @@ class Linear(eqx.Module):
     ):
         weight = getattr(self.weight, "value", self.weight)
         w, x_ = promote_dtype(weight, x, dtype=self.dtype)
-        x_ = maybe_shard(x_, self.input_pspec)
         # Support any leading axes by multiplying on the last dimension.
         # Shapes: x_[..., in] @ w.T[in, out] -> out[..., out]
         output = x_ @ w.T
@@ -79,4 +73,4 @@ class Linear(eqx.Module):
             if b is not None:
                 output = output + b
 
-        return maybe_shard(output, self.output_pspec) 
+        return output 

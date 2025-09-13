@@ -161,6 +161,7 @@ def row_parallel(
             else:
                 norm_layout = outputs_layout
             return eqx.filter_shard(out, norm_layout)
+
     return make_module_with_sharding_constraint(
         module,
         params_partition_fn=_params_fn,

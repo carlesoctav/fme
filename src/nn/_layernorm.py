@@ -6,7 +6,6 @@ from jax.nn.initializers import ones as ones_init, zeros as zeros_init
 from jaxtyping import PRNGKeyArray
 
 from src import Darray
-from src.distributed import maybe_shard
 
 from ._utils import promote_dtype
 
@@ -22,8 +21,6 @@ class LayerNorm(eqx.Module):
     elementwise_affine: bool = eqx.field(static=True)
     dtype: jnp.dtype = eqx.field(static=True)
     params_dtype: jnp.dtype = eqx.field(static=True)
-    input_pspec: jax.P | None = eqx.field(static = True)
-    output_pspec: jax.P | None = eqx.field(static = True)
 
     def __init__(
         self,
@@ -59,8 +56,6 @@ class LayerNorm(eqx.Module):
             self.weight = None
             self.bias = None
 
-        self.input_pspec = input_pspec
-        self.output_pspec = output_pspec
 
 
     def __call__(
@@ -73,7 +68,6 @@ class LayerNorm(eqx.Module):
         (.., H). If normalized_shape=(C,H), inputs can be (.., C, H).
         """
         (x_,) = promote_dtype(x, dtype=self.dtype)
-        x_ = maybe_shard(x_, self.input_pspec)
         nd = x_.ndim
         k = len(self.normalized_shape)
         if k == 0 or nd < k:
@@ -100,5 +94,4 @@ class LayerNorm(eqx.Module):
             (b,) = promote_dtype(bias, dtype=self.dtype)
             y = y + b
 
-        y = maybe_shard(y, self.output_pspec)
         return y

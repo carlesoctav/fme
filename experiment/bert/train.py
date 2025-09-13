@@ -1,62 +1,116 @@
-import equinox as eqx
-import jax
-from transformers.models.bert.configuration_bert import BertConfig
-from src.models.bert.modeling_bert import BertModel, BertForMaskedLM
-from src.losses import softmax_cross_entropy_with_integer_labels
-import jax.numpy as jnp
+from collections.abc import Callable
 
-def masked_lm_loss_function(model: BertForMaskedLM, *args, ignore_index: int = -100):
+import equinox as eqx
+import grain
+import jax
+from datasets import load_dataset
+from transformers import PreTrainedTokenizerBase
+from transformers.models.bert.configuration_bert import BertConfig
+
+from src import Optimizer
+from src.data import DataTransformsForMaskedLMGivenText
+from src.distributed import get_partition_spec
+from src.losses import softmax_cross_entropy_with_integer_labels
+from src.models.bert.modeling_bert import BertForMaskedLM, BertModel
+
+
+def masked_lm_loss_function(model: BertForMaskedLM, batch, ignore_label: int = -100):
     """Compute masked LM loss, ignoring positions with label == ignore_index.
 
     - Vectorizes the model over batch.
     - Uses safe labels for ignored positions to avoid invalid indexing.
     - Normalizes by the number of unmasked tokens.
     """
-    x, y = args  
-    c, mask = y
-    logits = jax.vmap(model)(**x)
+    x = batch["input"]
+    y = batch["labels"]
+    logits = model(**x) 
+    per_token_loss = softmax_cross_entropy_with_integer_labels(logits, y, reduction = "mean")
 
-    per_token_loss = softmax_cross_entropy_with_integer_labels(logits, c, where= ~mask, reduction = "mean")
-    print(f"DEBUGPRINT[187]: train.py:12: per_token_loss={per_token_loss}")
+    return per_token_loss, None
 
-    return per_token_loss
-
-
-
-def main():
-    config = BertConfig(
-        vocab_size=100,
-        hidden_size=32,
-        num_hidden_layers=2,
-        num_attention_heads=4,
-        intermediate_size=64,
-        max_position_embeddings=128,
-        type_vocab_size=2,
-        hidden_dropout_prob=0.1,
-        layer_norm_eps=1e-12,
+def init_data_loader(
+    columns_to_tokenize: str,
+    ds_name: str,
+    num_epochs: int,
+    tokenizer: PreTrainedTokenizerBase,
+):
+    ds = load_dataset(ds_name, split = "QED")
+    ds = grain.MapDataset.source(ds)
+    transformations = [DataTransformsForMaskedLMGivenText(tokenizer, columns = "text", max_length = 512)]
+    data_loader = grain.DataLoader(
+        data_source = ds,
+        sampler = grain.samplers.IndexSampler(len(ds), shuffle = True, num_epochs = num_epochs),
+        operations = transformations
     )
-
-    key = jax.random.PRNGKey(0)
-    model = BertForMaskedLM(config, key=key, store_config = True)
-    model = eqx.nn.inference_mode(model)
-    batch_size = 4
-    seq_len = 10
-    input_ids = jax.random.randint(key, (batch_size, seq_len), minval=0, maxval=config.vocab_size)
-    print(f"DEBUGPRINT[190]: train.py:38: input_ids={input_ids}")
-    position_ids = jnp.arange(seq_len)[None, :].repeat(batch_size, axis=0)
-    print(f"DEBUGPRINT[189]: train.py:39: position_ids={position_ids}")
-    token_type_ids = jnp.zeros((batch_size, seq_len), dtype=jnp.int32)
-    print(f"DEBUGPRINT[191]: train.py:42: token_type_ids={token_type_ids}")
-    batch_input = {
-        "input_ids": input_ids,
-        "position_ids": position_ids,
-        "token_type_ids": token_type_ids,
-    }
-    batch_labels = jax.random.randint(key, (batch_size, seq_len), minval=0, maxval=config.vocab_size)
-    mask = jax.random.uniform(key, (batch_size, seq_len)) < 0.8
-    batch_labels = jnp.where(mask, -100, batch_labels)
-    print(f"DEBUGPRINT[192]: train.py:51: batch_labels={batch_labels}")
-    masked_lm_loss_function(model, batch_input,  (batch_labels, mask), ignore_index)
+    
+    return data_loader
 
 
-main()
+def init_model(
+    model_config,
+    optimizer_fn,
+    mesh = None,
+    shard = True
+):
+    model_config = BertConfig()
+    if not shard:
+        model = BertModel(config = model_config)
+        optimizer = Optimizer(model, optimizer_fn)
+        return model, optimizer
+    
+    @jax.jit
+    def init_jit_model(config):
+        model =  BertModel(config = model_config)
+        dp_partition_spec = get_partition_spec(model)
+        model= eqx.filter_shard(model, dp_partition_spec)
+        optimizer = Optimizer(optimizer_fn, model)
+        return model, optimizer
+
+
+    model, optimizer = init_jit_model(model_config)
+    return model, optimizer
+
+
+def init_train_step(loss_fn: Callable):
+    def train_step(
+        model, 
+        optimizer,
+        batch, 
+    ):
+        grad_fn = eqx.filter_value_and_grad(loss_fn, has_aux = True)
+
+        (loss, aux), grad = grad_fn(model, batch)
+        model, optimizer = optimizer(grad, model)
+
+        metrics = {"loss_step": loss, "aux_step": aux}
+
+        return model, optimizer, metrics
+
+    return eqx.filter_jit(train_step)
+
+
+def maybe_checkpoint():
+    pass
+
+
+def maybe_log_metrics():
+    pass
+
+
+def main(epochs = 10):
+    model, optimizer = init_model(debug = False)
+    data_loader = init_data_loader()
+    train_step = init_train_step(masked_lm_loss_function)
+
+    for epoch in epochs:
+        for local_step, batch in enumerate(data_loader):
+            model, optimizer, metrics = train_step(model, optimizer, batch)
+
+            maybe_log_metrics(metrics, local_step)
+            maybe_checkpoint(model, optimizer, data_loader, local_step)
+        
+        maybe_log_metrics(metrics, epoch)
+        maybe_checkpoint(model, optimizer, data_loader, epoch)
+        
+if __name__ == "__main__":
+    main()

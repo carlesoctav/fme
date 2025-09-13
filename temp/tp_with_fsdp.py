@@ -7,7 +7,7 @@ from jax import P, shard_map
 from src import apply_transforms, nn
 import dataclasses as dc
 import jax.tree_util as jtu
-from src.distributed import column_parallel, row_parallel, simulate_CPU_devices, get_partition_spec, prepare_input, prepare_output
+from src.distributed import column_parallel, row_parallel, simulate_CPU_devices, get_partition_spec, prepare_input, prepare_output, fully_shard
 
 
 class SuperLinear(eqx.Module):
@@ -44,6 +44,12 @@ plan = {
     )
 }
 
+
+fsdp_plan = {
+    "*": partial(fully_shard, mesh = mesh, axis_name = "data", min_weight_size = 0)
+}
+
+
 abstract_super_linear = apply_transforms(abstract_super_linear, plan)
 pspec_abstract = get_partition_spec(abstract_super_linear)
 
@@ -51,15 +57,14 @@ pspec_abstract = get_partition_spec(abstract_super_linear)
 
 @jax.jit
 def init():
-    new_module = type(abstract_super_linear)([8, 16, 32], key = jax.random.key(10))
-    a = get_partition_spec(abstract_super_linear)
-    # Re-apply the same transforms so the structure matches the pspec tree
+    new_module = SuperLinear([8, 16, 32], key = jax.random.key(10))
     new_module = apply_transforms(new_module, plan)
-    print("under jit ------------------------------------------------")
-    # Derive pspec from the instance to avoid PyTree type mismatches
+    new_module = fully_shard(new_module, mesh = mesh, axis_name = "data", min_weight_size = 0)
     pspec_inst = get_partition_spec(new_module)
-    # Apply sharding constraints leaf-wise to Darray.value using pspec
+    print(f"DEBUGPRINT[260]: tp_with_fsdp.py:63: pspec_inst={pspec_inst}")
+    # new_module = apply_transforms(new_module, fsdp_plan)
     new_module = eqx.filter_shard(new_module, pspec_inst)
+
     return new_module
 
 # i can do other stuff, like new_abstract_module -> apply_transforms -> partition_spec -> real_module, with_appl
