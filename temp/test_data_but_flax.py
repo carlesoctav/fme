@@ -11,13 +11,13 @@ from transformers.models.bert.configuration_bert import BertConfig
 import optax
 from flax.training import train_state
 
-from src.data import DataTransformsMakeAttentionMask
+from src.data import DataTransformsForMaskedLMGivenText
 
 
 ds = load_dataset("carlesoctav/en-id-parallel-sentences", split="QED")
 tokenizer = BertTokenizer.from_pretrained("google-bert/bert-base-uncased")
 transformations = [
-    DataTransformsMakeAttentionMask(tokenizer, columns="text_en", max_length=20),
+    DataTransformsForMaskedLMGivenText(tokenizer, columns="text_en", max_length=20),
     Batch(batch_size=2, drop_remainder=True),
 ]
 

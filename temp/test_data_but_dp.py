@@ -17,7 +17,7 @@ from optax import GradientTransformationExtraArgs
 from transformers import BertTokenizer
 from transformers.models.bert.configuration_bert import BertConfig
 
-from src.data import DataTransformsMakeAttentionMask
+from src.data import DataTransformsForMaskedLMGivenText
 from src.distributed import get_dp_partition_spec
 from src.models.bert.modeling_bert import BertForMaskedLM
 
@@ -30,7 +30,7 @@ mesh = jax.make_mesh((8,), ("data",), devices=jax.devices())
 ds = load_dataset("carlesoctav/en-id-parallel-sentences", split = "QED")
 tokenizer = BertTokenizer.from_pretrained("google-bert/bert-base-uncased")
 transformations = [
-    DataTransformsMakeAttentionMask(tokenizer, columns = "text_en", max_length = 20),
+    DataTransformsForMaskedLMGivenText(tokenizer, columns = "text_en", max_length = 20),
     Batch(batch_size=16, drop_remainder = True)
 ]
 

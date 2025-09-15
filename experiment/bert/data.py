@@ -1,10 +1,12 @@
-import jax
 import functools as ft
-from datasets import load_dataset
+
 import grain
-from transformers import AutoTokenizer, PreTrainedTokenizer, BertTokenizer
-from  jaxtyping import Int, Array
+import jax
 import jax.numpy as jnp
+from datasets import load_dataset
+from jaxtyping import Array, Int
+from transformers import AutoTokenizer, PreTrainedTokenizer
+
 
 def hugging_face_tokenizer_collator(
     sample: dict,

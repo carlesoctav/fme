@@ -10,7 +10,7 @@ from grain.transforms import Batch
 from transformers import BertTokenizer
 from transformers.models.bert.configuration_bert import BertConfig
 
-from src.data import DataTransformsMakeAttentionMask
+from src.data import DataTransformsForMaskedLMGivenText
 from src.losses.cross_entropy import softmax_cross_entropy_with_integer_labels
 from src.models.bert.modeling_bert import BertForMaskedLM
 from optax import GradientTransformationExtraArgs
@@ -22,7 +22,7 @@ from src.distributed import get_dp_partition_spec
 ds = load_dataset("carlesoctav/en-id-parallel-sentences", split = "QED")
 tokenizer = BertTokenizer.from_pretrained("google-bert/bert-base-uncased")
 transformations = [
-    DataTransformsMakeAttentionMask(tokenizer, columns = "text_en", max_length = 20),
+    DataTransformsForMaskedLMGivenText(tokenizer, columns = "text_en", max_length = 20),
     Batch(batch_size=2, drop_remainder = True)
 ]
 
@@ -120,6 +120,10 @@ tx = optax.chain(
 )
 optimizer = Optimizer(tx, model)
 dp_partition_spec = get_dp_partition_spec(model) 
+
+
+data = next(datasets)
+print(f"DEBUGPRINT[280]: test_data.py:125: data={data}")
 
 for i, batch in enumerate(datasets):
     print(f"DEBUGPRINT[215]: test_data.py:115: i={i}")

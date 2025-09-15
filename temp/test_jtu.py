@@ -10,7 +10,7 @@ from grain.transforms import Batch
 from transformers import BertTokenizer
 from transformers.models.bert.configuration_bert import BertConfig
 
-from src.data import DataTransformsMakeAttentionMask
+from src.data import DataTransformsForMaskedLMGivenText
 from src.losses.cross_entropy import softmax_cross_entropy_with_integer_labels
 from src.models.bert.modeling_bert import BertForMaskedLM
 from optax import GradientTransformationExtraArgs
