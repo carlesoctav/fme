@@ -1,11 +1,8 @@
-from typing import TypeVar
-
 import jax
 import jax.numpy as jnp
 
 
 Array = jax.Array
-A = TypeVar('A')
 
 
 def canonicalize_dtype(*args, dtype: jnp.dtype | None = None, inexact: bool = True) -> jnp.dtype:
@@ -37,10 +34,3 @@ def promote_dtype(*args, dtype: jnp.dtype | None = None, inexact: bool = True):
     target = canonicalize_dtype(*args, dtype=dtype, inexact=inexact)
     arrays = tuple(jnp.asarray(x, target) if x is not None else None for x in args)
     return arrays
-
-
-def first_from(*args: A | None, error_msg: str) -> A:
-  for arg in args:
-    if arg is not None:
-      return arg
-  raise ValueError(error_msg)

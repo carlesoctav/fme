@@ -4,11 +4,18 @@ except Exception:  # pragma: no cover
     HuggingFaceCompatibleModule = None
 
 from ._darray import Darray
-from ._filter import iter_module, apply_transforms
-from ._training import Optimizer
-from ._trainer_module import TrainerModule
-from .logger import Logger, LoggerConfig, LoggerToolsConfig, FileLoggerConfig
-from ._reinit import reinit_module, materialize_abstract
+from ._filter import apply_transforms, iter_module
+from ._training import (
+    compute_metrics,
+    init_module,
+    make_train_step,
+    maybe_checkpoint,
+    maybe_do,
+    maybe_write,
+    metrics_to_host,
+    Optimizer,
+    setup_module_opts,
+)
 
 
 __all__ = [
@@ -17,11 +24,12 @@ __all__ = [
     "iter_module", 
     "apply_tranforms",
     "Optimizer",
-    "TrainerModule",
-    "Logger",
-    "LoggerConfig",
-    "LoggerToolsConfig",
-    "FileLoggerConfig",
-    "reinit_module",
-    "materialize_abstract",
+    "setup_module_opts",
+    "make_train_step",
+    "compute_metrics",
+    "metrics_to_host",
+    "maybe_write",
+    "maybe_checkpoint",
+    "maybe_do",
+    "init_module",
 ]

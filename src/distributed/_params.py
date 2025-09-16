@@ -1,13 +1,13 @@
+import dataclasses as dc
+import logging
 import typing as tp
 
 import equinox as eqx
+import jax
 import jax.tree_util as jtu
 import numpy as np
 from jax import P
 from jax.sharding import Mesh
-import dataclasses as dc
-
-import logging
 
 from src import Darray
 
@@ -79,7 +79,7 @@ def fully_shard(
             return ps + (name,)
         return name
 
-    def _annotate_pspec(leaf: tp.Any):
+    def _annotate_pspec(path, leaf: tp.Any):
         if not isinstance(leaf, Darray):
             return leaf
         value, pspec = leaf.value, leaf.pspec
@@ -101,7 +101,7 @@ def fully_shard(
             for p in pspec
         ):
             logging.warning(
-                f"Parameter {value.shape} with names {pspec} already sharded on axis {axis_name}."
+                f"Parameter {value.shape} with names {jax.tree_util.keystr(path)} already sharded on axis {axis_name}. the partition spec is {pspec}."
             )
             return Darray(value=value, pspec=pspec)
 
@@ -141,7 +141,7 @@ def fully_shard(
         else:
             raise ValueError(f"Unknown strategy: {strategy}")
 
-    return jtu.tree_map(_annotate_pspec, module, is_leaf=is_darray)
+    return jtu.tree_map_with_path(_annotate_pspec, module, is_leaf=is_darray)
 
 
 def tensor_parallel(
@@ -202,7 +202,7 @@ def tensor_parallel(
             return ps + (name,)
         return name
 
-    def _annotate_pspec(leaf: tp.Any):
+    def _annotate_pspec(path, leaf: tp.Any):
         if not isinstance(leaf, Darray):
             return leaf
 
@@ -224,7 +224,7 @@ def tensor_parallel(
             for p in pspec
         ):
             logging.warning(
-                f"Parameter {value.shape} with names {pspec} already sharded on axis {axis_name}."
+                f"Parameter {value.shape} with names {jax.tree_util.keystr(path)} already sharded on axis {axis_name}. the partition spec is {pspec}."
             )
             return Darray(value=value, pspec=pspec)
 
@@ -257,12 +257,12 @@ def tensor_parallel(
             return Darray(value=value, pspec=new_pspec)
         else:
             logging.warning(
-                f"Could not shard {value.shape} with names {pspec} on axis {axis_name} for dim {dim}; "
+                f"Could not shard {value.shape} with names {jtu.keystr(path)} on axis {axis_name} for dim {dim}; "
                 f"effective size {eff_shape[dim]} not divisible by {axis_size}"
             )
             return Darray(value=value, pspec=pspec)
 
-    return jtu.tree_map(_annotate_pspec, module, is_leaf=is_darray)
+    return jtu.tree_map_with_path(_annotate_pspec, module, is_leaf=is_darray)
 
 
 def shard_params(
@@ -353,7 +353,7 @@ def shard_params(
                 continue
             if eff_shape[d] % prod != 0:
                 raise ValueError(
-                    f"Could not shard {value.shape} with names {pspec} on axes {axes_tuple} for dim {d}; "
+                    f"Could not shard {value.shape} with names {jtu.keystr(path)} on axes {axes_tuple} for dim {d}; "
                     f"effective size {eff_shape[d]} not divisible by {prod}"
                 )
             new_pspec[d] = _append_axes(new_pspec[d], axes_tuple)

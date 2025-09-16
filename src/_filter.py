@@ -3,11 +3,8 @@ import fnmatch
 import typing as tp
 
 import equinox as eqx
-import jax
-import jax.tree_util as jtu
 
-
-Path = tuple[tp.Union[str, int], ...]
+Path = tuple[str | int, ...]
 
 
 def iter_module(
@@ -82,26 +79,27 @@ def apply_transforms(
     module: tp.Any,
     pattern_to_transform: dict[str, tp.Callable[[tp.Any], tp.Any]],
 ) -> tp.Any:
-    """Replace matched submodules using shell-style glob patterns.
-
-    - Keys in pattern_to_transform are glob patterns like "*self.query" or
-      "encoder.layer.*.attention.self.query".
-    - Values are callables taking the matched submodule and returning replacement.
+    """
+    Replace matched submodules using shell-style glob patterns.
+    Multiple patterns may match the same path; transforms are applied in the order they are inserted into the dictionary. When this happens, only the first match is applied.
     """
 
-    getters: list[tp.Callable[[tp.Any], tp.Any]] = []
-    replacements: list[tp.Any] = []
+    path_to_info: dict[str, tuple[Path, list[tp.Callable[[tp.Any], tp.Any]]]] = {}
 
-    for path, leaf in iter_module(module):
+    replacements = []
+    getters = []
+
+    for path, sub_module in iter_module(module):
         path_str = _path_to_str(path)
-        for pat, transform in pattern_to_transform.items():
-            if fnmatch.fnmatchcase(path_str, pat):
+        for pattern, transform in pattern_to_transform.items():
+            if not fnmatch.fnmatchcase(path_str, pattern):
+                continue
+            else:
+                replacements.append(transform(sub_module))
                 getters.append(_getter_from_path(path))
-                replacements.append(transform(leaf))
-    if not getters:
-        return module
+                break
 
-    mod = module
-    for get, rep in zip(getters, replacements):
-        mod = eqx.tree_at(get, mod, rep)
-    return mod
+    for where, replacement in zip(getters, replacements):
+        module = eqx.tree_at(where, module, replacement)
+
+    return module

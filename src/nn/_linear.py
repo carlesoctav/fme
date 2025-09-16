@@ -34,20 +34,18 @@ class Linear(eqx.Module):
         key: PRNGKeyArray = None,
         weight_spec: str | tuple[str, ...] | None = None,
         bias_spec: str | tuple[str, ...] | None = None,
-        input_pspec: jax.P | None = None,
-        output_pspec: jax.P | None = None,
     ):
         wkey , bkey = jax.random.split(key, 2)
-
-        self.initializer = default_init if initializer is None else initializer
 
         self.in_features = in_features
         self.out_features = out_features
         self.use_bias = use_bias
-        self.bias = None
 
+        self.initializer = default_init if initializer is None else initializer
+        self.bias = None
         self.dtype = dtype
         self.params_dtype = params_dtype
+
 
         w = self.initializer(wkey, (out_features, in_features), dtype=self.params_dtype)
         self.weight = Darray(value=w, pspec=weight_spec)
@@ -74,3 +72,23 @@ class Linear(eqx.Module):
                 output = output + b
 
         return output 
+
+    def init_weights(self, *, key: PRNGKeyArray | None = None) -> "Linear": 
+        if key is None:
+            raise ValueError("A PRNGKeyArray 'key' must be provided.")
+
+        k_w, k_b = jax.random.split(key, 2)
+        w_shape = (self.out_features, self.in_features)
+        w_dtype = self.params_dtype
+        new_w = self.initializer(k_w, w_shape, dtype=w_dtype)
+        new_bias = None
+        if self.use_bias and self.bias is not None:
+            b_shape = (self.out_features,)
+            b_dtype = self.params_dtype
+            new_bias = zeros(k_b, b_shape, dtype=b_dtype)
+
+        new_self = self
+        new_self = eqx.tree_at(lambda m: m.weight, new_self, Darray(value=new_w, pspec=self.weight.pspec))
+        if self.use_bias and self.bias is not None:
+            new_self = eqx.tree_at(lambda m: m.bias, new_self, Darray(value=new_bias, pspec=self.bias.pspec))
+        return new_self

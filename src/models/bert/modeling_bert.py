@@ -1,16 +1,17 @@
-from functools import partial
+from __future__ import annotations
+
 from typing import Any
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from equinox import field
-from jaxtyping import Array, Float, Int, PRNGKeyArray
 import transformers
+from equinox import field
+from jax.nn.initializers import normal, ones as ones_init, zeros as zeros_init
+from jaxtyping import Array, Float, Int, PRNGKeyArray
 from transformers.models.bert.configuration_bert import BertConfig
-from jax import P
-from jax.interpreters.pxla import thread_resources
-from src import HuggingFaceCompatibleModule, nn
+
+from src import Darray, HuggingFaceCompatibleModule, nn
 from src.nn import functional as F
 
 
@@ -99,10 +100,6 @@ class BertSelfAttention(eqx.Module):
     num_attention_heads: int = field(static=True)
     attention_head_size: int = field(static=True)
     all_head_size: int = field(static=True)
-    btnh_spec: Any = field(static=True, default=None)
-    bsnh_spec: Any = field(static=True, default=None)
-    bnts_spec: Any = field(static=True, default=None)
-    self_attn_out_spec: Any = field(static=True, default=None)
 
     def __init__(
         self,
@@ -152,10 +149,6 @@ class BertSelfAttention(eqx.Module):
             key=v_key,
         )
 
-        self.btnh_spec = btnh_spec
-        self.bsnh_spec = bsnh_spec
-        self.bnts_spec = bnts_spec
-        self.self_attn_out_spec = self_attn_out_spec
 
     def __call__(
         self,
@@ -441,7 +434,58 @@ class BertEncoder(eqx.Module):
         return hidden_states
 
 
-class BertModel(eqx.Module, HuggingFaceCompatibleModule[transformers.BertModel]):
+class BertModelWeightPlanMixin:
+    """
+    - Linear: weight ~ N(0, initializer_range), bias zeros
+    - Embedding: weight ~ N(0, initializer_range); if pad_token_id is set, zero that row
+    - LayerNorm: weight ones, bias zeros
+    """
+
+    def init_weights_plan(self, module, key):
+        cfg = getattr(self, "config", None)
+        std = getattr(cfg, "initializer_range", 0.02)
+        pad_idx = getattr(cfg, "pad_token_id", None)
+
+        if isinstance(module, nn.Linear):
+            wkey, bkey = jax.random.split(key, 2)
+            w_shape = (module.out_features, module.in_features)
+            w_dtype = module.params_dtype
+            new_w = normal(std)(wkey, w_shape, dtype=w_dtype)
+            new_bias = None
+            if module.use_bias and module.bias is not None:
+                b_shape = (module.out_features,)
+                new_bias = zeros_init(bkey, b_shape, dtype=w_dtype)
+            new_mod = module
+            new_mod = eqx.tree_at(lambda m: m.weight, new_mod, Darray(value=new_w, pspec=module.weight.pspec))
+            if module.use_bias and module.bias is not None:
+                new_mod = eqx.tree_at(lambda m: m.bias, new_mod, Darray(value=new_bias, pspec=module.bias.pspec))
+            return new_mod
+
+        if isinstance(module, nn.Embedding):
+            w_shape = (module.num_embeddings, module.embedding_dim)
+            w_dtype = module.params_dtype
+            new_w = normal(std)(key, w_shape, dtype=w_dtype)
+            if pad_idx is not None and 0 <= int(pad_idx) < module.num_embeddings:
+                new_w = new_w.at[int(pad_idx)].set(jnp.zeros((module.embedding_dim,), dtype=w_dtype))
+            return eqx.tree_at(lambda m: m.weight, module, Darray(value=new_w, pspec=module.weight.pspec))
+
+        if isinstance(module, nn.LayerNorm):
+            split_keys = jax.random.split(jax.random.PRNGKey(0), 2)
+            w_key, b_key = split_keys[0], split_keys[1]
+            w_shape = module.normalized_shape
+            w_dtype = module.params_dtype
+            new_w = ones_init(w_key, w_shape, dtype=w_dtype)
+            new_mod = eqx.tree_at(lambda m: m.weight, module, Darray(value=new_w, pspec=module.weight.pspec if module.weight is not None else None))
+            if module.bias is not None:
+                new_b = zeros_init(b_key, w_shape, dtype=w_dtype)
+                new_mod = eqx.tree_at(lambda m: m.bias, new_mod, Darray(value=new_b, pspec=module.bias.pspec))
+            return new_mod
+
+        return module
+
+
+
+class BertModel(BertModelWeightPlanMixin, eqx.Module, HuggingFaceCompatibleModule[transformers.BertModel]):
     embeddings: BertEmbeddings
     encoder: BertEncoder
     config: BertConfig | None = field(static=True)
@@ -585,7 +629,7 @@ class BertOnlyMLMHead(eqx.Module):
         return self.predictions(sequence_output, embedding_weight, key=key)
 
 
-class BertForMaskedLM(eqx.Module, HuggingFaceCompatibleModule):
+class BertForMaskedLM(BertModelWeightPlanMixin, eqx.Module, HuggingFaceCompatibleModule):
     bert: BertModel
     cls: BertOnlyMLMHead
     config: BertConfig | None = eqx.field(static=True)

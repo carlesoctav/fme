@@ -130,7 +130,6 @@ def row_parallel(
     inputs_layout: P | tuple[P, ...] | None = None,
     outputs_layout: P | tuple[P, ...] | None = None,
 ) -> eqx.Module:
-    from ._spmd import tensor_parallel
     def _params_fn(m: eqx.Module) -> eqx.Module:
         if isinstance(m, nn.Linear):
             return tensor_parallel(m, mesh=mesh, axis_name=axis_name, dim_to_sharded=1)
