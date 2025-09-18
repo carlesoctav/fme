@@ -11,7 +11,7 @@ from jax.nn.initializers import normal, ones as ones_init, zeros as zeros_init
 from jaxtyping import Array, Float, Int, PRNGKeyArray
 from transformers.models.bert.configuration_bert import BertConfig
 
-from src import Darray, HuggingFaceCompatibleModule, nn
+from src import DArray, HuggingFaceCompatibleModule, nn
 from src.nn import functional as F
 
 
@@ -77,7 +77,7 @@ class BertEmbeddings(eqx.Module):
         *,
         key: PRNGKeyArray | None = None,
     ) -> Float[Array, " ... hidden_size"]:
-        d_key = jax.random.split(key, 1)[0] if key is not None else None
+        _, d_key = jax.random.split(key, 2) if key is not None else (None, None) 
 
         inputs_embeddings = self.word_embeddings(input_ids)
         position_embeddings = self.position_embeddings(position_ids)
@@ -113,7 +113,7 @@ class BertSelfAttention(eqx.Module):
         bnts_spec: Any | None = None,
         self_attn_out_spec: Any | None = None, 
     ):
-        q_key, v_key, k_key = jax.random.split(key, 3)
+        q_key, v_key, k_key = jax.random.split(key, 3) 
         if config.hidden_size % config.num_attention_heads != 0:
             raise ValueError(
                 f"The hidden size ({config.hidden_size})"
@@ -158,7 +158,7 @@ class BertSelfAttention(eqx.Module):
         key: PRNGKeyArray | None = None,
     ) -> Float[Array, " ... seq_len hidden_size"]: 
 
-        dropout_key = jax.random.split(key, 1)[0] if key is not None else None
+        _, dropout_key = jax.random.split(key, 2) if key is not None else (None, None)
 
         if hidden_states.ndim ==1:
             raise ValueError("hidden_states must have (..., seq_len, hidden_size) shape")
@@ -200,7 +200,7 @@ class BertSelfOutput(eqx.Module):
         params_dtype: jnp.dtype = jnp.float32,
         key: PRNGKeyArray,
     ):
-        dense_key, layer_key = jax.random.split(key, 2)
+        dense_key, layer_key = jax.random.split(key, 2) 
         self.dense = nn.Linear(
             config.hidden_size,
             config.hidden_size,
@@ -224,7 +224,7 @@ class BertSelfOutput(eqx.Module):
         *,
         key: PRNGKeyArray | None = None,
     ):
-        d_key = jax.random.split(key, 1)[0] if key is not None else None
+        _, d_key = jax.random.split(key, 2) if key is not None else (None, None)
 
         hidden_states = self.dense(hidden_states)
         hidden_states = self.dropout(hidden_states, key=d_key)
@@ -281,7 +281,7 @@ class BertIntermediate(eqx.Module):
         params_dtype: jnp.dtype = jnp.float32,
         key: PRNGKeyArray,
     ):
-        dense_key = jax.random.split(key, 1)[0]
+        _, dense_key = jax.random.split(key, 2)
         self.dense = nn.Linear(
             config.hidden_size,
             config.intermediate_size,
@@ -339,7 +339,7 @@ class BertOutput(eqx.Module):
         *,
         key: PRNGKeyArray | None = None,
     ) -> Float[Array, "seq_len hidden_size"]:
-        d_key = jax.random.split(key, 1)[0] if key is not None else None
+        _, d_key = jax.random.split(key, 2) if key is not None else (None, None)
         hidden_states = self.dense(hidden_states)
 
         hidden_states = self.dropout(hidden_states, key=d_key)
@@ -424,12 +424,12 @@ class BertEncoder(eqx.Module):
         *,
         key: PRNGKeyArray | None = None,
     ) -> Float[Array, "seq_len hidden_size"]:
-        layer_key = jax.random.split(key, len(self.layer)) if key is not None else None
+        layer_key = jax.random.split(key, len(self.layer)) if key is not None else [None] * len(self.layer)
         for i, layer_module in enumerate(self.layer):
             hidden_states = layer_module(
                 hidden_states,
                 attention_mask,
-                key=layer_key[i] if layer_key is not None else None,
+                key=layer_key[i], 
             )
         return hidden_states
 
@@ -456,9 +456,9 @@ class BertModelWeightPlanMixin:
                 b_shape = (module.out_features,)
                 new_bias = zeros_init(bkey, b_shape, dtype=w_dtype)
             new_mod = module
-            new_mod = eqx.tree_at(lambda m: m.weight, new_mod, Darray(value=new_w, pspec=module.weight.pspec))
+            new_mod = eqx.tree_at(lambda m: m.weight, new_mod, DArray(value=new_w, pspec=module.weight.pspec))
             if module.use_bias and module.bias is not None:
-                new_mod = eqx.tree_at(lambda m: m.bias, new_mod, Darray(value=new_bias, pspec=module.bias.pspec))
+                new_mod = eqx.tree_at(lambda m: m.bias, new_mod, DArray(value=new_bias, pspec=module.bias.pspec))
             return new_mod
 
         if isinstance(module, nn.Embedding):
@@ -467,18 +467,18 @@ class BertModelWeightPlanMixin:
             new_w = normal(std)(key, w_shape, dtype=w_dtype)
             if pad_idx is not None and 0 <= int(pad_idx) < module.num_embeddings:
                 new_w = new_w.at[int(pad_idx)].set(jnp.zeros((module.embedding_dim,), dtype=w_dtype))
-            return eqx.tree_at(lambda m: m.weight, module, Darray(value=new_w, pspec=module.weight.pspec))
+            return eqx.tree_at(lambda m: m.weight, module, DArray(value=new_w, pspec=module.weight.pspec))
 
         if isinstance(module, nn.LayerNorm):
-            split_keys = jax.random.split(jax.random.PRNGKey(0), 2)
+            split_keys = jax.random.split(key, 2)
             w_key, b_key = split_keys[0], split_keys[1]
             w_shape = module.normalized_shape
             w_dtype = module.params_dtype
             new_w = ones_init(w_key, w_shape, dtype=w_dtype)
-            new_mod = eqx.tree_at(lambda m: m.weight, module, Darray(value=new_w, pspec=module.weight.pspec if module.weight is not None else None))
+            new_mod = eqx.tree_at(lambda m: m.weight, module, DArray(value=new_w, pspec=module.weight.pspec if module.weight is not None else None))
             if module.bias is not None:
                 new_b = zeros_init(b_key, w_shape, dtype=w_dtype)
-                new_mod = eqx.tree_at(lambda m: m.bias, new_mod, Darray(value=new_b, pspec=module.bias.pspec))
+                new_mod = eqx.tree_at(lambda m: m.bias, new_mod, DArray(value=new_b, pspec=module.bias.pspec))
             return new_mod
 
         return module
@@ -629,7 +629,7 @@ class BertOnlyMLMHead(eqx.Module):
         return self.predictions(sequence_output, embedding_weight, key=key)
 
 
-class BertForMaskedLM(BertModelWeightPlanMixin, eqx.Module, HuggingFaceCompatibleModule):
+class BertForMaskedLM(eqx.Module, BertModelWeightPlanMixin, HuggingFaceCompatibleModule[transformers.BertForMaskedLM]):
     bert: BertModel
     cls: BertOnlyMLMHead
     config: BertConfig | None = eqx.field(static=True)

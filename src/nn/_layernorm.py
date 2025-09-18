@@ -9,7 +9,7 @@ from jax.nn.initializers import (
 )
 from jaxtyping import Float, PRNGKeyArray
 
-from src import Darray
+from src import DArray
 
 from ._utils import promote_dtype
 
@@ -18,8 +18,8 @@ Array = jax.Array
 
 
 class LayerNorm(eqx.Module):
-    weight: Darray | None
-    bias: Darray | None
+    weight: DArray | None
+    bias: DArray | None
     normalized_shape: tuple[int, ...] = eqx.field(static=True)
     eps: float = eqx.field(static=True)
     elementwise_affine: bool = eqx.field(static=True)
@@ -54,10 +54,10 @@ class LayerNorm(eqx.Module):
         if self.elementwise_affine:
             wkey, bkey = jax.random.split(key, 2)
             wvalue = self.initializer(wkey, normalized_shape, dtype=self.params_dtype)
-            self.weight = Darray(value=wvalue, pspec=weight_spec)
+            self.weight = DArray(value=wvalue, pspec=weight_spec)
             if bias:
                 bvalue = zeros_init(bkey, normalized_shape, dtype=self.params_dtype)
-                self.bias = Darray(value=bvalue, pspec=bias_spec) 
+                self.bias = DArray(value=bvalue, pspec=bias_spec) 
             else:
                 self.bias = None
         else:
@@ -117,12 +117,12 @@ class LayerNorm(eqx.Module):
         w_dtype = self.params_dtype
 
         new_w = self.initializer(w_key, w_shape, dtype=w_dtype)
-        new_self = eqx.tree_at(lambda m: m.weight, self, Darray(value=new_w, pspec=self.weight.pspec if self.weight is not None else None))
+        new_self = eqx.tree_at(lambda m: m.weight, self, DArray(value=new_w, pspec=self.weight.pspec if self.weight is not None else None))
 
         if self.bias is not None:
             b_shape = self.normalized_shape
             b_dtype = self.params_dtype
             new_b = zeros_init(b_key, b_shape, dtype=b_dtype)
-            new_self = eqx.tree_at(lambda m: m.bias, new_self, Darray(value=new_b, pspec=self.bias.pspec))
+            new_self = eqx.tree_at(lambda m: m.bias, new_self, DArray(value=new_b, pspec=self.bias.pspec))
 
         return new_self

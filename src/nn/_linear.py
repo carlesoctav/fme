@@ -4,7 +4,7 @@ import jax.numpy as jnp
 from jax.nn.initializers import Initializer, kaiming_normal, zeros
 from jaxtyping import Array, Float, PRNGKeyArray
 
-from src import Darray
+from src import DArray
 
 from ._utils import promote_dtype
 
@@ -13,8 +13,8 @@ default_init = kaiming_normal()
 
 
 class Linear(eqx.Module):
-    weight: Darray
-    bias: Darray | None
+    weight: DArray
+    bias: DArray | None
     in_features: int = eqx.field(static = True)
     out_features: int = eqx.field(static = True)
     use_bias: bool =  eqx.field(static = True)
@@ -48,11 +48,11 @@ class Linear(eqx.Module):
 
 
         w = self.initializer(wkey, (out_features, in_features), dtype=self.params_dtype)
-        self.weight = Darray(value=w, pspec=weight_spec)
+        self.weight = DArray(value=w, pspec=weight_spec)
 
         if use_bias:
             b = zeros(bkey, (out_features,), dtype=self.params_dtype)
-            self.bias = Darray(value=b, pspec=bias_spec)
+            self.bias = DArray(value=b, pspec=bias_spec)
 
 
     def __call__(
@@ -62,8 +62,6 @@ class Linear(eqx.Module):
     ):
         weight = getattr(self.weight, "value", self.weight)
         w, x_ = promote_dtype(weight, x, dtype=self.dtype)
-        # Support any leading axes by multiplying on the last dimension.
-        # Shapes: x_[..., in] @ w.T[in, out] -> out[..., out]
         output = x_ @ w.T
         if self.use_bias:
             bias = getattr(self.bias, "value", self.bias) if self.bias is not None else None
@@ -88,7 +86,7 @@ class Linear(eqx.Module):
             new_bias = zeros(k_b, b_shape, dtype=b_dtype)
 
         new_self = self
-        new_self = eqx.tree_at(lambda m: m.weight, new_self, Darray(value=new_w, pspec=self.weight.pspec))
+        new_self = eqx.tree_at(lambda m: m.weight, new_self, DArray(value=new_w, pspec=self.weight.pspec))
         if self.use_bias and self.bias is not None:
-            new_self = eqx.tree_at(lambda m: m.bias, new_self, Darray(value=new_bias, pspec=self.bias.pspec))
+            new_self = eqx.tree_at(lambda m: m.bias, new_self, DArray(value=new_bias, pspec=self.bias.pspec))
         return new_self

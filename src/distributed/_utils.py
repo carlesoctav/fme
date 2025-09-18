@@ -31,8 +31,3 @@ def install_package(package: str) -> None:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", package])
 
 
-def maybe_shard(x: Array, pspec: jax.P):
-    if pspec is not None:
-        return jax.lax.with_sharding_constraint(x, pspec)
-    return x
-

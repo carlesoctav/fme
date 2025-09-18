@@ -15,15 +15,8 @@ config = BertConfig(
     attention_probs_dropout_prob = 0.0,
     num_hidden_layers = 2,
 )
-key = jax.random.key(43)
 
 
-@jax.jit
-def init():
-    model = BertModel(config = config, key = key)
-    return model
-
-model = init()
-print(f"DEBUGPRINT[235]: test_hf.py:20: model={model}")
-clsss = model.hf_class_type
-print(f"DEBUGPRINT[234]: test_hf.py:3: clsss={clsss}")
+print(f"DEBUGPRINT[309]: test_hf.py:20: BertModel.hf_model_class={BertModel.hf_model_class}")
+model = BertModel.from_huggingface("google-bert/bert-base-uncased", key = jax.random.key(10))
+print(f"DEBUGPRINT[308]: test_hf.py:20: model={model}")

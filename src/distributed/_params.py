@@ -9,11 +9,11 @@ import numpy as np
 from jax import P
 from jax.sharding import Mesh
 
-from src import Darray
+from src import DArray
 
 
 def is_darray(x: tp.Any) -> bool:
-    return isinstance(x, Darray)
+    return isinstance(x, DArray)
 
 
 def get_partition_spec(module: eqx.Module):
@@ -24,7 +24,7 @@ def get_partition_spec(module: eqx.Module):
             None
 
     def _f(leaf):
-        if isinstance(leaf, Darray):
+        if isinstance(leaf, DArray):
             if leaf.pspec is not None:
                 return dc.replace(leaf, value = P(*leaf.pspec)) 
             else:
@@ -80,7 +80,7 @@ def fully_shard(
         return name
 
     def _annotate_pspec(path, leaf: tp.Any):
-        if not isinstance(leaf, Darray):
+        if not isinstance(leaf, DArray):
             return leaf
         value, pspec = leaf.value, leaf.pspec
 
@@ -103,13 +103,13 @@ def fully_shard(
             logging.warning(
                 f"Parameter {value.shape} with names {jax.tree_util.keystr(path)} already sharded on axis {axis_name}. the partition spec is {pspec}."
             )
-            return Darray(value=value, pspec=pspec)
+            return DArray(value=value, pspec=pspec)
 
         if value.size <= min_weight_size:
             logging.info(
                 f"Parameter {value.shape} with names {pspec} too small to shard, size {value.size} < {min_weight_size}."
             )
-            return Darray(value=value, pspec=pspec)
+            return DArray(value=value, pspec=pspec)
 
         shape = value.shape
         divs = tuple(_effective_div(p) for p in pspec)
@@ -120,11 +120,11 @@ def fully_shard(
                 if s % axis_size == 0:
                     new_i_pspec = _append_axis(pspec[i], axis_name)
                     new_pspec = pspec[:i] + (new_i_pspec,) + pspec[i + 1 :]
-                    return Darray(value=value, pspec=new_pspec)
+                    return DArray(value=value, pspec=new_pspec)
             logging.warning(
                 f"Could not shard {value.shape} with names {pspec} on axis {axis_name}, no suitable axis found"
             )
-            return Darray(value=value, pspec=pspec)
+            return DArray(value=value, pspec=pspec)
 
         elif strategy == "greatest_size":
             idx = np.argsort(eff_shape)[::-1]
@@ -132,11 +132,11 @@ def fully_shard(
                 if eff_shape[i] % axis_size == 0:
                     new_i_pspec = _append_axis(pspec[i], axis_name)
                     new_pspec = pspec[:i] + (new_i_pspec,) + pspec[i + 1 :]
-                    return Darray(value=value, pspec=new_pspec)
+                    return DArray(value=value, pspec=new_pspec)
             logging.warning(
                 f"Could not shard {value.shape} with names {pspec} on axis {axis_name}, no suitable axis found"
             )
-            return Darray(value=value, pspec=pspec)
+            return DArray(value=value, pspec=pspec)
 
         else:
             raise ValueError(f"Unknown strategy: {strategy}")
@@ -148,7 +148,7 @@ def tensor_parallel(
     module: eqx.Module,
     mesh: Mesh,
     axis_name: str,
-    dim_to_sharded: int = -1,
+    tensor_dim_to_sharded: int = -1,
     *,
     min_weight_size: int = 0,
     skip_on_dim_mismatch: bool = True,
@@ -203,7 +203,7 @@ def tensor_parallel(
         return name
 
     def _annotate_pspec(path, leaf: tp.Any):
-        if not isinstance(leaf, Darray):
+        if not isinstance(leaf, DArray):
             return leaf
 
         value, pspec = leaf.value, leaf.pspec
@@ -226,19 +226,19 @@ def tensor_parallel(
             logging.warning(
                 f"Parameter {value.shape} with names {jax.tree_util.keystr(path)} already sharded on axis {axis_name}. the partition spec is {pspec}."
             )
-            return Darray(value=value, pspec=pspec)
+            return DArray(value=value, pspec=pspec)
 
         ndim = value.ndim
-        dim = dim_to_sharded if dim_to_sharded >= 0 else ndim + dim_to_sharded
+        dim = tensor_dim_to_sharded if tensor_dim_to_sharded >= 0 else ndim + tensor_dim_to_sharded
         if dim < 0 or dim >= ndim:
             if skip_on_dim_mismatch:
                 logging.info(
-                    f"Skip sharding: dim {dim_to_sharded} out of range for shape {value.shape}"
+                    f"Skip sharding: dim {tensor_dim_to_sharded} out of range for shape {value.shape}"
                 )
-                return Darray(value=value, pspec=pspec)
+                return DArray(value=value, pspec=pspec)
             else:
                 raise ValueError(
-                    f"dim_to_sharded {dim_to_sharded} out of range for value.ndim={ndim}"
+                    f"dim_to_sharded {tensor_dim_to_sharded} out of range for value.ndim={ndim}"
                 )
 
         shape = value.shape
@@ -249,18 +249,18 @@ def tensor_parallel(
             logging.info(
                 f"Skip sharding: small array {value.shape}, size {value.size} < {min_weight_size}"
             )
-            return Darray(value=value, pspec=pspec)
+            return DArray(value=value, pspec=pspec)
 
         if eff_shape[dim] % axis_size == 0:
             new_i_pspec = _append_axis(pspec[dim], axis_name)
             new_pspec = pspec[:dim] + (new_i_pspec,) + pspec[dim + 1 :]
-            return Darray(value=value, pspec=new_pspec)
+            return DArray(value=value, pspec=new_pspec)
         else:
             logging.warning(
                 f"Could not shard {value.shape} with names {jtu.keystr(path)} on axis {axis_name} for dim {dim}; "
                 f"effective size {eff_shape[dim]} not divisible by {axis_size}"
             )
-            return Darray(value=value, pspec=pspec)
+            return DArray(value=value, pspec=pspec)
 
     return jtu.tree_map_with_path(_annotate_pspec, module, is_leaf=is_darray)
 
@@ -317,7 +317,7 @@ def shard_params(
         return merged[0] if len(merged) == 1 else merged
 
     def _annotate_pspec(leaf: tp.Any):
-        if not isinstance(leaf, Darray):
+        if not isinstance(leaf, DArray):
             return leaf
         value, pspec = leaf.value, leaf.pspec
         if value is None:
@@ -329,14 +329,11 @@ def shard_params(
                 "attribute names on Darray should have the same dimension with the attribute value"
             )
 
-        # Compute effective shape after existing sharding
         divs = tuple(_effective_div_for_entry(p) for p in pspec)
         eff_shape = tuple(int(s // d) for s, d in zip(value.shape, divs))
 
-        # For each requested dim->axes, validate and append
         new_pspec = list(pspec)
         for dim, axes in dim_to_axes.items():
-            # normalize dim
             ndim = value.ndim
             d = dim if dim >= 0 else ndim + dim
             if d < 0 or d >= ndim:
@@ -358,6 +355,6 @@ def shard_params(
                 )
             new_pspec[d] = _append_axes(new_pspec[d], axes_tuple)
 
-        return Darray(value=value, pspec=tuple(new_pspec))
+        return DArray(value=value, pspec=tuple(new_pspec))
 
     return jtu.tree_map(_annotate_pspec, module, is_leaf=is_darray)

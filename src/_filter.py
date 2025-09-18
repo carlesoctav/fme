@@ -11,46 +11,64 @@ def iter_module(
     obj: tp.Any,
     *,
     include_root: bool = False,
-) -> tp.Iterator[tuple[Path, tp.Any]]:
-    """Yield (path, leaf) for eqx.Modules and containers.
+) -> tp.Iterator[tuple[Path, eqx.Module]]:
+    """Yield ``(path, module)`` pairs for nested :class:`eqx.Module` instances.
 
-    Paths are tuples of attribute names / indices. The root path is empty.
+    Paths mirror ``flax.nnx.Module.iter_modules``: duplicates are skipped and the
+    root module is optional. Keys inside the path are attribute names or
+    container indices/keys.
     """
 
     seen: set[int] = set()
 
-    def _recurse(path: Path, node: tp.Any) -> tp.Iterator[tuple[Path, tp.Any]]:
+    def _is_node(node: tp.Any) -> bool:
+        return isinstance(node, eqx.Module) or dc.is_dataclass(node) or isinstance(
+            node, (list, tuple, dict)
+        )
+
+    def _normalize_key(key: tp.Any) -> str | int:
+        if isinstance(key, (str, int)):
+            return key
+        return str(key)
+
+    def _iter_dataclass(node: tp.Any) -> tp.Iterator[tuple[str, tp.Any]]:
+        for field in dc.fields(node):
+            try:
+                value = getattr(node, field.name)
+            except Exception:
+                continue
+            yield field.name, value
+
+    def _recurse(path: Path, node: tp.Any) -> tp.Iterator[tuple[Path, eqx.Module]]:
+        if not _is_node(node):
+            return
+
         oid = id(node)
         if oid in seen:
             return
         seen.add(oid)
 
         if isinstance(node, eqx.Module):
+            for name, value in _iter_dataclass(node):
+                yield from _recurse(path + (name,), value)
             if path or include_root:
-                yield (path, node)
+                yield path, node
+            return
 
         if dc.is_dataclass(node):
-            for f in dc.fields(node):
-                try:
-                    v = getattr(node, f.name)
-                except Exception:
-                    continue
-                if isinstance(v, eqx.Module):
-                    yield from _recurse(path + (f.name,), v)
-                elif dc.is_dataclass(v):
-                    yield from _recurse(path + (f.name,), v)
-                elif isinstance(v, (list, tuple)):
-                    for i, subv in enumerate(v):
-                        yield from _recurse(path + (f.name, i), subv)
-                elif isinstance(v, dict):
-                    for k, subv in v.items():
-                        yield from _recurse(path + (f.name, k), subv)
-        elif isinstance(node, (list, tuple)):
-            for i, subv in enumerate(node):
-                yield from _recurse(path + (i,), subv)
-        elif isinstance(node, dict):
-            for k, subv in node.items():
-                yield from _recurse(path + (k,), subv)
+            for name, value in _iter_dataclass(node):
+                yield from _recurse(path + (name,), value)
+            return
+
+        if isinstance(node, (list, tuple)):
+            for idx, value in enumerate(node):
+                yield from _recurse(path + (idx,), value)
+            return
+
+        if isinstance(node, dict):
+            for key, value in node.items():
+                yield from _recurse(path + (_normalize_key(key),), value)
+            return
 
     yield from _recurse((), obj)
 
@@ -84,22 +102,17 @@ def apply_transforms(
     Multiple patterns may match the same path; transforms are applied in the order they are inserted into the dictionary. When this happens, only the first match is applied.
     """
 
-    path_to_info: dict[str, tuple[Path, list[tp.Callable[[tp.Any], tp.Any]]]] = {}
-
-    replacements = []
-    getters = []
+    matches: list[tuple[Path, tp.Callable[[tp.Any], tp.Any], tp.Any]] = []
 
     for path, sub_module in iter_module(module):
         path_str = _path_to_str(path)
         for pattern, transform in pattern_to_transform.items():
             if not fnmatch.fnmatchcase(path_str, pattern):
                 continue
-            else:
-                replacements.append(transform(sub_module))
-                getters.append(_getter_from_path(path))
-                break
+            matches.append((path, _getter_from_path(path), transform(sub_module)))
+            break
 
-    for where, replacement in zip(getters, replacements):
-        module = eqx.tree_at(where, module, replacement)
+    for _, getter, replacement in sorted(matches, key=lambda item: len(item[0])):
+        module = eqx.tree_at(getter, module, replacement)
 
     return module

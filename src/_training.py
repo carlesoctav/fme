@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import dataclasses
 import typing as tp
+from typing import Protocol
 
 import equinox as eqx
 import jax
@@ -11,27 +11,58 @@ from jaxtyping import Array, PRNGKeyArray, PyTree
 from optax import GradientTransformation, GradientTransformationExtraArgs
 
 from ._filter import apply_transforms, iter_module
+from ._metrics import MetricsAgg
 from ._utils import first_from
+from .callbacks import Callback, CallbackManager
 from .distributed import get_partition_spec
+from .loggers import Logger
 
 
-M = tp.TypeVar("M", bound=eqx.Module)
-T = tp.TypeVar("T")
+_M = tp.TypeVar("_M", bound=eqx.Module)
+_O = tp.TypeVar("_O", bound="Optimizer") 
 
-GradTx = GradientTransformation | GradientTransformationExtraArgs
-AxisSpec = bool | tp.Callable[[tp.Any], bool]
-Wrt = PyTree[AxisSpec]
-Aux = dict[str, tp.Any]
-InitFn = tp.Callable[[jax.Array, tuple[int, ...], tp.Any], jax.Array]
+_GradTx = GradientTransformation | GradientTransformationExtraArgs
+_AxisSpec = bool | tp.Callable[[tp.Any], bool]
+_Wrt = PyTree[_AxisSpec]
+_Aux = dict[str, tp.Any]
+_Loss = float
+_Batch = tp.Any
+
+_LossFn = tp.Callable[[_M, _O, _Batch], tuple[_Loss, _Aux]]
+_ParallelismPlans = dict[str, tp.Callable[[_M], _M]] | tp.Sequence[dict[str, tp.Callable[[_M], _M]]]
+
+
+_ModuleInput = tp.TypeVar("_ModuleInput", _M, tp.Sequence[_M])
+_OptimizerInput = tp.TypeVar("_OptimizerInput", _O, tp.Sequence[_O])
+
+class _TrainStepCallable(Protocol[_ModuleInput, _OptimizerInput]):
+    def __call__(
+        self,
+        module: _ModuleInput,
+        optimizer: _OptimizerInput,
+        batch: tp.Any,
+        key: PRNGKeyArray | None = None,
+    ) -> tuple[_ModuleInput, _OptimizerInput, _Aux]:
+        ...
+
+
+class _EvalStepCallable(Protocol[_ModuleInput]):
+    def __call__(
+        self,
+        module: _ModuleInput,
+        batch: tp.Any,
+        key: PRNGKeyArray | None = None,
+    ) -> _Aux:
+        ...
 
 
 class Optimizer(eqx.Module):
     opt_state: PyTree[Array]
-    wrt: PyTree[AxisSpec] = eqx.field(static=True)
+    wrt: PyTree[_AxisSpec] = eqx.field(static=True)
     step: int
     tx: GradientTransformationExtraArgs = eqx.field(static=True)
 
-    def __init__(self, grad_tx: GradTx, model: eqx.Module, *, wrt: Wrt = eqx.is_inexact_array):
+    def __init__(self, grad_tx: _GradTx, model: eqx.Module, *, wrt: _Wrt = eqx.is_inexact_array):
         self.tx = grad_tx
         self.wrt = wrt
         self.opt_state = self.tx.init(eqx.filter(model, self.wrt))
@@ -44,53 +75,22 @@ class Optimizer(eqx.Module):
         return new_model, new_self
 
 
-@jtu.register_dataclass
-@dataclasses.dataclass
-class Metric:
-    values: float
-    counts: int
-    mode: str
-
-    def update(self, **kwargs) -> Metric:
-        if "values" not in kwargs:
-            raise ValueError("values must be present with type of int or float")
-        if "counts" not in kwargs:
-            raise ValueError("counts must be present with type of int")
-
-        add_value = kwargs.get("values")
-        add_count = kwargs.get("counts")
-        assert isinstance(add_value, (float, int)), "values must be int or float value"
-        assert isinstance(add_count, int), "counts must be int value"
-
-        new_metric = eqx.tree_at(
-            lambda m: [m.values, m.counts],
-            self,
-            [self.values + float(add_value), self.counts + add_count],
-        )
-        return new_metric
-
-    def compute(self) -> float:
-        raise NotImplementedError
-
-
-
-
-def _as_list(x: T | tp.Sequence[T] | None) -> list[T]:
+_T = tp.TypeVar("_T")
+def _as_list(x: _T | tp.Sequence[_T] | None) -> list[_T]:
     if x is None:
         return []
     return list(x) if isinstance(x, (list, tuple)) else [x]
 
 
-def _is_shape_dtype_struct(x: tp.Any) -> bool:
-    try:
-        from jax import ShapeDtypeStruct
+def _ensure_manager(
+    callbacks: CallbackManager | tp.Sequence[Callback] | None,
+) -> CallbackManager | None:
+    if callbacks is None:
+        return None
+    if isinstance(callbacks, CallbackManager):
+        return callbacks
+    return CallbackManager(list(callbacks))
 
-        return isinstance(x, ShapeDtypeStruct)
-    except Exception:
-        return False
-
-def _reseed(key: jax.Array, tag: str) -> jax.Array:
-    return jax.random.fold_in(key, (hash(tag) & 0xFFFFFFFF))
 
 
 def init_module(
@@ -99,7 +99,7 @@ def init_module(
     key: PRNGKeyArray,
     init_weights_plan: tp.Callable[[eqx.Module, jax.Array], eqx.Module] | None = None,
 ) -> eqx.Module:
-    """Initialize module leaves using optional plans or submodule init hooks."""
+    """Initialize module (abstract module ) leaves using optional plans or submodule init hooks."""
 
     root_plan_method = getattr(module, "init_weights_plan", None)
 
@@ -113,10 +113,11 @@ def init_module(
     replacements: list[tp.Any] = []
 
     for path, sub in iter_module(module, include_root=True):
-        tag = ".".join(str(p) for p in path) if path else "<root>"
+
         key, subkey = jax.random.split(key, 2)  
 
-        new_sub = sub
+        new_sub = None
+
         if callable(init_weights_plan):
             try:
                 cand = init_weights_plan(sub, subkey)
@@ -127,15 +128,14 @@ def init_module(
                 if cand is not None:
                     new_sub = cand
 
-        if new_sub is sub and hasattr(sub, "init_weights") and callable(getattr(sub, "init_weights")):
+        if new_sub is None and hasattr(sub, "init_weights") and callable(getattr(sub, "init_weights")):
             try:
                 cand = sub.init_weights(key=subkey) 
             except TypeError:
                 cand = sub.init_weights() 
             new_sub = cand
 
-        if new_sub is not sub:
-
+        if new_sub is not None:
             def _getter_from_path(pth):
                 def get(root):
                     node = root
@@ -151,14 +151,22 @@ def init_module(
             getters.append(_getter_from_path(path))
             replacements.append(new_sub)
 
-    mod = module
     for get, rep in zip(getters, replacements):
-        mod = eqx.tree_at(get, mod, rep)
+        module = eqx.tree_at(get, module, rep)
 
-    return mod
+    return module
 
+#TODO: maybe add AbstractModule and do typecheck instead of tree_map scan
 def _module_has_abstract_params(m: eqx.Module) -> bool:
     found = False
+
+    def _is_shape_dtype_struct(x: tp.Any) -> bool:
+        try:
+            from jax import ShapeDtypeStruct
+
+            return isinstance(x, ShapeDtypeStruct)
+        except Exception:
+            return False
 
     def _check(leaf):
         nonlocal found
@@ -169,93 +177,15 @@ def _module_has_abstract_params(m: eqx.Module) -> bool:
     jtu.tree_map(_check, m)
     return found
 
-
-def _maybe_do_sched(
-    fn: tp.Callable[..., tp.Any],
-    *,
-    curr_step: int,
-    every: int | None = None,
-    at: int | None = None,
-    args: tuple = (),
-    kwargs: dict | None = None,
-):
-    if kwargs is None:
-        kwargs = {}
-    if at is not None:
-        if curr_step == at:
-            return fn(*args, **kwargs)
-        return None
-    if every is None:
-        return None
-    if every <= 0:
-        return None
-    if curr_step % every == 0:
-        return fn(*args, **kwargs)
-    return None
-
-
-def maybe_do(
-    function: tp.Callable[..., tp.Any],
-    function_args: tuple,
-    function_kwargs: dict | None,
-    curr_step: int,
-    required_step: int,
-):
-    """Simple scheduling helper: run function every required_step with given args/kwargs."""
-    if function_kwargs is None:
-        function_kwargs = {}
-    return _maybe_do_sched(
-        function,
-        curr_step=curr_step,
-        every=required_step,
-        args=function_args,
-        kwargs=function_kwargs,
-    )
-
-
-def _shape_key(x) -> tuple[int, ...] | None:
-    try:
-        return tuple(x.shape)  # type: ignore[attr-defined]
-    except Exception:
-        return None
-
-
-def _infer_opt_state_spec_from_params(opt_state: PyTree, params_spec_tree: PyTree) -> PyTree:
-    """Approximate mapping from parameter specs to optimizer state specs by shape."""
-    params_specs = list(jtu.tree_leaves(params_spec_tree, is_leaf=lambda _: False))
-
-    from jax import P
-
-    shape_to_spec: dict[tuple[int, ...], P | None] = {}
-    for spec in params_specs:
-        pval = getattr(spec, "value", spec)
-        key = _shape_key(pval)
-        if key is None:
-            continue
-        shape_to_spec[key] = pval
-
-    def _assign_spec(leaf):
-        key = _shape_key(leaf)
-        if key is None:
-            return None
-        return shape_to_spec.get(key, None)
-
-    return jtu.tree_map(_assign_spec, opt_state)
-
-
 def setup_module_opts(
-    module: M,
-    grad_tx: GradTx,
+    module: _M,
+    grad_tx: _GradTx,
     mesh: Mesh,
     *,
-    wrt: Wrt = eqx.is_inexact_array,
-    parallelism_plans: (
-        tp.Sequence[dict[str, tp.Callable[[eqx.Module], eqx.Module]]]
-        | dict[str, tp.Callable[[eqx.Module], eqx.Module]]
-        | None
-    ) = None,
+    wrt: _Wrt = eqx.is_inexact_array,
+    parallelism_plans: _ParallelismPlans | None = None,
     key: PRNGKeyArray | None = None,
-) -> tuple[M, Optimizer]:
+) -> tuple[_M, Optimizer]:
     if not isinstance(module, eqx.Module):
         raise TypeError("module must be an equinox.Module instance")
     if not isinstance(grad_tx, (GradientTransformation, GradientTransformationExtraArgs)):
@@ -268,9 +198,9 @@ def setup_module_opts(
     plans = _as_list(parallelism_plans)
 
     def _build(
-        m: M,
+        m: _M,
         rng: PRNGKeyArray,
-    ) -> tuple[M, Optimizer]:
+    ) -> tuple[_M, Optimizer]:
         if _module_has_abstract_params(m):
             m = init_module(m, key=rng)
 
@@ -280,11 +210,7 @@ def setup_module_opts(
         pspec_tree = get_partition_spec(m)
         m_sharded = eqx.filter_shard(m, pspec_tree)
         opt = Optimizer(grad_tx, m_sharded, wrt=wrt)
-
-        # try:
-        #     # opt_state_sharded = eqx.filter_shard(opt, pspec_tree)
-        # except Exception:
-        #     pass
+        opt = eqx.filter_shard(opt, pspec_tree)
 
         return m_sharded, opt
 
@@ -296,13 +222,38 @@ def setup_module_opts(
     return new_module, new_opt
 
 
+@tp.overload
 def make_train_step(
-    *,
-    loss_function: tp.Callable[[M, Optimizer, tp.Any], tuple[float, Aux]] | None = None,
-    train_step: tp.Callable[[M, Optimizer, tp.Any], tuple[M, Optimizer, Aux]] | None = None,
+    *, 
+    loss_function: _LossFn,
     jit: bool = True,
     default_key: PRNGKeyArray | None = None,
-) -> tp.Callable[[M, Optimizer, tp.Any], tuple[M, Optimizer, Aux]]:
+)-> _TrainStepCallable[_M, Optimizer]:
+    ...
+
+@tp.overload
+def make_train_step(
+    *, 
+    train_step: _TrainStepCallable[_M, Optimizer],
+    jit: bool = True,
+    default_key: PRNGKeyArray | None = None,
+)-> _TrainStepCallable[_M, Optimizer]:
+    ...
+@tp.overload
+def make_train_step(
+    *, 
+    train_step: _TrainStepCallable[tp.Sequence[_M], tp.Sequence[Optimizer]],
+    jit: bool = True,
+    default_key: PRNGKeyArray | None = None,
+    )-> _TrainStepCallable[tp.Sequence[_M], tp.Sequence[Optimizer]]:
+    ...
+def make_train_step(
+    *,
+    loss_function: _LossFn | None = None,
+    train_step: _TrainStepCallable[tp.Sequence[_M], tp.Sequence[Optimizer]] | _TrainStepCallable[_M, Optimizer] | None = None,
+    jit: bool = True,
+    default_key: PRNGKeyArray | None = None,
+) -> _TrainStepCallable[_M, Optimizer] | _TrainStepCallable[tp.Sequence[_M], tp.Sequence[Optimizer]]:
 
     if train_step is None and loss_function is None:
         raise ValueError("Provide either train_step or loss_function")
@@ -313,96 +264,244 @@ def make_train_step(
     assert loss_function is not None
 
     def _step(
-        module: M,
+        module: _M,
         optimizer: Optimizer,
         batch: tp.Any,
         *,
         key: PRNGKeyArray | None = None,
-    ) -> tuple[M, Optimizer, Aux]:
-        k = key if key is not None else default_key
-        if k is None:
-            k = jax.random.PRNGKey(0)
+    ) -> tuple[_M, Optimizer, _Aux]:
         grad_fn = eqx.filter_value_and_grad(loss_function, has_aux=True)
-        (_, aux), grads = grad_fn(module, optimizer, batch, key=k)
+        (_, aux), grads = grad_fn(module, optimizer, batch, key=key)
         new_module, new_opt = optimizer(grads, module)
         return new_module, new_opt, aux
 
     return eqx.filter_jit(_step) if jit else _step
 
+@tp.overload
+def make_eval_step(
+  *,
+  loss_function: _LossFn, 
+  jit: bool = True,
+  default_key: PRNGKeyArray | None = None,
+) -> _EvalStepCallable[_M]:
+  ...
 
-def compute_metrics(
-    metrics: PyTree[Metric] | None,
-    aux: dict[str, tp.Any],
+@tp.overload
+def make_eval_step(
+  *,
+  eval_step: _EvalStepCallable[_M],
+  jit: bool = True,
+  default_key: PRNGKeyArray | None = None,
+) -> _EvalStepCallable[_M]:
+  ...
+
+@tp.overload
+def make_eval_step(
+  *,
+  eval_step: _EvalStepCallable[tp.Sequence[_M]],
+  jit: bool = True,
+  default_key: PRNGKeyArray | None = None,
+) -> _EvalStepCallable[tp.Sequence[_M]]:
+  ...
+
+def make_eval_step(
+  *,
+  loss_function: _LossFn | None = None, 
+  eval_step: _EvalStepCallable[tp.Sequence[_M]] | _EvalStepCallable[_M] | None = None,
+  jit: bool = True,
+  default_key: PRNGKeyArray | None = None,
+) -> _EvalStepCallable[_M] | _EvalStepCallable[tp.Sequence[_M]]:
+    if eval_step is None and loss_function is None:
+        raise ValueError("Provide either eval_step or loss_function")
+
+    if eval_step is not None:
+        return eqx.filter_jit(eval_step) if jit else eval_step
+
+    assert loss_function is not None
+
+    def _step(
+      module: _M,
+      batch: tp.Any,
+      *,
+      key: PRNGKeyArray | None = None,
+    ) -> _Aux:
+        _, aux = loss_function(module, batch, key=key)
+        return aux
+
+    return eqx.filter_jit(_step) if jit else _step
+
+def train_loop(
     *,
-    mode: str = "train",
-) -> PyTree[Metric]:
-    """Update a Metric PyTree using aux from a step."""
+    num_train_steps: int,
+    num_eval_steps: int,
+    eval_interval: int,
+    module: _ModuleInput,
+    optimizer: _OptimizerInput,
+    data_loader: tp.Iterable[tp.Any],
+    train_step: _TrainStepCallable[_ModuleInput, _OptimizerInput],
+    eval_loader: tp.Iterable[tp.Any] | None = None,
+    eval_step: _EvalStepCallable[_ModuleInput] | None = None,
+    callbacks: CallbackManager | tp.Sequence[Callback] | None = None,
+    loggers: Logger | tp.Sequence[Logger] | None = None,
+    logging_enabled: bool = True,
+    train_metrics: MetricsAgg | None = None,
+    eval_metrics: MetricsAgg | None = None,
+    key: PRNGKeyArray | None = None,
+) -> tuple[_ModuleInput, _OptimizerInput, dict[str, float], dict[str, float]]:
+    if num_train_steps <= 0:
+        raise ValueError("num_train_steps must be positive")
+    if eval_step is None and eval_loader is not None:
+        raise ValueError("eval_step must be provided when eval_loader is not None")
+    if eval_loader is None:
+        eval_step = None
 
-    def _to_metric(v) -> Metric:
-        if isinstance(v, Metric):
-            return v
-        if isinstance(v, tuple) and len(v) == 2:
-            val, cnt = v
-            return Metric(values=float(val), counts=int(cnt), mode=mode)
-        if isinstance(v, (int, float)):
-            return Metric(values=float(v), counts=1, mode=mode)
-        return Metric(values=0.0, counts=0, mode=mode)
+    callback_manager = _ensure_manager(callbacks)
+    if isinstance(loggers, Logger):
+        logger_list = [loggers]
+    elif loggers is None:
+        logger_list = []
+    else:
+        logger_list = list(loggers)
 
-    updates: dict[str, Metric] = {k: _to_metric(v) for k, v in aux.items()}
-    if metrics is None:
-        return updates
+    if not logging_enabled:
+        logger_list = []
 
-    def _merge(old: Metric | None, new: Metric) -> Metric:
-        if old is None:
-            return new
-        return old.update(values=new.values, counts=new.counts)
+    if train_metrics is None:
+        train_metrics = MetricsAgg()
+    if eval_metrics is None:
+        eval_metrics = MetricsAgg()
 
-    out = dict(metrics)
-    for k, v in updates.items():
-        out[k] = _merge(out.get(k), v)
-    return out
-
-
-def metrics_to_host(metrics: PyTree[Metric]) -> dict[str, float]:
-    """Compute scalar host metrics from Metric PyTree (value/count average)."""
-    host: dict[str, float] = {}
-    for k, m in metrics.items():
-        denom = max(1, int(m.counts))
-        host[k] = float(m.values) / float(denom)
-    return host
-
-
-def maybe_write(
-    logger: tp.Any,
-    metrics: PyTree[Metric],
-    step: int,
-    *,
-    every: int = 1,
-    mode: str = "train",
-) -> None:
-    if logger is None:
-        return
-    _maybe_do_sched(
-        logger.log_host_metrics,
-        curr_step=step,
-        every=every,
-        args=(metrics_to_host(metrics), step),
-        kwargs={"mode": mode},
-    )
+    rng = key
+    step = 0
 
 
-def maybe_checkpoint(
-    checkpoint_manager: tp.Any,
-    state: PyTree,
-    step: int,
-    *,
-    every: int = 0,
-    at: int | None = None,
-) -> None:
-    if checkpoint_manager is None:
-        return
+    if callback_manager:
+        callback_manager.call("on_training_start", module=module, optimizer=optimizer, step=step)
 
-    def _save():
-        checkpoint_manager.save(step, args=state)
+    train_iter = iter(data_loader)
+    eval_iter = iter(eval_loader) if eval_loader is not None else None
 
-    _maybe_do_sched(_save, curr_step=step, every=every, at=at)
+    last_train_log: dict[str, float] | None = None
+    last_eval_log: dict[str, float] | None = None
+
+    for step in range(1, num_train_steps + 1):
+        if rng is not None:
+            rng, step_key = jax.random.split(rng)
+        else:
+            step_key = None
+
+        batch = next(train_iter)
+
+        if callback_manager:
+            callback_manager.call(
+                "on_train_step",
+                module=module,
+                optimizer=optimizer,
+                batch=batch,
+                step=step,
+                key=step_key,
+            )
+
+        module, optimizer, aux = train_step(module, optimizer, batch, key=step_key)
+
+        train_metrics.update(aux)
+        current_metrics = train_metrics.compute(reset=False)
+
+        reset_train = False
+        for lg in logger_list:
+            if lg.log_metrics(current_metrics, step=step, mode="train"):
+                reset_train = True
+                last_train_log = dict(current_metrics)
+        if reset_train:
+            train_metrics.reset()
+
+        if callback_manager:
+            callback_manager.call(
+                "on_train_step_end",
+                module=module,
+                optimizer=optimizer,
+                batch=batch,
+                step=step,
+                aux=aux,
+                metrics=current_metrics,
+            )
+
+        if (
+            eval_step is not None
+            and eval_interval > 0
+            and step % eval_interval == 0
+        ):
+            if callback_manager:
+                callback_manager.call("on_eval_start", module=module, optimizer=optimizer, step=step)
+            eval_metrics.reset()
+
+            eval_rng = rng
+            for eval_idx in range(1, num_eval_steps + 1):
+                if eval_iter is None:
+                    raise ValueError("eval_loader must be provided for evaluation")
+                if eval_rng is not None:
+                    eval_rng, eval_key = jax.random.split(eval_rng)
+                else:
+                    eval_key = None
+
+                eval_batch = next(eval_iter)
+                if callback_manager:
+                    callback_manager.call(
+                        "on_eval_step",
+                        module=module,
+                        optimizer=optimizer,
+                        batch=eval_batch,
+                        step=step,
+                        eval_step=eval_idx,
+                        key=eval_key,
+                    )
+
+                eval_aux = eval_step(module, eval_batch, key=eval_key)
+
+                eval_metrics.update(eval_aux)
+                eval_current = eval_metrics.compute(reset=False)
+
+                reset_eval = False
+                for lg in logger_list:
+                    if lg.log_metrics(eval_current, step=eval_idx, mode="eval"):
+                        reset_eval = True
+                        last_eval_log = dict(eval_current)
+                if reset_eval:
+                    eval_metrics.reset()
+
+                if callback_manager:
+                    callback_manager.call(
+                        "on_eval_step_end",
+                        module=module,
+                        optimizer=optimizer,
+                        batch=eval_batch,
+                        step=step,
+                        eval_step=eval_idx,
+                        aux=eval_aux,
+                        metrics=eval_current,
+                    )
+
+            if callback_manager:
+                callback_manager.call(
+                    "on_eval_end",
+                    module=module,
+                    optimizer=optimizer,
+                    step=step,
+                    metrics=eval_metrics.compute(reset=False),
+                )
+            rng = eval_rng
+
+    if callback_manager:
+        callback_manager.call("on_training_end", module=module, optimizer=optimizer, step=step)
+
+    train_summary = train_metrics.compute(reset=False)
+    if not train_summary and last_train_log is not None:
+        train_summary = last_train_log
+
+    eval_summary: dict[str, float] = {}
+    if eval_step is not None:
+        eval_summary = eval_metrics.compute(reset=False)
+        if not eval_summary and last_eval_log is not None:
+            eval_summary = last_eval_log
+
+    return module, optimizer, train_summary, eval_summary

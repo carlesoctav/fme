@@ -5,13 +5,13 @@ from equinox import field
 from jax.nn.initializers import Initializer, normal
 from jaxtyping import Array, Int, PRNGKeyArray
 
-from src import Darray
+from src import DArray
 
 
 default_init = normal(stddev=0.02)
 
 class Embedding(eqx.Module):
-    weight: Darray
+    weight: DArray
     num_embeddings: int = field(static=True) 
     embedding_dim: int = field(static=True)
     dtype: jnp.dtype = field(static=True)
@@ -42,7 +42,7 @@ class Embedding(eqx.Module):
             wkey, (num_embeddings, embedding_dim), self.params_dtype
         )
 
-        self.weight = Darray(value=wvalue, pspec=weight_spec)
+        self.weight = DArray(value=wvalue, pspec=weight_spec)
 
 
     def __call__(
@@ -62,5 +62,5 @@ class Embedding(eqx.Module):
             raise ValueError("A PRNGKeyArray 'key' must be provided.")
 
         new_w = self.initializer(key, (self.num_embeddings, self.embedding_dim), self.params_dtype)
-        new_self = eqx.tree_at(lambda m: m.weight, self, Darray(value=new_w, pspec=self.weight.pspec))
+        new_self = eqx.tree_at(lambda m: m.weight, self, DArray(value=new_w, pspec=self.weight.pspec))
         return new_self
