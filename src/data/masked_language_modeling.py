@@ -1,8 +1,17 @@
+from __future__ import annotations
+
+import dataclasses as dc
+import typing as tp
 from dataclasses import dataclass
 
 import grain
 import numpy as np
+from grain import transforms as grain_transforms
+from jaxtyping import Array
 from transformers import PreTrainedTokenizerBase
+
+from ._dataset_transforms import BaseDatasetTransform, EnsureMapDataset, ToIterDataset
+
 
 @dataclass
 class DataTransformsForMaskedLMGivenText(grain.transforms.RandomMap):
@@ -115,3 +124,89 @@ class DataTransformsForMaskedLMGivenText(grain.transforms.RandomMap):
         )
 
         return output_ids, labels
+
+
+@dc.dataclass
+class MLMBatch:
+    """Batch container for masked language modeling."""
+
+    input_ids: Array
+    attention_mask: Array
+    token_type_ids: Array
+    labels: Array
+
+
+@dc.dataclass
+class FormatMLMOutputs(grain_transforms.Map):
+    """Flatten outputs from MLM random map transform."""
+
+    column: str
+
+    def map(self, features: dict[str, tp.Any]) -> dict[str, Array]:
+        if self.column not in features:
+            raise KeyError(f"Column {self.column!r} not present in features")
+        column_data = features[self.column]
+        labels = np.asarray(features["labels"], dtype=np.int32)
+
+        input_ids = np.asarray(column_data.get("input_ids"), dtype=np.int32)
+        attention_mask = column_data.get("attention_mask")
+        token_type_ids = column_data.get("token_type_ids")
+
+        if attention_mask is None:
+            attention_mask = np.ones_like(input_ids, dtype=np.int32)
+        else:
+            attention_mask = np.asarray(attention_mask, dtype=np.int32)
+
+        if token_type_ids is None:
+            token_type_ids = np.zeros_like(input_ids, dtype=np.int32)
+        else:
+            token_type_ids = np.asarray(token_type_ids, dtype=np.int32)
+
+        return {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "token_type_ids": token_type_ids,
+            "labels": labels,
+        }
+
+
+def masked_language_modeling_transforms(
+    *,
+    dataset_type: str,
+    column: str,
+    tokenizer: PreTrainedTokenizerBase,
+    max_length: int,
+    mlm_probability: float = 0.15,
+    mask_replace_prob: float = 0.8,
+    random_replace_prob: float = 0.1,
+    pad_to_multiple_of: int | None = None,
+) -> tuple[
+    list[grain_transforms.Map | grain_transforms.RandomMap | BaseDatasetTransform],
+    type[MLMBatch],
+]:
+    """Build transforms for creating MLM datasets."""
+
+    random_transform = DataTransformsForMaskedLMGivenText(
+        tokenizer=tokenizer,
+        columns=column,
+        max_length=max_length,
+        mlm_probability=mlm_probability,
+        mask_replace_prob=mask_replace_prob,
+        random_replace_prob=random_replace_prob,
+        pad_to_multiple_of=pad_to_multiple_of,
+    )
+
+    operations: list[grain_transforms.Map | grain_transforms.RandomMap | BaseDatasetTransform] = [
+        EnsureMapDataset(dataset_type=dataset_type),
+        ToIterDataset(),
+        random_transform,
+        FormatMLMOutputs(column=column),
+    ]
+
+    return operations, MLMBatch
+
+
+__all__ = [
+    "MLMBatch",
+    "masked_language_modeling_transforms",
+]

@@ -22,7 +22,6 @@ class BertModelWeightPlanMixin:
         std = getattr(cfg, "initializer_range", 0.02)
         pad_idx = getattr(cfg, "pad_token_id", None)
 
-        # Linear
         if isinstance(module, nn.Linear):
             wkey, bkey = jax.random.split(key, 2)
             w_shape = (module.out_features, module.in_features)
@@ -38,7 +37,6 @@ class BertModelWeightPlanMixin:
                 new_mod = eqx.tree_at(lambda m: m.bias, new_mod, DArray(value=new_bias, pspec=module.bias.pspec))
             return new_mod
 
-        # Embedding
         if isinstance(module, nn.Embedding):
             w_shape = (module.num_embeddings, module.embedding_dim)
             w_dtype = module.params_dtype
@@ -47,7 +45,6 @@ class BertModelWeightPlanMixin:
                 new_w = new_w.at[int(pad_idx)].set(jnp.zeros((module.embedding_dim,), dtype=w_dtype))
             return eqx.tree_at(lambda m: m.weight, module, DArray(value=new_w, pspec=module.weight.pspec))
 
-        # LayerNorm
         if isinstance(module, nn.LayerNorm):
             w_shape = module.normalized_shape
             w_dtype = module.params_dtype
@@ -58,6 +55,4 @@ class BertModelWeightPlanMixin:
                 new_mod = eqx.tree_at(lambda m: m.bias, new_mod, DArray(value=new_b, pspec=module.bias.pspec))
             return new_mod
 
-        # Default: leave unchanged
         return module
-
