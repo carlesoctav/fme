@@ -171,11 +171,11 @@ class FormatMLMOutputs(grain_transforms.Map):
 
 
 def masked_language_modeling_transforms(
-    *,
     dataset_type: str,
     column: str,
     tokenizer: PreTrainedTokenizerBase,
     max_length: int,
+    *,
     mlm_probability: float = 0.15,
     mask_replace_prob: float = 0.8,
     random_replace_prob: float = 0.1,

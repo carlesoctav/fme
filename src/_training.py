@@ -14,7 +14,6 @@ from ._filter import apply_transforms, iter_module
 from ._metrics import MetricsAgg
 from ._utils import first_from
 from .callbacks import Callback, CallbackManager
-from .data import LLMBatch, make_data_loader
 from .distributed import get_partition_spec
 from .loggers import Logger
 

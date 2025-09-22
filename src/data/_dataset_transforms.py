@@ -33,6 +33,7 @@ class EnsureMapDataset(BaseDatasetTransform):
                 import datasets as hf_datasets  # pylint: disable=import-error
             except ImportError as exc:  # pragma: no cover - import guard
                 raise ImportError("datasets package is required for huggingface datasets") from exc
+            print(type(dataset))
             if not isinstance(dataset, hf_datasets.Dataset):
                 raise TypeError("Expected a `datasets.Dataset` instance for huggingface data")
             return grain.MapDataset.source(dataset)

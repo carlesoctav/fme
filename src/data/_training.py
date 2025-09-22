@@ -32,16 +32,12 @@ class _DatasetIteratorWithInputSpec(DatasetIterator[_T]):
     ):
         super().__init__(parent)
         self._pspec = pspec 
+        print(f"DEBUGPRINT[318]: _training.py:34: self._pspec={self._pspec}")
         self._mesh = mesh
+        print(f"DEBUGPRINT[319]: _training.py:36: self._mesh={self._mesh}")
 
     def __next__(self) -> _T:
-        try:
-            local_values = next(self._parent)
-        except StopIteration:
-            break
-
-        if not local_values:
-            raise StopIteration
+        local_values = next(self._parent)
         with self._stats.record_self_time():
             return self._stats.record_output_spec(
                 jtu.tree_map(self.array_from_local_process, local_values)
@@ -49,7 +45,7 @@ class _DatasetIteratorWithInputSpec(DatasetIterator[_T]):
 
     def array_from_local_process(self, local_values: _T) -> _T:
         return jax.make_array_from_process_local_data(
-            sharding = jax.NamedSharding(self._mesh, partition_spec = self._pspec),
+            sharding = jax.NamedSharding(self._mesh, self._pspec),
             local_data = local_values,
         )
 
@@ -59,10 +55,6 @@ class _DatasetIteratorWithInputSpec(DatasetIterator[_T]):
     def set_state(self, state):
         self._parent.set_state(state)
 
-    def __str__(self) -> str:
-        return (
-            f"MultiHostIterDatasetIterator(pspec={self._pspec})"
-        )
 
 class IterDatasetWithInputSpec(IterDataset[_T]):
     @tp.overload
@@ -71,6 +63,7 @@ class IterDatasetWithInputSpec(IterDataset[_T]):
         parent: IterDataset[_S],
         axis_names: str | tuple[str, ...],
         pspec: None = None,
+        mesh: Mesh | None = None,
     ) -> None: ...
 
     @tp.overload
@@ -79,6 +72,7 @@ class IterDatasetWithInputSpec(IterDataset[_T]):
         parent: IterDataset[_S],
         pspec: PartitionSpec,
         axis_names: None = None,
+        mesh: Mesh | None = None,
     ) -> None: ...
 
     def __init__(
@@ -86,18 +80,21 @@ class IterDatasetWithInputSpec(IterDataset[_T]):
         parent: IterDataset[_S],
         axis_names: str | tuple[str, ...] | None = None,
         pspec: PartitionSpec | None = None,
+        mesh: Mesh | None = None,
     ):
         super().__init__(parent)
 
         if (axis_names is None) == (pspec is None):
             raise ValueError("Exactly one of `axis_name` or `pspec` must be provided.")
         self._pspec = PartitionSpec(axis_names) if axis_names else pspec
+        self._mesh = mesh
 
     def __iter__(self) -> IterDatasetWithInputSpec:
         parent_iter = self._parent.__iter__()
         return _DatasetIteratorWithInputSpec(
                 parent_iter, 
                 pspec = self._pspec,
+                mesh = self._mesh
         )
 
 def _maybe_check_size(
@@ -141,7 +138,7 @@ def make_iterator_with_inputspec(
     grain_datasets: grain.IterDataset | Sequence[grain.IterDataset],
     pspec: PartitionSpec | None = None,
     *,
-    global_mesh: Mesh,
+    mesh: Mesh,
     global_batch_size: int,
     dataloading_host_count: int,
     dataset_weights: Sequence[float] | None = None,
@@ -156,7 +153,7 @@ def make_iterator_with_inputspec(
     if isinstance(grain_datasets, tp.Sequence):
         if not all(isinstance(ds, grain.IterDataset) for ds in grain_datasets):
             raise TypeError("All datasets must be instances of grain.IterDataset.")
-        mixed = grain.IterDataset(grain_datasets,  weights = dataset_weights) 
+        mixed = grain.IterDataset.mix(grain_datasets,  weights = dataset_weights) 
     else:
         mixed = grain_datasets 
 
@@ -178,10 +175,11 @@ def make_iterator_with_inputspec(
 
     return IterDatasetWithInputSpec(
         mixed,
-        pspec = pspec
+        pspec = pspec,
+        mesh = mesh
     )
 
-def make_data_loader(
+def make_dataloader(
     datasets: Sequence[tp.Any],
     operations: Sequence[
         grain_transforms.Map | grain_transforms.RandomMap | BaseDatasetTransform
@@ -203,9 +201,18 @@ def make_data_loader(
     batch_class: type[Batch] | None = None,
     use_thread_prefetch: bool = False,
 ) -> IterDatasetWithInputSpec:
-    prepared: list[grain.MapDataset | grain.IterDataset] = []
 
-    pspec_out = _maybe_check_size(mesh ,pspec, axis_names)
+    print(f"DEBUGPRINT[320]: _training.py:194: dataloading_host_index={dataloading_host_index}")
+    print(f"DEBUGPRINT[321]: _training.py:196: dataloading_host_count={dataloading_host_count}")
+
+    prepared: list[grain.MapDataset | grain.IterDataset] = []
+    if isinstance(datasets, (str, bytes)) or not isinstance(datasets, Sequence):
+        datasets = (datasets,)
+    else:
+        datasets = tuple(datasets)
+
+    pspec_out = _maybe_check_size(mesh ,pspec, axis_names, global_batch_size)
+    print(f"DEBUGPRINT[317]: _training.py:207: pspec_out={pspec_out}")
 
     for dataset in datasets:
         if not operations:
@@ -249,7 +256,7 @@ def make_data_loader(
     return make_iterator_with_inputspec(
         prepared,
         pspec=pspec_out,
-        global_mesh=mesh,
+        mesh=mesh,
         global_batch_size=global_batch_size,
         dataloading_host_count=dataloading_host_count,
         dataset_weights=dataset_weights,
