@@ -18,7 +18,6 @@ class CollateToBatch(grain_transforms.Map):
 
     def map(self, features: dict[str, Array]) -> Batch:
         kwargs = {field.name: features.get(field.name) for field in dc.fields(self.batch_class)}
-        return self.batch_class(**kwargs)  # type: ignore[arg-type]
+        return self.batch_class(**kwargs) 
 
 
-__all__ = ["CollateToBatch"]

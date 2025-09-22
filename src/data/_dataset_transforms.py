@@ -157,21 +157,3 @@ class _BatchRampUpIterDataset(grain.IterDataset):
                 break
             step += 1
             yield jtu.tree_map(lambda *xs: np.stack(xs), *elems)
-
-
-def _as_dataset_list(
-    datasets: grain.MapDataset | grain.IterDataset | Sequence[grain.MapDataset | grain.IterDataset]
-) -> list[grain.MapDataset | grain.IterDataset]:
-    if isinstance(datasets, (grain.MapDataset, grain.IterDataset)):
-        return [datasets]
-    return list(datasets)
-
-
-__all__ = [
-    "BaseDatasetTransform",
-    "EnsureMapDataset",
-    "ToIterDataset",
-    "ApplyFirstFitPacking",
-    "BatchDataset",
-    "BatchRampUpDataset",
-]

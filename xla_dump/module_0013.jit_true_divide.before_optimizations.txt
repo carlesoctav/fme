@@ -1,8 +1,0 @@
-HloModule jit_true_divide, entry_computation_layout={(f32[], f32[])->f32[]}, allow_spmd_sharding_propagation_to_parameters={true,true}, allow_spmd_sharding_propagation_to_output={true}
-
-ENTRY %main.4 (x1.1: f32[], x2.2: f32[]) -> f32[] {
-  %x1.1 = f32[] parameter(0), metadata={op_name="x1"}
-  %x2.2 = f32[] parameter(1), metadata={op_name="x2"}
-  ROOT %div.3 = f32[] divide(%x1.1, %x2.2), metadata={op_name="jit(true_divide)/div" source_file="/home/carlesoctav/personal/modernizing-indo-nlp/src/nn/_linear.py" source_line=55 source_end_line=55 source_column=12 source_end_column=88}
-}
-

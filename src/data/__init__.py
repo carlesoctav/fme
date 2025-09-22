@@ -1,19 +1,13 @@
-from .next_token_prediction import LLMBatch, next_token_prediction_transforms
+from .next_token_prediction import next_token_prediction_transforms
 from .masked_language_modeling import (
-    DataTransformsForMaskedLMGivenText,
-    MLMBatch,
     masked_language_modeling_transforms,
 )
-from ._training import MultiHostDataLoadIterator, make_data_loader, _make_iterator
+from ._training import IterDatasetWithInputSpec, make_data_loader, make_iterator_with_inputspec
 
 
 __all__ = [
-    "DataTransformsForMaskedLMGivenText",
-    "LLMBatch",
-    "MultiHostDataLoadIterator",
-    "MLMBatch",
     "next_token_prediction_transforms",
     "masked_language_modeling_transforms",
     "make_data_loader",
-    "_make_iterator",
+    "make_iterator_with_inputspec",
 ]

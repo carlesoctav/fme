@@ -1,8 +1,0 @@
-
-real_module = None
-for path, mmodule in iter_module(module):
-    if insinstance(module, nn.Linear):
-        new_mmodule = fully_shard(module)
-        real_module = eqx.tree_at(lamda x:module, module, new_mmodule)
-
-        
