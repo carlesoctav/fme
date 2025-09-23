@@ -17,7 +17,7 @@ class CollateToBatch(grain_transforms.Map):
     batch_class: type[Batch]
 
     def map(self, features: dict[str, Array]) -> Batch:
+        print(f"DEBUGPRINT[322]: _transforms.py:19: features={features}")
         kwargs = {field.name: features.get(field.name) for field in dc.fields(self.batch_class)}
         return self.batch_class(**kwargs) 
-
 

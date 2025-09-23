@@ -1,23 +1,28 @@
 from __future__ import annotations
 
 import dataclasses as dc
-import typing as tp
 from dataclasses import dataclass
 
 import grain
+import jax.tree_util as jtu
 import numpy as np
 from grain import transforms as grain_transforms
 from jaxtyping import Array
 from transformers import PreTrainedTokenizerBase
 
-from ._dataset_transforms import BaseDatasetTransform, EnsureMapDataset, ToIterDataset
+from ._dataset_transforms import (
+    ApplyFirstFitPacking,
+    BaseDatasetTransform,
+    EnsureMapDataset,
+    ToIterDataset,
+)
 
 
 @dataclass
 class DataTransformsForMaskedLMGivenText(grain.transforms.RandomMap):
     tokenizer: PreTrainedTokenizerBase
     columns: str
-    max_length: int
+    max_length: int | None = None
     mlm_probability: float = 0.15
     mask_replace_prob: float = 0.8
     random_replace_prob: float = 0.1
@@ -28,7 +33,6 @@ class DataTransformsForMaskedLMGivenText(grain.transforms.RandomMap):
         if self.tokenizer.mask_token is None:
             raise ValueError(
                 "This tokenizer does not have a mask token which is necessary for masked language modeling. "
-                "You should pass `mlm=False` to train on causal language modeling instead."
             )
 
     def random_map(
@@ -44,8 +48,8 @@ class DataTransformsForMaskedLMGivenText(grain.transforms.RandomMap):
             texts[self.columns],
             return_tensors="np",
             max_length=self.max_length,
-            padding="max_length",
-            truncation=True,
+            padding="max_length" if self.max_length is not None else None,
+            truncation=self.max_length is not None,
         )
 
         # Tokenizers return shape (1, seq_len) for a single string; squeeze it.
@@ -58,27 +62,34 @@ class DataTransformsForMaskedLMGivenText(grain.transforms.RandomMap):
         )
         special_tokens_mask = np.asarray(special_tokens_mask, dtype=bool)
 
-        tokenized["input_ids"], labels = self.mask_tokens(
-            tokenized["input_ids"],
+        input_ids = np.asarray(tokenized["input_ids"], dtype=np.int32)
+
+        input_ids, labels = self.mask_tokens(
+            input_ids,
             len(self.tokenizer),
             self.tokenizer.mask_token_id,
             special_tokens_mask=special_tokens_mask,
             rng=rng,
         )
 
-        out: dict[str, np.ndarray] = {
-            self.columns: {
-            "input_ids": tokenized["input_ids"],
-            "token_type_ids": tokenized.get(
-                "token_type_ids", np.zeros_like(tokenized["input_ids"], dtype=np.int32)
-            ),
+        attention_mask = tokenized.get("attention_mask")
+        if attention_mask is None:
+            attention_mask = np.ones_like(input_ids, dtype=np.int32)
+        else:
+            attention_mask = np.asarray(attention_mask, dtype=np.int32)
 
-            "attention_mask": tokenized["attention_mask"],
-            },
-            "labels": labels,
+        token_type_ids = tokenized.get("token_type_ids")
+        if token_type_ids is None:
+            token_type_ids = np.zeros_like(input_ids, dtype=np.int32)
+        else:
+            token_type_ids = np.asarray(token_type_ids, dtype=np.int32)
+
+        return {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "token_type_ids": token_type_ids,
+            "labels": np.asarray(labels, dtype=np.int32),
         }
-
-        return out
 
     def mask_tokens(
         self,
@@ -126,6 +137,7 @@ class DataTransformsForMaskedLMGivenText(grain.transforms.RandomMap):
         return output_ids, labels
 
 
+@jtu.register_dataclass
 @dc.dataclass
 class MLMBatch:
     """Batch container for masked language modeling."""
@@ -134,40 +146,32 @@ class MLMBatch:
     attention_mask: Array
     token_type_ids: Array
     labels: Array
+    segment_ids: Array | None = None
+    position_ids: Array | None = None
 
 
 @dc.dataclass
-class FormatMLMOutputs(grain_transforms.Map):
-    """Flatten outputs from MLM random map transform."""
+class ReformatPackedForMLM(grain_transforms.Map):
+    """Rename packed dataset keys to the expected MLM naming."""
 
-    column: str
+    def map(self, features: dict[str, Array]) -> dict[str, Array]:
+        def _pop_first(*names: str) -> Array | None:
+            for name in names:
+                if name in features:
+                    return features.pop(name)
+            return None
 
-    def map(self, features: dict[str, tp.Any]) -> dict[str, Array]:
-        if self.column not in features:
-            raise KeyError(f"Column {self.column!r} not present in features")
-        column_data = features[self.column]
-        labels = np.asarray(features["labels"], dtype=np.int32)
+        if "segment_ids" not in features:
+            seg = _pop_first("input_ids_segmentation", "input_ids_segment_ids")
+            if seg is not None:
+                features["segment_ids"] = seg
 
-        input_ids = np.asarray(column_data.get("input_ids"), dtype=np.int32)
-        attention_mask = column_data.get("attention_mask")
-        token_type_ids = column_data.get("token_type_ids")
+        if "position_ids" not in features:
+            pos = _pop_first("input_ids_position", "input_ids_positions")
+            if pos is not None:
+                features["position_ids"] = pos
 
-        if attention_mask is None:
-            attention_mask = np.ones_like(input_ids, dtype=np.int32)
-        else:
-            attention_mask = np.asarray(attention_mask, dtype=np.int32)
-
-        if token_type_ids is None:
-            token_type_ids = np.zeros_like(input_ids, dtype=np.int32)
-        else:
-            token_type_ids = np.asarray(token_type_ids, dtype=np.int32)
-
-        return {
-            "input_ids": input_ids,
-            "attention_mask": attention_mask,
-            "token_type_ids": token_type_ids,
-            "labels": labels,
-        }
+        return features
 
 
 def masked_language_modeling_transforms(
@@ -180,6 +184,8 @@ def masked_language_modeling_transforms(
     mask_replace_prob: float = 0.8,
     random_replace_prob: float = 0.1,
     pad_to_multiple_of: int | None = None,
+    packing: bool = False,
+    packing_bins: int | None = None,
 ) -> tuple[
     list[grain_transforms.Map | grain_transforms.RandomMap | BaseDatasetTransform],
     type[MLMBatch],
@@ -196,12 +202,25 @@ def masked_language_modeling_transforms(
         pad_to_multiple_of=pad_to_multiple_of,
     )
 
-    operations: list[grain_transforms.Map | grain_transforms.RandomMap | BaseDatasetTransform] = [
+    operations = [
         EnsureMapDataset(dataset_type=dataset_type),
         ToIterDataset(),
         random_transform,
-        FormatMLMOutputs(column=column),
     ]
 
-    return operations, MLMBatch
+    if packing:
+        length_struct = {
+            "input_ids": max_length,
+            "labels": max_length,
+            "attention_mask": max_length,
+            "token_type_ids": max_length,
+        }
+        operations.append(
+            ApplyFirstFitPacking(
+                length_struct=length_struct,
+                num_packing_bins=packing_bins,
+            )
+        )
+        operations.append(ReformatPackedForMLM())
 
+    return operations, MLMBatch

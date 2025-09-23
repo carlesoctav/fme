@@ -1,4 +1,4 @@
-from src.data import make_dataloader, masked_language_modeling_transforms
+from src.data import make_dataloader, masked_language_modeling_transforms, next_token_prediction_transforms
 from datasets import load_dataset
 from src.distributed import simulate_CPU_devices
 from transformers import AutoTokenizer
@@ -14,7 +14,7 @@ if __name__ == "__main__":
     ds = load_dataset("carlesoctav/en-id-parallel-sentences", split = "QED")
     print(f"DEBUGPRINT[314]: test_dataloader.py:4: ds={type(ds)}")
     tokenizer = AutoTokenizer.from_pretrained("google-bert/bert-base-uncased")
-    operations, batch_class = masked_language_modeling_transforms("huggingface", "text_en", max_length = 512, tokenizer = tokenizer)
+    operations, batch_class = next_token_prediction_transforms("huggingface", "text_en", max_length = 1024, tokenizer = tokenizer)
     mesh = jax.make_mesh((8,), ("dp", ), devices = jax.devices(),)
 
 
@@ -25,7 +25,6 @@ if __name__ == "__main__":
         try:
             data = next(dataloader)
             print(data)
-            break
         except StopIteration:
             break
 

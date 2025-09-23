@@ -7,9 +7,13 @@ import grain
 import jax
 import jax.tree_util as jtu
 from grain import DatasetIterator, IterDataset, transforms as grain_transforms
+from grain._src.python.dataset.transformations.prefetch import ThreadPrefetchIterDataset
 from jax.sharding import Mesh, PartitionSpec
 
+from dataclasses import replace as dc_replace
+
 from ._dataset_transforms import (
+    ApplyFirstFitPacking,
     BaseDatasetTransform,
     EnsureMapDataset,
 )
@@ -32,9 +36,7 @@ class _DatasetIteratorWithInputSpec(DatasetIterator[_T]):
     ):
         super().__init__(parent)
         self._pspec = pspec 
-        print(f"DEBUGPRINT[318]: _training.py:34: self._pspec={self._pspec}")
         self._mesh = mesh
-        print(f"DEBUGPRINT[319]: _training.py:36: self._mesh={self._mesh}")
 
     def __next__(self) -> _T:
         local_values = next(self._parent)
@@ -165,12 +167,18 @@ def make_iterator_with_inputspec(
         mixed = mixed.map(CollateToBatch(batch_class=batch_class))
 
 
-    if worker_count > 0 and not use_thread_prefetch:
+    if use_thread_prefetch:
+        mixed = ThreadPrefetchIterDataset(
+            mixed,
+            prefetch_buffer_size=int(worker_buffer_size * worker_count),
+        )
+    elif worker_count > 0 and not use_thread_prefetch:
         mp_options = grain.MultiprocessingOptions(
             num_workers=worker_count,
             per_worker_buffer_size=worker_buffer_size,
         )
         mixed = mixed.mp_prefetch(mp_options)
+
 
 
     return IterDatasetWithInputSpec(
@@ -202,8 +210,15 @@ def make_dataloader(
     use_thread_prefetch: bool = False,
 ) -> IterDatasetWithInputSpec:
 
-    print(f"DEBUGPRINT[320]: _training.py:194: dataloading_host_index={dataloading_host_index}")
-    print(f"DEBUGPRINT[321]: _training.py:196: dataloading_host_count={dataloading_host_count}")
+
+    if dataloading_host_count <= 0:
+        raise ValueError("dataloading_host_count must be positive")
+    if global_batch_size % dataloading_host_count != 0:
+        raise ValueError(
+            "global_batch_size must be divisible by dataloading_host_count"
+        )
+
+    local_process_batch_size = global_batch_size // dataloading_host_count
 
     prepared: list[grain.MapDataset | grain.IterDataset] = []
     if isinstance(datasets, (str, bytes)) or not isinstance(datasets, Sequence):
@@ -212,7 +227,6 @@ def make_dataloader(
         datasets = tuple(datasets)
 
     pspec_out = _maybe_check_size(mesh ,pspec, axis_names, global_batch_size)
-    print(f"DEBUGPRINT[317]: _training.py:207: pspec_out={pspec_out}")
 
     for dataset in datasets:
         if not operations:
@@ -238,6 +252,11 @@ def make_dataloader(
             # so by this we shouldnt differentiate between BaseDatasetTransform and grain transforms
             # need to think more about makeing single interface for all transformation
             if isinstance(op, BaseDatasetTransform):
+                if (
+                    isinstance(op, ApplyFirstFitPacking)
+                    and op.num_packing_bins is None
+                ):
+                    op = dc_replace(op, num_packing_bins=local_process_batch_size)
                 ds = op(ds)  
             elif isinstance(op, grain_transforms.RandomMap):
                 if isinstance(ds, grain.MapDataset):
@@ -266,5 +285,3 @@ def make_dataloader(
         batch_class=batch_class,
         use_thread_prefetch=use_thread_prefetch,
     )
-
-

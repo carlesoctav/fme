@@ -2,7 +2,13 @@ from ._dropout import Dropout
 from ._linear import Linear
 from ._embedding import Embedding
 from ._layernorm import LayerNorm
-from . import _functional as functional
+from ._attention import (
+    AttentionModule,
+    SDPA,
+    attention_op,
+    build_attention_module,
+    dot_product_attention,
+)
 
 
 __all__ = [
@@ -10,5 +16,9 @@ __all__ = [
     "Linear",
     "Embedding",
     "LayerNorm",
-    "functional",
+    "AttentionModule",
+    "SDPA",
+    "attention_op",
+    "build_attention_module",
+    "dot_product_attention",
 ]

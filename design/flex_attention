@@ -1,0 +1,299 @@
+from __future__ import annotations
+
+import math
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Any, Callable
+
+import equinox as eqx
+import jax
+import jax.numpy as jnp
+from equinox import field
+from jaxtyping import Array, Bool, Float, Int, PRNGKeyArray
+
+from ._utils import promote_dtype
+
+MaskMod = Callable[
+    [
+        Float[Array, ""],
+        Int[Array, ""],
+        Int[Array, ""],
+        Int[Array, ""],
+        Int[Array, ""],
+    ],
+    Bool[Array, ""],
+]
+ScoreMod = Callable[
+    [
+        Float[Array, ""],
+        Int[Array, ""],
+        Int[Array, ""],
+        Int[Array, ""],
+        Int[Array, ""],
+    ],
+    Float[Array, ""],
+]
+
+def identity_score_mod(
+    score: Float[Array, ""],
+    *_: Any,
+) -> Float[Array, ""]:
+    return score
+
+def make_segment_attention_mask(
+    *,
+    segment_ids: Int[Array, "... seq_len"],
+    attention_heads: int,
+    attention_mask: Int[Array, "... seq_len"] | Bool[Array, "... seq_len"] | None = None,
+) -> Bool[Array, "... seq_len attention_heads seq_len"]:
+    segments = jnp.asarray(segment_ids)
+    if segments.ndim < 1:
+        raise ValueError("segment_ids must have at least one dimension for the sequence axis")
+
+    valid = segments != 0
+    if attention_mask is not None:
+        base = jnp.asarray(attention_mask)
+        valid = valid & (base != 0)
+
+    same_segment = (segments[..., :, None] == segments[..., None, :])
+    same_segment = same_segment & valid[..., :, None] & valid[..., None, :]
+
+    head_axis = same_segment[..., :, None, :]
+    broadcast_shape = (*head_axis.shape[:-2], head_axis.shape[-2], attention_heads, head_axis.shape[-1])
+    attn_mask = jnp.broadcast_to(head_axis, broadcast_shape)
+    return attn_mask.astype(jnp.bool_)
+
+def make_dense_attention_mask(
+    *,
+    attention_mask: Int[Array, "... seq_len"] | Bool[Array, "... seq_len"],
+    attention_heads: int,
+) -> Bool[Array, "... seq_len attention_heads seq_len"]:
+    base = jnp.asarray(attention_mask) != 0
+    mask = base[..., :, None] & base[..., None, :]
+    mask = mask[..., :, None, :]
+    broadcast_shape = (*mask.shape[:-2], mask.shape[-2], attention_heads, mask.shape[-1])
+    return jnp.broadcast_to(mask, broadcast_shape)
+
+def _flatten_batch(x: Array | None, *, batch_size: int) -> Array | None:
+    if x is None:
+        return None
+    return jnp.reshape(x, (batch_size, x.shape[-1]))
+
+def _vectorize_pointwise(
+    fn: Callable[[Float[Array, ""], Int[Array, ""], Int[Array, ""], Int[Array, ""], Int[Array, ""]], Array],
+    scores: Float[Array, "batch q heads kv"],
+) -> Array:
+    b, q, h, kv = scores.shape
+    total = b * q * h * kv
+
+    flat_scores = jnp.reshape(scores, (total,))
+    b_idx = jnp.repeat(jnp.arange(b, dtype=jnp.int32), q * h * kv)
+    q_idx = jnp.tile(jnp.repeat(jnp.arange(q, dtype=jnp.int32), h * kv), b)
+    h_idx = jnp.tile(jnp.repeat(jnp.arange(h, dtype=jnp.int32), kv), b * q)
+    kv_idx = jnp.tile(jnp.arange(kv, dtype=jnp.int32), b * q * h)
+
+    result = jax.vmap(fn)(flat_scores, b_idx, h_idx, q_idx, kv_idx)
+    return jnp.reshape(result, (b, q, h, kv))
+
+def _make_default_mask_mod(
+    *,
+    attention_mask: Array | None,
+    segment_ids: Array | None,
+    is_causal: bool = True,
+) -> MaskMod | None:
+    if segment_ids is None and attention_mask is None:
+        return None
+
+    attn = attention_mask
+    seg = segment_ids
+
+    def mask_mod(score, b, h, q_idx, kv_idx):
+        valid = jnp.bool_(True)
+        if seg is not None:
+            sid = seg[b]
+            sq = sid[q_idx]
+            sk = sid[kv_idx]
+            valid = (sq != 0) & (sk != 0) & (sq == sk)
+            if is_causal:
+                valid = valid & (q_idx >= kv_idx)
+
+        if attn is not None:
+            mask = attn[b]
+            am_valid = (mask[q_idx] != 0) & (mask[kv_idx] != 0)
+            valid = valid & am_valid if seg is not None else am_valid
+        return valid
+
+    return mask_mod
+
+def _always_true_mask_mod(score, *_):  # pylint: disable=unused-argument
+    return jnp.bool_(True)
+
+class AttentionModule(eqx.Module):
+    """Base class for pluggable attention kernels with FlexAttention-style hooks."""
+
+    config: Any | None = field(static=True, default=None)
+    num_heads: int = field(static=True, default=0)
+    head_size: int = field(static=True, default=0)
+    mask_mod: MaskMod | None = field(static=True, default=None)
+    score_mod: ScoreMod | None = field(static=True, default=None)
+    dtype: jnp.dtype = eqx.field(static=True)
+
+    def __init__(
+        self,
+        *,
+        num_heads: int,
+        head_size: int,
+        config: Any | None = None,
+        store_config: bool = True,
+        mask_mod: MaskMod | None | bool = None,
+        score_mod: ScoreMod | None | bool = None,
+        dtype: jnp.dtype = eqx.field(static=True),
+        **_: Any,
+    ) -> None:
+        self.num_heads = num_heads
+        self.config = config if store_config else None
+
+        if mask_mod is False:
+            mask_callable: MaskMod | None = _always_true_mask_mod
+        else:
+            mask_callable = mask_mod
+        if score_mod is False:
+            score_callable: ScoreMod | None = identity_score_mod
+        else:
+            score_callable = score_mod
+
+        self.mask_mod = mask_callable
+        self.score_mod = score_callable
+        self.dtype = dtype
+
+    def __call__(
+        self,
+        query: Float[Array, "... q_size nheads head_size"],
+        key_tensor: Float[Array, "... kv_size nheads head_size"],
+        value: Float[Array, "... kv_size nheads head_size"],
+        *,
+        attention_mask: Int[Array, "... q_size"] | None = None,
+        segment_ids: Int[Array, "... q_size"] | None = None,
+        dropout,
+        key: PRNGKeyArray | None = None,
+    ) -> Float[Array, "... q_size nheads head_size"]:
+        raise NotImplementedError
+
+def _default_attention_factory(**kwargs: Any) -> AttentionModule:
+    return EagerSDPA(**kwargs)
+
+_ATTENTION_FACTORY_VAR: ContextVar[Callable[..., AttentionModule]] = ContextVar(
+    "attention_factory",
+    default=_default_attention_factory,
+)
+
+@contextmanager
+def attention_module(
+    module_cls: type[AttentionModule],
+    config: Any | None = None,
+    *args: Any,
+    store_config: bool = True,
+    mask_mod: MaskMod | None | bool = None,
+    score_mod: ScoreMod | None | bool = None,
+    **kwargs: Any,
+):
+    """Temporarily override the global attention module factory."""
+
+    def factory(**module_kwargs: Any) -> AttentionModule:
+        return module_cls(
+            *args,
+            config=config,
+            store_config=store_config,
+            mask_mod=mask_mod,
+            score_mod=score_mod,
+            **kwargs,
+            **module_kwargs,
+        )
+
+    token = _ATTENTION_FACTORY_VAR.set(factory)
+    try:
+        yield
+    finally:
+        _ATTENTION_FACTORY_VAR.reset(token)
+
+def attention(
+    module_cls: type[AttentionModule],
+    config: Any | None = None,
+    *args: Any,
+    **kwargs: Any,
+):
+    return attention_module(module_cls, config, *args, **kwargs)
+
+def build_attention_module(**kwargs: Any) -> AttentionModule:
+    factory = _ATTENTION_FACTORY_VAR.get()
+    return factory(**kwargs)
+
+class EagerSDPA(AttentionModule):
+    def __call__(
+        self,
+        query: Float[Array, "... q_size nheads head_size"],
+        key_tensor: Float[Array, "... kv_size nheads head_size"],
+        value: Float[Array, "... kv_size nheads head_size"],
+        *,
+        attention_mask: Int[Array, "... q_size"] | None = None,
+        segment_ids: Int[Array, "... q_size"] | None = None,
+        dropout,
+        key: PRNGKeyArray | None = None,
+    ) -> Float[Array, "... q_size nheads head_size"]:
+        query, key_tensor, value = promote_dtype(query, key_tensor, value, dtype = self.dtype)
+        query = query / jnp.sqrt(query.shape[-1])
+        scores = jnp.einsum("...tnh, ...snh -> ...tns", query, key_tensor)
+
+        original_shape = scores.shape
+        T = original_shape[-3]
+        H = original_shape[-2]
+        S = original_shape[-1]
+
+        B = original_shape[:-3]
+        B = int(math.prod(B)) if B else 1
+
+        scores_flat = jnp.reshape(scores, (B, T, H, S))
+
+        score_mod_fn = self.score_mod
+        if score_mod_fn is not None and score_mod_fn is not identity_score_mod:
+            scores_flat = _vectorize_pointwise(score_mod_fn, scores_flat)
+
+        attention_mask_flat = _flatten_batch(attention_mask, batch_size=B)
+        segment_ids_flat = _flatten_batch(segment_ids, batch_size=B)
+
+        mask_mod_fn = self.mask_mod
+        if mask_mod_fn is None:
+            mask_mod_fn = _make_default_mask_mod(
+                attention_mask=attention_mask_flat,
+                segment_ids=segment_ids_flat,
+            )
+
+        if mask_mod_fn is not None and mask_mod_fn is not _always_true_mask_mod:
+            mask_flat = _vectorize_pointwise(mask_mod_fn, scores_flat)
+            mask_flat = mask_flat.astype(jnp.bool_)
+            neg_inf = jnp.array(jnp.finfo(scores_flat.dtype).min, dtype=scores_flat.dtype)
+            scores_flat = jnp.where(mask_flat, scores_flat, neg_inf)
+
+        scores = jnp.reshape(scores_flat, original_shape)
+
+        with jax.numpy_dtype_promotion("standard"):
+            softmax_dtype = jnp.result_type(scores.dtype, jnp.float32)
+        weights = jax.nn.softmax(scores.astype(softmax_dtype), axis=-1).astype(scores.dtype)
+
+        if dropout is not None:
+            weights = dropout(weights, key=key)
+
+        attn = jnp.einsum("...tns,...snh -> ...tnh", weights, value)
+        return attn
+
+__all__ = [
+    "AttentionModule",
+    "EagerSDPA",
+    "attention",
+    "attention_module",
+    "build_attention_module",
+    "identity_score_mod",
+    "make_segment_attention_mask",
+    "make_dense_attention_mask",
+]
+
