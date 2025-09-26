@@ -309,19 +309,19 @@ def make_module_opt(
 
 
 def make_train_step(
-    *,
     loss_function: _LossFn | None = None,
     train_step: _TrainStepCallable[tp.Sequence[_M], tp.Sequence[Optimizer]] | _TrainStepCallable[_M, Optimizer] | None = None,
-    jit: bool = True,
+    *, 
     gradient_accumulation_steps: int = 1,
+    jit: bool = True,
 ) -> _TrainStepCallable[_M, Optimizer] | _TrainStepCallable[tp.Sequence[_M], tp.Sequence[Optimizer]]:
+    print(f"DEBUGPRINT[342]: _training.py:316: gradient_accumulation_steps={gradient_accumulation_steps}")
 
     if train_step is None and loss_function is None:
         raise ValueError("Provide either train_step or loss_function")
 
     if train_step is not None:
         fn = eqx.filter_jit(train_step) if jit else train_step
-        setattr(fn, "_gradient_accumulation_steps", 1)
         return fn
 
     assert loss_function is not None
@@ -337,33 +337,38 @@ def make_train_step(
         *,
         key: PRNGKeyArray | None = None,
     ) -> tuple[_M, Optimizer, _Aux]:
-        if gradient_accumulation_steps == 1:
-            (_, aux), grads = grad_fn(module, optimizer, batch, key=key)
-            new_module, new_opt = optimizer(grads, module)
-            return new_module, new_opt, aux or {}
 
-        batched = _split_batch_for_accum(batch, gradient_accumulation_steps)
-        if key is not None:
-            key, *subkeys = jax.random.split(key, gradient_accumulation_steps + 1)
-        else:
-            subkeys = [None] * gradient_accumulation_steps
+        def _minibatch_step(batch):
+            (_, step_aux), step_grad = grad_fn(module, optimizer, batch, key=key)
+            return step_grad, step_aux
 
-        acc_grads = None
-        acc_aux = None
-        for idx in range(gradient_accumulation_steps):
-            micro_batch = _select_microbatch(batched, idx)
-            subkey = subkeys[idx]
-            (_, aux), grads = grad_fn(module, optimizer, micro_batch, key=subkey)
-            acc_grads = grads if acc_grads is None else jax.tree_util.tree_map(lambda a, b: a + b, acc_grads, grads)
-            acc_aux = _combine_aux(acc_aux, aux)
+        def _scan_step(carry, batch):
+            grad, aux = carry
+            step_carry = _minibatch_step(batch)
+            return jtu.tree_map(jnp.add, carry, step_carry), None
 
-        grads = jax.tree_util.tree_map(lambda g: g / gradient_accumulation_steps, acc_grads)
-        aux = _finalize_aux(acc_aux, gradient_accumulation_steps)
-        new_module, new_opt = optimizer(grads, module)
+        def _stack_batch(leaf):
+            B = leaf.shape[0]
+            if B % gradient_accumulation_steps != 0:
+                raise ValueError("Global batch dimension must be divisible by gradient_accumulation_steps")
+            else:
+                return leaf.reshape((gradient_accumulation_steps, B // gradient_accumulation_steps) + leaf.shape[1:])
+
+
+        grad_shapes, aux_shape = jax.eval_shape(_minibatch_step, 0)
+        grad = jax.tree.map(lambda x: jnp.zeros(x.shape, x.dtype), grad_shapes)
+        aux = jax.tree.map(lambda x: jnp.zeros(x.shape, x.dtype), aux_shape)
+
+        batch = jtu.tree_map(_stack_batch, batch) 
+
+        (grad, aux), _ = jax.lax.scan(_scan_step, (grad, aux), batch, length = gradient_accumulation_steps)
+
+        grad = jax.tree_util.tree_map(lambda g: g / gradient_accumulation_steps, grad)
+        new_module, new_opt = optimizer(grad, module)
         return new_module, new_opt, aux or {}
 
+    setattr(_step, "_gradient_accumulation_steps", gradient_accumulation_steps)
     fn = eqx.filter_jit(_step) if jit else _step
-    setattr(fn, "_gradient_accumulation_steps", gradient_accumulation_steps)
     return fn
 
 @tp.overload
@@ -421,12 +426,13 @@ def train_loop(
     train_step: _TrainStepCallable[_ModuleInput, _OptimizerInput],
     train_loader: tp.Iterable[tp.Any],
     num_train_steps: int | None = None,
+    *,
+    logger: Logger | None = None,
     eval_loader: tp.Iterable[tp.Any] | None = None,
     eval_step: _EvalStepCallable[_ModuleInput] | None = None,
     num_eval_steps: int | None = None,
     eval_interval: int | None = None,
     callbacks: CallbackManager | tp.Sequence[Callback] | None = None,
-    logger: Logger | None = None,
     wall_clock: ProgramWallClock | None = None,
     profiler: JaxProfiler | None = None,
     key: PRNGKeyArray | None = None,
@@ -450,7 +456,6 @@ def train_loop(
     train_step_counter = 0
     wc = wall_clock if wall_clock is not None and wall_clock.enabled() else None
     prof = profiler if profiler is not None and profiler.enabled() else None
-    grad_acc = getattr(train_step, "_gradient_accumulation_steps", 1)
 
     def _measure(
         name: str,
@@ -504,12 +509,6 @@ def train_loop(
             return
         logger.log_metrics(metrics, step=step, mode=mode)
 
-    def _infer_batch_dim(batch: tp.Any) -> int | None:
-        for leaf in jtu.tree_leaves(batch):
-            if isinstance(leaf, (jax.Array, np.ndarray)) and leaf.shape:
-                return leaf.shape[0]
-        return None
-
     if callback_manager:
         _callback(
             "on_training_start",
@@ -521,6 +520,7 @@ def train_loop(
         )
 
     with _measure("iterators", mode="setup"):
+        print(f"DEBUGPRINT[341]: _training.py:525: train_loader={train_loader}")
         train_iter = iter(train_loader)
         eval_iter = iter(eval_loader) if eval_loader is not None else None
 
@@ -534,7 +534,6 @@ def train_loop(
 
     train_progress = _make_progress("Train", num_train_steps)
 
-    first_batch_validated = False
     last_train_logged: dict[str, float] = {}
     last_eval_logged: dict[str, float] = {}
 
@@ -551,14 +550,6 @@ def train_loop(
                 except StopIteration:
                     LOGGER.info("Training data exhausted, ending training loop.")
                     break
-
-            if not first_batch_validated:
-                batch_dim = _infer_batch_dim(batch)
-                if grad_acc > 1 and batch_dim is not None and batch_dim % grad_acc != 0:
-                    raise ValueError(
-                        "Global batch dimension must be divisible by gradient_accumulation_steps"
-                    )
-                first_batch_validated = True
 
             train_step_counter = next_step
 

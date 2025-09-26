@@ -6,12 +6,10 @@ from typing import Iterable
 
 import numpy as np
 from tensorboardX import SummaryWriter
+import jax.tree_util as jtu
+from jaxtyping import PyTree
 
 from .base import Logger
-
-
-ReduceMethod = str
-
 
 @dataclass
 class TensorBoardLogger(Logger):
@@ -21,7 +19,7 @@ class TensorBoardLogger(Logger):
     experiment_name: str | None = None
     flush_interval: int = 1
     enabled: bool = True
-    reduce: dict[str, ReduceMethod] = field(default_factory=dict)
+    reduce_fn: Callable[[PyTree], PyTree] | None = field(default = None)
 
     def __post_init__(self) -> None:
         Logger.__init__(self, enabled=self.enabled)
@@ -35,23 +33,23 @@ class TensorBoardLogger(Logger):
         self._flush_interval = max(1, self.flush_interval)
         self._writes_since_flush = 0
 
-    def log_metrics(self, metrics: dict[str, object], *, step: int, mode: str) -> bool:
+    def log_metrics(self, metrics: dict[str, object], *, step: int, tag: str) -> bool:
         if not self.enabled or not metrics:
             return False
-        wrote = False
-        for name, value in metrics.items():
-            metric_name = f"{mode}/{name}"
-            reduced = self._reduce_value(metric_name, value)
-            if reduced is None:
-                continue
-            self._writer.add_scalar(tag=metric_name, scalar_value=reduced, global_step=step)
-            wrote = True
-        if wrote:
-            self._writes_since_flush += 1
-            if self._writes_since_flush >= self._flush_interval:
-                self._writer.flush()
-                self._writes_since_flush = 0
-        return wrote
+
+        def _reduce(x):
+            if isinstance(x, tuple):
+                return x[0] /x[1]
+            return x
+
+        reduced = self.reduce_fn(metrics) if self.reduce_fn else jtu.tree_map(_reduce, metrics, is_leaf=lambda x: isinstance(x, tuple))
+        self._writer.add_scalars(tag=tag, tag_scalar_dict=reduced, global_step=step)
+
+        self._writes_since_flush += 1
+        if self._writes_since_flush >= self._flush_interval:
+            self._writer.flush()
+            self._writes_since_flush = 0
+        return True
 
     def log_histogram(self, name: str, values: Iterable[float], *, step: int, mode: str | None = None) -> None:
         if not self.enabled:
@@ -66,52 +64,10 @@ class TensorBoardLogger(Logger):
             self._writer.flush()
             self._writes_since_flush = 0
 
-    def finalize(self, status: str = "success") -> None:  # noqa: D401 - keep Logger signature
+    def finalize(self, status: str = "success") -> None: 
         if not self.enabled:
             return
         self._writer.flush()
         self._writer.close()
-
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-    def _reduce_value(self, name: str, value: object) -> float | None:
-        reduce_name = name
-        if "/" in name:
-            # allow reduce dict to be keyed by plain metric name without mode prefix
-            _, bare = name.split("/", 1)
-        else:
-            bare = name
-        method = self.reduce.get(name) or self.reduce.get(bare) or "mean" if isinstance(value, tuple) else None
-
-        if isinstance(value, tuple):
-            if method == "sum":
-                return float(np.sum(np.asarray(value, dtype=np.float64)))
-            if method == "first":
-                return float(np.asarray(value[0], dtype=np.float64))
-            if method == "last":
-                return float(np.asarray(value[-1], dtype=np.float64))
-            # default/mean path expects (numerator, denominator)
-            if len(value) == 2:
-                numerator, denominator = value
-                denom = float(denominator)
-                if denom == 0:
-                    return None
-                return float(numerator) / denom
-            # fallback to average over all elements
-            arr = np.asarray(value, dtype=np.float64)
-            if arr.size == 0:
-                return None
-            return float(arr.mean())
-
-        if isinstance(value, (int, float)):
-            return float(value)
-        if hasattr(value, "item"):
-            try:
-                return float(value.item())
-            except Exception:  # pragma: no cover - defensive
-                return None
-        return None
-
 
 __all__ = ["TensorBoardLogger"]
