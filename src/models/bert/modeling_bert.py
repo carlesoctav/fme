@@ -14,60 +14,15 @@ from transformers.models.bert.configuration_bert import BertConfig
 from ... import nn
 from ..._darray import DArray
 from ..._huggingface import HuggingFaceCompatibleModule
-from ...nn import AttentionModule, build_attention_module
+from ..._utils import first_from
+from ...nn import (
+    AttentionConfig,
+    AttentionModule,
+    make_attention_module,
+)
 
 
 Pytree = Any
-
-
-class BertModelWeightPlanMixin:
-    """
-    Provides `init_weights_plan(self, module, key)` following HF BERT conventions:
-    - Linear: weight ~ N(0, initializer_range), bias zeros
-    - Embedding: weight ~ N(0, initializer_range); if pad_token_id is set, zero that row
-    - LayerNorm: weight ones, bias zeros
-    """
-
-    def init_weights_plan(self, module, key):  # noqa: D401
-        cfg = getattr(self, "config", None)
-        std = getattr(cfg, "initializer_range", 0.02)
-        pad_idx = getattr(cfg, "pad_token_id", None)
-
-        if isinstance(module, nn.Linear):
-            wkey, bkey = jax.random.split(key, 2)
-            w_shape = (module.out_features, module.in_features)
-            w_dtype = module.params_dtype
-            new_w = normal(std)(wkey, w_shape, dtype=w_dtype)
-            new_bias = None
-            if module.use_bias and module.bias is not None:
-                b_shape = (module.out_features,)
-                new_bias = zeros_init(bkey, b_shape, dtype=w_dtype)
-            new_mod = module
-            new_mod = eqx.tree_at(lambda m: m.weight, new_mod, DArray(value=new_w, pspec=module.weight.pspec))
-            if module.use_bias and module.bias is not None:
-                new_mod = eqx.tree_at(lambda m: m.bias, new_mod, DArray(value=new_bias, pspec=module.bias.pspec))
-            return new_mod
-
-        if isinstance(module, nn.Embedding):
-            w_shape = (module.num_embeddings, module.embedding_dim)
-            w_dtype = module.params_dtype
-            new_w = normal(std)(key, w_shape, dtype=w_dtype)
-            if pad_idx is not None and 0 <= int(pad_idx) < module.num_embeddings:
-                new_w = new_w.at[int(pad_idx)].set(jnp.zeros((module.embedding_dim,), dtype=w_dtype))
-            return eqx.tree_at(lambda m: m.weight, module, DArray(value=new_w, pspec=module.weight.pspec))
-
-        if isinstance(module, nn.LayerNorm):
-            w_shape = module.normalized_shape
-            w_dtype = module.params_dtype
-            new_w = ones_init(jax.random.PRNGKey(0), w_shape, dtype=w_dtype)
-            new_mod = eqx.tree_at(lambda m: m.weight, module, DArray(value=new_w, pspec=module.weight.pspec if module.weight is not None else None))
-            if module.bias is not None:
-                new_b = zeros_init(jax.random.PRNGKey(0), w_shape, dtype=w_dtype)
-                new_mod = eqx.tree_at(lambda m: m.bias, new_mod, DArray(value=new_b, pspec=module.bias.pspec))
-            return new_mod
-
-        return module
-
 
 class BertEmbeddings(eqx.Module):
     word_embeddings: nn.Embedding
@@ -157,6 +112,7 @@ class BertSelfAttention(eqx.Module):
         self,
         config: BertConfig,
         *,
+        attention_config: AttentionConfig | None = None,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
         key: PRNGKeyArray,
@@ -170,6 +126,8 @@ class BertSelfAttention(eqx.Module):
             )
 
         self.num_attention_heads = config.num_attention_heads
+
+
         self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
@@ -197,7 +155,15 @@ class BertSelfAttention(eqx.Module):
             key=v_key,
         )
 
-        self.sdpa = build_attention_module(is_causal=False)
+        attention_config = first_from(
+            attention_config,
+            error_msg="BertSelfAttention requires an attention_config",
+        )
+
+        self.sdpa = make_attention_module(
+            config=attention_config,
+            dtype=dtype,
+        )
 
 
     def __call__(
@@ -218,21 +184,21 @@ class BertSelfAttention(eqx.Module):
         k = self.key(hidden_states)
         v = self.value(hidden_states)
 
-        def _to_heads(x):
-            return x.reshape(*x.shape[:-1], self.num_attention_heads, self.attention_head_size)
+        def _to_heads(x, num_heads):
+            return x.reshape(*x.shape[:-1], num_heads, self.attention_head_size)
 
-        q_heads = _to_heads(q)
-        k_heads = _to_heads(k)
-        v_heads = _to_heads(v)
+        q_heads = _to_heads(q, self.num_attention_heads)
+        k_heads = _to_heads(k, self.num_attention_heads)
+        v_heads = _to_heads(v, self.num_attention_heads)
 
 
         attn_heads = self.sdpa(
             q_heads,
             k_heads,
             v_heads,
+            dropout=self.dropout,
             attention_mask=attention_mask,
             segment_ids=segment_ids,
-            dropout=self.dropout,
             key=dropout_key,
         )
 
@@ -293,13 +259,18 @@ class BertAttention(eqx.Module):
         self,
         config: BertConfig,
         *,
+        attention_config: AttentionConfig | None = None,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
         key: PRNGKeyArray,
     ):
         self_key, output_key = jax.random.split(key, 2)
         self.self = BertSelfAttention(
-            config, dtype=dtype, params_dtype=params_dtype, key=self_key
+            config,
+            attention_config=attention_config,
+            dtype=dtype,
+            params_dtype=params_dtype,
+            key=self_key,
         )
 
         self.output = BertSelfOutput(
@@ -321,7 +292,7 @@ class BertAttention(eqx.Module):
         self_output = self.self(
             hidden_states,
             attention_mask,
-            segment_ids=segment_ids,
+            segment_ids,
             key=self_key,
         ) 
         attention_output = self.output(self_output, hidden_states, key=output_key)
@@ -416,6 +387,7 @@ class BertLayer(eqx.Module):
         self,
         config: BertConfig,
         *,
+        attention_config: AttentionConfig | None = None,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
         rngs: PRNGKeyArray,
@@ -423,7 +395,11 @@ class BertLayer(eqx.Module):
         attention_key, intermediate_key, output_key = jax.random.split(rngs, 3)
 
         self.attention = BertAttention(
-            config, dtype=dtype, params_dtype=params_dtype, key=attention_key
+            config,
+            attention_config=attention_config,
+            dtype=dtype,
+            params_dtype=params_dtype,
+            key=attention_key,
         )
         self.intermediate = BertIntermediate(
             config, dtype=dtype, params_dtype=params_dtype, key=intermediate_key
@@ -447,7 +423,7 @@ class BertLayer(eqx.Module):
         attention_output = self.attention(
             hidden_states,
             attention_mask,
-            segment_ids=segment_ids,
+            segment_ids,
             key=atention_key,
         )
         intermediate_output = self.intermediate(attention_output, key=intermediate_key)
@@ -464,6 +440,7 @@ class BertEncoder(eqx.Module):
         self,
         config: BertConfig,
         *,
+        attention_config: AttentionConfig | None = None,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
         key: PRNGKeyArray,
@@ -474,6 +451,7 @@ class BertEncoder(eqx.Module):
             self.layer.append(
                 BertLayer(
                     config,
+                    attention_config=attention_config,
                     dtype=dtype,
                     params_dtype=params_dtype,
                     rngs=encoder_keys[i],
@@ -493,7 +471,7 @@ class BertEncoder(eqx.Module):
             hidden_states = layer_module(
                 hidden_states,
                 attention_mask,
-                segment_ids=segment_ids,
+                segment_ids,
                 key=layer_key[i], 
             )
         return hidden_states
@@ -554,36 +532,50 @@ class BertModel(BertModelWeightPlanMixin, eqx.Module, HuggingFaceCompatibleModul
     embeddings: BertEmbeddings
     encoder: BertEncoder
     config: BertConfig | None = field(static=True)
+    attention_config: AttentionConfig = field(
+        static=True, default=AttentionConfig(type="eager", is_causal=False)
+    )
 
     def __init__(
         self,
         config: BertConfig,
         *,
+        attention_config: AttentionConfig | None = None,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
         store_config=True,
         key: PRNGKeyArray,
     ):
         embedding_key, encoder_key = jax.random.split(key, 2)
+        attention_config = first_from(
+            attention_config,
+            self.attention_config,
+            error_msg="BertModel requires an attention_config",
+        )
         self.embeddings = BertEmbeddings(
             config, dtype=dtype, params_dtype=params_dtype, key=embedding_key
         )
         self.encoder = BertEncoder(
-            config, dtype=dtype, params_dtype=params_dtype, key=encoder_key
+            config,
+            attention_config=attention_config,
+            dtype=dtype,
+            params_dtype=params_dtype,
+            key=encoder_key,
         )
 
         if store_config:
             self.config = config
+            self.attention_config = attention_config
         else:
             self.config = None
 
     def __call__(
         self,
-        input_ids: Int[Array, " ... seq_len"],
-        position_ids: Int[Array, " ... seq_len"],
-        token_type_ids: Int[Array, "... seq_len"],
-        attention_mask: Int[Array, "... seq_len"] | None = None,
-        segment_ids: Int[Array, "... seq_len"] | None = None,
+        input_ids: Int[Array, " *B T"],
+        position_ids: Int[Array, " *B T"],
+        token_type_ids: Int[Array, "*B T"],
+        attention_mask: Int[Array, "*B T"] | None = None,
+        segment_ids: Int[Array, "*B T"] | None = None,
         *,
         key: PRNGKeyArray | None = None,
     ):
@@ -595,8 +587,8 @@ class BertModel(BertModelWeightPlanMixin, eqx.Module, HuggingFaceCompatibleModul
         )
         hidden_states = self.encoder(
             hidden_states,
-            attention_mask=attention_mask,
-            segment_ids=segment_ids,
+            attention_mask,
+            segment_ids,
             key=encoder_key,
         )
 
@@ -730,9 +722,9 @@ class BertForMaskedLM(eqx.Module, BertModelWeightPlanMixin, HuggingFaceCompatibl
         input_ids: Int[Array, " ... seq_len"],
         position_ids: Int[Array, "... seq_len"],
         token_type_ids: Int[Array, "... seq_len"],
+        *,
         attention_mask: Int[Array, "... seq_len"] | None = None,
         segment_ids: Int[Array, "... seq_len"] | None = None,
-        *,
         key: PRNGKeyArray | None = None,
     ):
         bert_key, cls_key = (

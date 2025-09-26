@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
-from contextvars import ContextVar
-from dataclasses import replace
-from typing import Any, Callable
+from collections.abc import Callable
+from dataclasses import dataclass
 
 import equinox as eqx
 import jax
@@ -13,29 +11,18 @@ from jaxtyping import Array, Bool, Float, Int, PRNGKeyArray
 from ._utils import promote_dtype
 
 
-class AttentionModule(eqx.Module):
-    dtype: jnp.dtype = eqx.field(static=True, default=jnp.float32)
-
-    def __call__(
-        self,
-        query: Float[Array, "... q_size nheads head_size"],
-        key_tensor: Float[Array, "... kv_size nheads head_size"],
-        value: Float[Array, "... kv_size nheads head_size"],
-        *,
-        attention_mask: Int[Array, "... q_size"] | Bool[Array, "... q_size"] | None = None,
-        segment_ids: Int[Array, "... q_size"] | None = None,
-        dropout: Callable[[Array, PRNGKeyArray | None], Array],
-        key: PRNGKeyArray | None = None,
-    ) -> Float[Array, "... q_size nheads head_size"]:
-        raise NotImplementedError
+@dataclass(frozen=True)
+class AttentionConfig:
+    type: str = "eager"
+    is_causal: bool = True
 
 
 def make_attention_mask_from_segment(
     *,
-    segment_ids: Int[Array, "... seq_len"],
+    segment_ids: Int[Array, "*B T"],
     nheads: int,
     is_causal: bool,
-) -> Bool[Array, "... seq_len nheads seq_len"]:
+) -> Bool[Array, "*B T N T"]:
     if segment_ids.ndim < 1:
         raise ValueError("segment_ids must have at least one dimension for the sequence axis")
 
@@ -55,16 +42,37 @@ def make_attention_mask_from_segment(
 
 
 def dot_product_attention(
-    q: Float[Array, "... q_size nheads head_size"],
-    k: Float[Array, "... kv_size nheads head_size"],
-    v: Float[Array, "... kv_size nheads head_size"],
-    mask: Bool[Array, "... q_size nheads kv_size"] | None = None,
+    q: Float[Array, "*B T N H "],
+    k: Float[Array, "*B S K H"],
+    v: Float[Array, "*B S K H"],
+    mask: Bool[Array, "*B T N S"] | None = None,
     dropout: Callable[[Array, PRNGKeyArray | None], Array] | None = None,
     *,
     key: PRNGKeyArray | None = None,
-) -> Float[Array, "... q_size nheads head_size"]:
+) -> Float[Array, "... q_size q_heads head_size"]:
+
     q, k, v = promote_dtype(q, k, v)
     q = q / jnp.sqrt(q.shape[-1])
+
+    *_, T, N, H = q.shape
+    *_, S, K, _ = k.shape
+
+
+    if k.shape[-1] != H or v.shape[-1] != H:
+        raise ValueError("Query, key, and value must share the same head dimension")
+
+    if v.shape[-2] != K:
+        raise ValueError("Value tensor must share the key head axis for attention")
+
+    if K != N:
+        if K <= 0 or N % K != 0:
+            raise ValueError(
+                "Number of query heads must be a positive multiple of key/value heads"
+            )
+        repeat_factor = N // K
+        k = jnp.repeat(k, repeat_factor, axis=-2)
+        v = jnp.repeat(v, repeat_factor, axis=-2)
+        K = N
 
     scores = jnp.einsum("...tnh, ...snh -> ...tns", q, k)
 
@@ -88,87 +96,78 @@ def dot_product_attention(
     return attn
 
 
-def _default_attention_factory(**kwargs: Any) -> AttentionModule:
-    values = dict(kwargs)
-    values.setdefault("dtype", jnp.float32)
-    return SDPA(**values)
-
-
-_DEF_FACTORY: ContextVar[Callable[..., AttentionModule]] = ContextVar(
-    "attention_factory",
-    default=_default_attention_factory,
-)
-
-
-def _replace_attr(module: AttentionModule, name: str, value: Any) -> AttentionModule:
-    if not hasattr(module, name):
-        raise TypeError(f"Unexpected attention override parameter: {name}")
-    try:
-        return replace(module, **{name: value})
-    except TypeError as exc:  # pragma: no cover - defensive: dataclass signature mismatch
-        raise TypeError(f"Cannot override attribute '{name}' on {type(module).__name__}") from exc
-
-
-@contextmanager
-def attention_op(module: AttentionModule):
-    base_module = module
-
-    def factory(**module_kwargs: Any) -> AttentionModule:
-        result = base_module
-        for name, value in module_kwargs.items():
-            result = _replace_attr(result, name, value)
-
-        return result
-
-    token = _DEF_FACTORY.set(factory)
-    try:
-        yield module
-    finally:
-        _DEF_FACTORY.reset(token)
-
-def build_attention_module(**kwargs: Any) -> AttentionModule:
-    factory = _DEF_FACTORY.get()
-    return factory(**kwargs)
+class AttentionModule(eqx.Module):
+    def __call__(
+        self,
+        q: Float[Array, "*B T N H"],
+        k: Float[Array, "*B S K H"],
+        v: Float[Array, "*B S K H"],
+        dropout: Callable[[Array, PRNGKeyArray | None], Array],
+        attention_mask: Int[Array, "*B T N S"] | Bool[Array, "*B T"] | None = None,
+        segment_ids: Int[Array, "*B T"] | None = None,
+        *,
+        key: PRNGKeyArray | None = None,
+    ) -> Float[Array, "*B T N H"]:
+        raise NotImplementedError
 
 
 class SDPA(AttentionModule):
     """Standard scaled dot-product attention."""
 
-    is_causal: bool = eqx.field(static=True, default=True)
+    config: AttentionConfig
+    dtype: jnp.dtype = eqx.field(static=True, default=jnp.float32)
 
     def __call__(
         self,
-        q: Float[Array, "... q_size nheads head_size"],
-        k: Float[Array, "... kv_size nheads head_size"],
-        v: Float[Array, "... kv_size nheads head_size"],
-        *,
-        attention_mask: Int[Array, "... q_size"] | Bool[Array, "... q_size"] | None = None,
-        segment_ids: Int[Array, "... q_size"] | None = None,
+        q: Float[Array, "*B T N H"],
+        k: Float[Array, "*B S K H"],
+        v: Float[Array, "*B S K H"],
         dropout: Callable[[Array, PRNGKeyArray | None], Array],
+        attention_mask: Int[Array, "*B T N S"] | Bool[Array, "*B T"] | None = None,
+        segment_ids: Int[Array, "*B T"] | None = None,
+        *,
         key: PRNGKeyArray | None = None,
-    ) -> Float[Array, "... q_size nheads head_size"]:
-        batch_shape = q.shape[:-3]
-        q_len = q.shape[-3]
-        nheads = q.shape[-2]
-        kv_len = k.shape[-3]
-        target_shape = batch_shape + (q_len, nheads, kv_len)
+    ) -> Float[Array, "*B T N H"]:
 
-        mask: Bool[Array, "... q_size nheads kv_size"] | None = None
+        *B, T, N, _ = q.shape
+        *_, S, K, _ = k.shape
+        B = tuple(B)
+
+
+        if k.shape[:-3] != B or v.shape[:-3] != B:
+            raise ValueError("Query, key, and value must share batch dimensions")
+
+        if v.shape[-3] != S or v.shape[-2] != K:
+            raise ValueError("Key and value must share their sequence and head dimensions")
+
+        if k.shape[-1] != q.shape[-1] or v.shape[-1] != q.shape[-1]:
+            raise ValueError("Query, key, and value must share the same head dimension")
+
+        if K <= 0 or N % K != 0:
+            raise ValueError(
+                "Number of query heads must be a positive multiple of key/value heads"
+            )
+
+        group_size = N // K
+
+        target_shape = B + (T, N, S)
+        kv_target_shape = B + (T, K, S)
+
+        mask: Bool[Array, "... q_size q_heads kv_size"] | None = None
 
         if attention_mask is not None:
             attn_mask = jnp.asarray(attention_mask, dtype=jnp.bool_)
-            expected_query_shape = batch_shape + (q_len,)
-            expected_dense_shape = batch_shape + (q_len, kv_len)
+            expected_query_shape = B + (T,)
+            expected_dense_shape = B + (T, S)
 
             if attn_mask.shape == target_shape:
                 mask = attn_mask
+            elif group_size > 1 and attn_mask.shape == kv_target_shape:
+                mask = jnp.repeat(attn_mask, group_size, axis=-2)
             elif attn_mask.shape == expected_dense_shape:
-                mask = jnp.expand_dims(attn_mask, axis=-2)
-                mask = jnp.broadcast_to(mask, target_shape)
+                mask = jnp.broadcast_to(attn_mask[..., :, None, :], target_shape)
             elif attn_mask.shape == expected_query_shape:
-                mask = jnp.expand_dims(attn_mask, axis=-1)
-                mask = jnp.expand_dims(mask, axis=-1)
-                mask = jnp.broadcast_to(mask, target_shape)
+                mask = jnp.broadcast_to(attn_mask[..., :, None, None], target_shape)
             else:
                 raise ValueError(
                     "attention_mask shape "
@@ -179,16 +178,16 @@ class SDPA(AttentionModule):
         elif segment_ids is not None:
             mask = make_attention_mask_from_segment(
                 segment_ids=segment_ids,
-                nheads=nheads,
-                is_causal=self.is_causal,
+                nheads=N,
+                is_causal=self.config.is_causal,
             )
 
         else:
-            base = jnp.ones(batch_shape + (q_len, kv_len), dtype=jnp.bool_)
-            if self.is_causal:
+            base = jnp.ones(B + (T, S), dtype=jnp.bool_)
+            if self.config.is_causal:
                 base = jnp.tril(base)
-            mask = jnp.expand_dims(base, axis=-2)
-            mask = jnp.broadcast_to(mask, target_shape)
+            
+            mask = jnp.broadcast_to(base[..., :, None, :], target_shape)
 
         return dot_product_attention(
             q,
@@ -198,4 +197,12 @@ class SDPA(AttentionModule):
             dropout=dropout,
             key=key,
         )
+
+def make_attention_module(
+    config: AttentionConfig | None = None,
+    dtype: jnp.dtype = jnp.float32
+) -> AttentionModule:
+    if config.type == "eager":
+        return SDPA(config=config,dtype = dtype)
+    raise ValueError(f"Unsupported attention type: {config.type}")
 

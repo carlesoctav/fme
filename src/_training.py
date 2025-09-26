@@ -1,21 +1,30 @@
 from __future__ import annotations
 
+import logging
 import typing as tp
+from contextlib import nullcontext
 from typing import Protocol
 
 import equinox as eqx
 import jax
+import jax.numpy as jnp
 import jax.tree_util as jtu
+import numpy as np
 from jax.sharding import Mesh
 from jaxtyping import Array, PRNGKeyArray, PyTree
 from optax import GradientTransformation, GradientTransformationExtraArgs
+from tqdm.auto import tqdm
 
 from ._filter import apply_transforms, iter_module
-from ._metrics import MetricsAgg
+from ._profiler import JaxProfiler
 from ._utils import first_from
+from ._wallclock import ProgramWallClock
 from .callbacks import Callback, CallbackManager
 from .distributed import get_partition_spec
-from .loggers import Logger
+from .loggers import Logger, TensorBoardLogger
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 _M = tp.TypeVar("_M", bound=eqx.Module)
@@ -28,7 +37,7 @@ _Aux = dict[str, tp.Any]
 _Loss = float
 _Batch = tp.Any
 
-_LossFn = tp.Callable[[_M, _O, _Batch], tuple[_Loss, _Aux]]
+_LossFn = tp.Callable[[_M, _O, _Batch, PRNGKeyArray], tuple[_Loss, _Aux]]
 _ParallelismPlans = dict[str, tp.Callable[[_M], _M]] | tp.Sequence[dict[str, tp.Callable[[_M], _M]]]
 
 
@@ -59,19 +68,20 @@ class _EvalStepCallable(Protocol[_ModuleInput]):
 class Optimizer(eqx.Module):
     opt_state: PyTree[Array]
     wrt: PyTree[_AxisSpec] = eqx.field(static=True)
-    step: int
+    step: jax.Array
     tx: GradientTransformationExtraArgs = eqx.field(static=True)
 
     def __init__(self, grad_tx: _GradTx, model: eqx.Module, *, wrt: _Wrt = eqx.is_inexact_array):
         self.tx = grad_tx
         self.wrt = wrt
         self.opt_state = self.tx.init(eqx.filter(model, self.wrt))
-        self.step = 0
+        self.step = jnp.array(0, dtype=jnp.int32)
 
     def __call__(self, grads: PyTree[Array], model: eqx.Module) -> tuple[eqx.Module, Optimizer]:
         updates, opt_state = self.tx.update(grads, self.opt_state, eqx.filter(model, self.wrt))
         new_model = eqx.apply_updates(model, updates)
-        new_self = eqx.tree_at(lambda o: [o.opt_state, o.step], self, [opt_state, self.step + 1])
+        new_step = self.step + jnp.array(1, dtype=self.step.dtype)
+        new_self = eqx.tree_at(lambda o: [o.opt_state, o.step], self, [opt_state, new_step])
         return new_model, new_self
 
 
@@ -92,6 +102,79 @@ def _ensure_manager(
     return CallbackManager(list(callbacks))
 
 
+def _combine_aux(acc: tp.Any | None, aux: tp.Any) -> tp.Any:
+    if aux is None:
+        return acc
+    if acc is None:
+        return aux
+    if isinstance(aux, dict):
+        result: dict[str, tp.Any] = {}
+        for key, value in aux.items():
+            acc_value = acc.get(key) if isinstance(acc, dict) else None
+            result[key] = _combine_aux(acc_value, value)
+        return result
+    if isinstance(aux, tuple) and isinstance(acc, tuple):
+        return tuple(_combine_aux(a, b) for a, b in zip(acc, aux))
+    return acc + aux
+
+
+def _finalize_aux(aux: tp.Any, steps: int) -> tp.Any:
+    if aux is None:
+        return {}
+    if isinstance(aux, dict):
+        return {k: _finalize_aux(v, steps) for k, v in aux.items()}
+    if isinstance(aux, tuple):
+        return tuple(_finalize_aux(v, steps) if isinstance(v, dict) else v for v in aux)
+    return aux / steps
+
+
+def _split_batch_for_accum(batch: tp.Any, steps: int) -> tp.Any:
+    def reshape(arr):
+        if isinstance(arr, (jax.Array, np.ndarray)):
+            if arr.shape[0] % steps != 0:
+                raise ValueError("Global batch dimension must be divisible by gradient_accumulation_steps")
+            new_shape = (steps, arr.shape[0] // steps) + arr.shape[1:]
+            return arr.reshape(new_shape)
+        return arr
+
+    return jax.tree_util.tree_map(reshape, batch)
+
+
+def _select_microbatch(batched: tp.Any, index: int) -> tp.Any:
+    return jax.tree_util.tree_map(lambda x: x[index], batched)
+
+
+def _to_host(value: tp.Any) -> tp.Any:
+    if isinstance(value, dict):
+        return {k: _to_host(v) for k, v in value.items()}
+    if isinstance(value, tuple):
+        return tuple(_to_host(v) for v in value)
+    if isinstance(value, jax.Array):
+        host = jax.device_get(value)
+        if np.isscalar(host):
+            return float(host)
+        if hasattr(host, "item") and host.shape == ():
+            return float(host.item())
+        return host
+    if hasattr(value, "item"):
+        try:
+            return float(value.item())
+        except Exception:  # pragma: no cover - defensive
+            return value
+    return value
+
+
+def _flatten_metrics(metrics: dict[str, tp.Any], prefix: str = "") -> dict[str, tp.Any]:
+    flat: dict[str, tp.Any] = {}
+    for key, value in metrics.items():
+        name = f"{prefix}.{key}" if prefix else key
+        if isinstance(value, dict):
+            flat.update(_flatten_metrics(value, name))
+        else:
+            flat[name] = value
+    return flat
+
+
 def init_module(
     module: eqx.Module,
     *,
@@ -105,6 +188,7 @@ def init_module(
     init_weights_plan = first_from(
             init_weights_plan,
             root_plan_method,
+            "submodule init",
             error_msg="init_weights_plan candidates unexpectedly empty",
         )
 
@@ -176,14 +260,15 @@ def _module_has_abstract_params(m: eqx.Module) -> bool:
     jtu.tree_map(_check, m)
     return found
 
-def setup_module_opts(
+def make_module_opt(
     module: _M,
     grad_tx: _GradTx,
-    mesh: Mesh,
-    *,
+    mesh: Mesh | None = None,
     wrt: _Wrt = eqx.is_inexact_array,
     parallelism_plans: _ParallelismPlans | None = None,
+    *,
     key: PRNGKeyArray | None = None,
+    wall_clock: ProgramWallClock | None = None,
 ) -> tuple[_M, Optimizer]:
     if not isinstance(module, eqx.Module):
         raise TypeError("module must be an equinox.Module instance")
@@ -215,52 +300,35 @@ def setup_module_opts(
 
     build = eqx.filter_jit(_build)
 
-    with mesh:
-        new_module, new_opt = build(module, key)
+    with mesh if mesh else nullcontext():
+        measurement = wall_clock.measure("module.build", mode="setup") if wall_clock else nullcontext()
+        with measurement:
+            new_module, new_opt = build(module, key)
 
     return new_module, new_opt
 
 
-@tp.overload
-def make_train_step(
-    *, 
-    loss_function: _LossFn,
-    jit: bool = True,
-    default_key: PRNGKeyArray | None = None,
-)-> _TrainStepCallable[_M, Optimizer]:
-    ...
-
-@tp.overload
-def make_train_step(
-    *, 
-    train_step: _TrainStepCallable[_M, Optimizer],
-    jit: bool = True,
-    default_key: PRNGKeyArray | None = None,
-)-> _TrainStepCallable[_M, Optimizer]:
-    ...
-@tp.overload
-def make_train_step(
-    *, 
-    train_step: _TrainStepCallable[tp.Sequence[_M], tp.Sequence[Optimizer]],
-    jit: bool = True,
-    default_key: PRNGKeyArray | None = None,
-    )-> _TrainStepCallable[tp.Sequence[_M], tp.Sequence[Optimizer]]:
-    ...
 def make_train_step(
     *,
     loss_function: _LossFn | None = None,
     train_step: _TrainStepCallable[tp.Sequence[_M], tp.Sequence[Optimizer]] | _TrainStepCallable[_M, Optimizer] | None = None,
     jit: bool = True,
-    default_key: PRNGKeyArray | None = None,
+    gradient_accumulation_steps: int = 1,
 ) -> _TrainStepCallable[_M, Optimizer] | _TrainStepCallable[tp.Sequence[_M], tp.Sequence[Optimizer]]:
 
     if train_step is None and loss_function is None:
         raise ValueError("Provide either train_step or loss_function")
 
     if train_step is not None:
-        return eqx.filter_jit(train_step) if jit else train_step
+        fn = eqx.filter_jit(train_step) if jit else train_step
+        setattr(fn, "_gradient_accumulation_steps", 1)
+        return fn
 
     assert loss_function is not None
+    if gradient_accumulation_steps < 1:
+        raise ValueError("gradient_accumulation_steps must be >= 1")
+
+    grad_fn = eqx.filter_value_and_grad(loss_function, has_aux=True)
 
     def _step(
         module: _M,
@@ -269,19 +337,40 @@ def make_train_step(
         *,
         key: PRNGKeyArray | None = None,
     ) -> tuple[_M, Optimizer, _Aux]:
-        grad_fn = eqx.filter_value_and_grad(loss_function, has_aux=True)
-        (_, aux), grads = grad_fn(module, optimizer, batch, key=key)
-        new_module, new_opt = optimizer(grads, module)
-        return new_module, new_opt, aux
+        if gradient_accumulation_steps == 1:
+            (_, aux), grads = grad_fn(module, optimizer, batch, key=key)
+            new_module, new_opt = optimizer(grads, module)
+            return new_module, new_opt, aux or {}
 
-    return eqx.filter_jit(_step) if jit else _step
+        batched = _split_batch_for_accum(batch, gradient_accumulation_steps)
+        if key is not None:
+            key, *subkeys = jax.random.split(key, gradient_accumulation_steps + 1)
+        else:
+            subkeys = [None] * gradient_accumulation_steps
+
+        acc_grads = None
+        acc_aux = None
+        for idx in range(gradient_accumulation_steps):
+            micro_batch = _select_microbatch(batched, idx)
+            subkey = subkeys[idx]
+            (_, aux), grads = grad_fn(module, optimizer, micro_batch, key=subkey)
+            acc_grads = grads if acc_grads is None else jax.tree_util.tree_map(lambda a, b: a + b, acc_grads, grads)
+            acc_aux = _combine_aux(acc_aux, aux)
+
+        grads = jax.tree_util.tree_map(lambda g: g / gradient_accumulation_steps, acc_grads)
+        aux = _finalize_aux(acc_aux, gradient_accumulation_steps)
+        new_module, new_opt = optimizer(grads, module)
+        return new_module, new_opt, aux or {}
+
+    fn = eqx.filter_jit(_step) if jit else _step
+    setattr(fn, "_gradient_accumulation_steps", gradient_accumulation_steps)
+    return fn
 
 @tp.overload
 def make_eval_step(
   *,
   loss_function: _LossFn, 
   jit: bool = True,
-  default_key: PRNGKeyArray | None = None,
 ) -> _EvalStepCallable[_M]:
   ...
 
@@ -290,7 +379,6 @@ def make_eval_step(
   *,
   eval_step: _EvalStepCallable[_M],
   jit: bool = True,
-  default_key: PRNGKeyArray | None = None,
 ) -> _EvalStepCallable[_M]:
   ...
 
@@ -299,7 +387,6 @@ def make_eval_step(
   *,
   eval_step: _EvalStepCallable[tp.Sequence[_M]],
   jit: bool = True,
-  default_key: PRNGKeyArray | None = None,
 ) -> _EvalStepCallable[tp.Sequence[_M]]:
   ...
 
@@ -308,7 +395,6 @@ def make_eval_step(
   loss_function: _LossFn | None = None, 
   eval_step: _EvalStepCallable[tp.Sequence[_M]] | _EvalStepCallable[_M] | None = None,
   jit: bool = True,
-  default_key: PRNGKeyArray | None = None,
 ) -> _EvalStepCallable[_M] | _EvalStepCallable[tp.Sequence[_M]]:
     if eval_step is None and loss_function is None:
         raise ValueError("Provide either eval_step or loss_function")
@@ -330,177 +416,341 @@ def make_eval_step(
     return eqx.filter_jit(_step) if jit else _step
 
 def train_loop(
-    *,
-    num_train_steps: int,
-    num_eval_steps: int,
-    eval_interval: int,
     module: _ModuleInput,
     optimizer: _OptimizerInput,
-    data_loader: tp.Iterable[tp.Any],
     train_step: _TrainStepCallable[_ModuleInput, _OptimizerInput],
+    train_loader: tp.Iterable[tp.Any],
+    num_train_steps: int | None = None,
     eval_loader: tp.Iterable[tp.Any] | None = None,
     eval_step: _EvalStepCallable[_ModuleInput] | None = None,
+    num_eval_steps: int | None = None,
+    eval_interval: int | None = None,
     callbacks: CallbackManager | tp.Sequence[Callback] | None = None,
-    loggers: Logger | tp.Sequence[Logger] | None = None,
-    logging_enabled: bool = True,
-    train_metrics: MetricsAgg | None = None,
-    eval_metrics: MetricsAgg | None = None,
+    logger: Logger | None = None,
+    wall_clock: ProgramWallClock | None = None,
+    profiler: JaxProfiler | None = None,
     key: PRNGKeyArray | None = None,
 ) -> tuple[_ModuleInput, _OptimizerInput, dict[str, float], dict[str, float]]:
-    if num_train_steps <= 0:
-        raise ValueError("num_train_steps must be positive")
+
     if eval_step is None and eval_loader is not None:
         raise ValueError("eval_step must be provided when eval_loader is not None")
+
     if eval_loader is None:
         eval_step = None
 
     callback_manager = _ensure_manager(callbacks)
-    if isinstance(loggers, Logger):
-        logger_list = [loggers]
-    elif loggers is None:
-        logger_list = []
-    else:
-        logger_list = list(loggers)
 
-    if not logging_enabled:
-        logger_list = []
+    if logger is None:
+        logger = TensorBoardLogger(
+            log_dir="log/tensorboard",
+            experiment_name="train",
+            enabled=jax.process_index() == 0,
+        )
 
-    if train_metrics is None:
-        train_metrics = MetricsAgg()
-    if eval_metrics is None:
-        eval_metrics = MetricsAgg()
+    train_step_counter = 0
+    wc = wall_clock if wall_clock is not None and wall_clock.enabled() else None
+    prof = profiler if profiler is not None and profiler.enabled() else None
+    grad_acc = getattr(train_step, "_gradient_accumulation_steps", 1)
 
-    rng = key
-    step = 0
+    def _measure(
+        name: str,
+        *,
+        mode: str | None = None,
+        step: int | None = None,
+        metadata: dict[str, tp.Any] | None = None,
+    ):
+        if wc is None:
+            return nullcontext()
+        return wc.measure(name, mode=mode, step=step, metadata=metadata)
 
+    def _collect(mode: str) -> dict[str, float]:
+        if wc is None:
+            return {}
+        collected = wc.collect_pending_metrics(mode)
+        cleaned: dict[str, float] = {}
+        for key, value in collected.items():
+            parts = key.split("/", 2)
+            if len(parts) == 3:
+                _, _, remainder = parts
+            else:
+                remainder = parts[-1]
+            cleaned[remainder.replace("/", ".")] = value
+        return cleaned
+
+    def _callback(
+        event: str,
+        *,
+        mode: str,
+        timer_step: int | None = None,
+        eval_step_index: int | None = None,
+        **kwargs,
+    ) -> None:
+        if callback_manager is None:
+            return
+        metadata = {"eval_step": eval_step_index} if eval_step_index is not None else None
+        with _measure(f"callbacks.{event}", mode=mode, step=timer_step, metadata=metadata):
+            callback_manager.call(event, **kwargs)
+
+    def _prepare_metrics(aux: tp.Any) -> dict[str, tp.Any]:
+        if aux is None:
+            return {}
+        host = _to_host(aux)
+        if isinstance(host, dict):
+            return _flatten_metrics(host)
+        return {"value": host}
+
+    def _log(mode: str, metrics: dict[str, tp.Any], step: int) -> None:
+        if not logger or not getattr(logger, "enabled", True):
+            return
+        logger.log_metrics(metrics, step=step, mode=mode)
+
+    def _infer_batch_dim(batch: tp.Any) -> int | None:
+        for leaf in jtu.tree_leaves(batch):
+            if isinstance(leaf, (jax.Array, np.ndarray)) and leaf.shape:
+                return leaf.shape[0]
+        return None
 
     if callback_manager:
-        callback_manager.call("on_training_start", module=module, optimizer=optimizer, step=step)
+        _callback(
+            "on_training_start",
+            mode="setup",
+            timer_step=train_step_counter,
+            module=module,
+            optimizer=optimizer,
+            step=train_step_counter,
+        )
 
-    train_iter = iter(data_loader)
-    eval_iter = iter(eval_loader) if eval_loader is not None else None
+    with _measure("iterators", mode="setup"):
+        train_iter = iter(train_loader)
+        eval_iter = iter(eval_loader) if eval_loader is not None else None
 
-    last_train_log: dict[str, float] | None = None
-    last_eval_log: dict[str, float] | None = None
+    show_progress = jax.process_index() == 0
 
-    for step in range(1, num_train_steps + 1):
-        if rng is not None:
-            rng, step_key = jax.random.split(rng)
-        else:
-            step_key = None
+    def _make_progress(desc: str, total: int | None):
+        if not show_progress:
+            return None
+        bar_format = None if total is not None else "{desc}: {n}"
+        return tqdm(total=total, desc=desc, leave=False, bar_format=bar_format)
 
-        batch = next(train_iter)
+    train_progress = _make_progress("Train", num_train_steps)
 
-        if callback_manager:
-            callback_manager.call(
+    first_batch_validated = False
+    last_train_logged: dict[str, float] = {}
+    last_eval_logged: dict[str, float] = {}
+
+    try:
+        while True:
+            if num_train_steps is not None and train_step_counter >= num_train_steps:
+                break
+
+            next_step = train_step_counter + 1
+
+            with _measure("data", mode="train", step=next_step):
+                try:
+                    batch = next(train_iter)
+                except StopIteration:
+                    LOGGER.info("Training data exhausted, ending training loop.")
+                    break
+
+            if not first_batch_validated:
+                batch_dim = _infer_batch_dim(batch)
+                if grad_acc > 1 and batch_dim is not None and batch_dim % grad_acc != 0:
+                    raise ValueError(
+                        "Global batch dimension must be divisible by gradient_accumulation_steps"
+                    )
+                first_batch_validated = True
+
+            train_step_counter = next_step
+
+            if train_progress is not None:
+                train_progress.update(1)
+
+            key, step_key = jax.random.split(key, 2) if key is not None else (key, None)
+
+            _callback(
                 "on_train_step",
+                mode="train",
+                timer_step=train_step_counter,
                 module=module,
                 optimizer=optimizer,
                 batch=batch,
-                step=step,
+                step=train_step_counter,
                 key=step_key,
             )
 
-        module, optimizer, aux = train_step(module, optimizer, batch, key=step_key)
+            if prof is not None:
+                prof.maybe_start_train(train_step_counter, metadata={"phase": "train"})
 
-        train_metrics.update(aux)
-        current_metrics = train_metrics.compute(reset=False)
+            with _measure("step", mode="train", step=train_step_counter):
+                module, optimizer, aux = train_step(module, optimizer, batch, key=step_key)
 
-        reset_train = False
-        for lg in logger_list:
-            if lg.log_metrics(current_metrics, step=step, mode="train"):
-                reset_train = True
-                last_train_log = dict(current_metrics)
-        if reset_train:
-            train_metrics.reset()
+            if prof is not None:
+                prof.maybe_stop_train(train_step_counter, block_on=aux)
 
-        if callback_manager:
-            callback_manager.call(
+            metrics = _prepare_metrics(aux)
+            timings = _collect("train")
+            if timings:
+                metrics.update({f"time.{name}": value for name, value in timings.items()})
+
+            _log("train", metrics, train_step_counter)
+            last_train_logged = metrics
+
+            _callback(
                 "on_train_step_end",
+                mode="train",
+                timer_step=train_step_counter,
                 module=module,
                 optimizer=optimizer,
                 batch=batch,
-                step=step,
+                step=train_step_counter,
                 aux=aux,
-                metrics=current_metrics,
+                metrics=metrics,
             )
 
-        if (
-            eval_step is not None
-            and eval_interval > 0
-            and step % eval_interval == 0
-        ):
-            if callback_manager:
-                callback_manager.call("on_eval_start", module=module, optimizer=optimizer, step=step)
-            eval_metrics.reset()
+            if (
+                eval_step is not None
+                and eval_interval is not None
+                and eval_interval > 0
+                and train_step_counter % eval_interval == 0
+            ):
+                if prof is not None:
+                    prof.on_eval_start(force_stop=True)
 
-            eval_rng = rng
-            for eval_idx in range(1, num_eval_steps + 1):
-                if eval_iter is None:
-                    raise ValueError("eval_loader must be provided for evaluation")
-                if eval_rng is not None:
-                    eval_rng, eval_key = jax.random.split(eval_rng)
-                else:
-                    eval_key = None
-
-                eval_batch = next(eval_iter)
-                if callback_manager:
-                    callback_manager.call(
-                        "on_eval_step",
-                        module=module,
-                        optimizer=optimizer,
-                        batch=eval_batch,
-                        step=step,
-                        eval_step=eval_idx,
-                        key=eval_key,
-                    )
-
-                eval_aux = eval_step(module, eval_batch, key=eval_key)
-
-                eval_metrics.update(eval_aux)
-                eval_current = eval_metrics.compute(reset=False)
-
-                reset_eval = False
-                for lg in logger_list:
-                    if lg.log_metrics(eval_current, step=eval_idx, mode="eval"):
-                        reset_eval = True
-                        last_eval_log = dict(eval_current)
-                if reset_eval:
-                    eval_metrics.reset()
-
-                if callback_manager:
-                    callback_manager.call(
-                        "on_eval_step_end",
-                        module=module,
-                        optimizer=optimizer,
-                        batch=eval_batch,
-                        step=step,
-                        eval_step=eval_idx,
-                        aux=eval_aux,
-                        metrics=eval_current,
-                    )
-
-            if callback_manager:
-                callback_manager.call(
-                    "on_eval_end",
+                _callback(
+                    "on_eval_start",
+                    mode="eval",
+                    timer_step=train_step_counter,
                     module=module,
                     optimizer=optimizer,
-                    step=step,
-                    metrics=eval_metrics.compute(reset=False),
+                    step=train_step_counter,
                 )
-            rng = eval_rng
+
+                eval_progress = _make_progress("Eval", num_eval_steps)
+                eval_step_counter = 0
+
+                try:
+                    while True:
+                        if num_eval_steps is not None and eval_step_counter >= num_eval_steps:
+                            break
+
+                        if eval_iter is None:
+                            raise ValueError("eval_loader must be provided for evaluation")
+
+                        next_eval_step = eval_step_counter + 1
+                        with _measure("data", mode="eval", step=next_eval_step):
+                            try:
+                                eval_batch = next(eval_iter)
+                            except StopIteration:
+                                break
+
+                        eval_step_counter = next_eval_step
+
+                        if eval_progress is not None:
+                            eval_progress.update(1)
+
+                        key, eval_key = jax.random.split(key) if key is not None else (key, None)
+
+                        _callback(
+                            "on_eval_step",
+                            mode="eval",
+                            timer_step=eval_step_counter,
+                            eval_step_index=eval_step_counter,
+                            module=module,
+                            optimizer=optimizer,
+                            batch=eval_batch,
+                            step=train_step_counter,
+                            key=eval_key,
+                        )
+
+                        if prof is not None:
+                            prof.maybe_start_eval(
+                                eval_step_counter,
+                                metadata={"global_step": train_step_counter},
+                            )
+
+                        with _measure("step", mode="eval", step=eval_step_counter):
+                            eval_aux = eval_step(module, eval_batch, key=eval_key)
+
+                        if prof is not None:
+                            prof.maybe_stop_eval(eval_step_counter, block_on=eval_aux)
+
+                        metrics = _prepare_metrics(eval_aux)
+                        timings = _collect("eval")
+                        if timings:
+                            metrics.update({f"time.{name}": value for name, value in timings.items()})
+
+                        _log("eval", metrics, eval_step_counter)
+                        last_eval_logged = metrics
+
+                        _callback(
+                            "on_eval_step_end",
+                            mode="eval",
+                            timer_step=eval_step_counter,
+                            eval_step_index=eval_step_counter,
+                            module=module,
+                            optimizer=optimizer,
+                            batch=eval_batch,
+                            step=train_step_counter,
+                            aux=eval_aux,
+                            metrics=metrics,
+                        )
+                finally:
+                    if eval_progress is not None:
+                        eval_progress.close()
+
+                _callback(
+                    "on_eval_end",
+                    mode="eval",
+                    timer_step=train_step_counter,
+                    module=module,
+                    optimizer=optimizer,
+                    step=train_step_counter,
+                    metrics=last_eval_logged,
+                )
+
+                if prof is not None:
+                    prof.stop()
+
+    except Exception:
+        LOGGER.error("Exception during training loop", exc_info=True)
+        raise
+    finally:
+        LOGGER.info("Training loop ended")
+        if train_progress is not None:
+            train_progress.close()
 
     if callback_manager:
-        callback_manager.call("on_training_end", module=module, optimizer=optimizer, step=step)
+        _callback(
+            "on_training_end",
+            mode="setup",
+            timer_step=train_step_counter,
+            module=module,
+            optimizer=optimizer,
+            step=train_step_counter,
+        )
 
-    train_summary = train_metrics.compute(reset=False)
-    if not train_summary and last_train_log is not None:
-        train_summary = last_train_log
+    if (
+        wc is not None
+        and logger
+        and getattr(logger, "enabled", True)
+        and hasattr(logger, "log_histogram")
+    ):
+        summary = wc.summary()
+        for key in summary:
+            if "." in key:
+                mode, name = key.split(".", 1)
+            else:
+                mode, name = None, key
+            samples = wc.histogram(name, mode=mode)
+            if samples:
+                logger.log_histogram(
+                    f"time.{name}",
+                    samples,
+                    step=train_step_counter,
+                    mode=mode or "setup",
+                )
 
-    eval_summary: dict[str, float] = {}
-    if eval_step is not None:
-        eval_summary = eval_metrics.compute(reset=False)
-        if not eval_summary and last_eval_log is not None:
-            eval_summary = last_eval_log
+    if logger and hasattr(logger, "finalize"):
+        logger.finalize()
 
-    return module, optimizer, train_summary, eval_summary
+    return module, optimizer, last_train_logged, last_eval_logged

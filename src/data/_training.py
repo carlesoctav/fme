@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import typing as tp
 from collections.abc import Sequence
+from contextlib import nullcontext
+
+import logging
+import time
 
 import grain
 import jax
@@ -18,6 +22,7 @@ from ._dataset_transforms import (
     EnsureMapDataset,
 )
 from ._transforms import CollateToBatch
+from .._wallclock import ProgramWallClock
 
 
 Batch = tp.Any
@@ -28,6 +33,9 @@ _S = tp.TypeVar("_S")
 
 class _DatasetIteratorWithInputSpec(DatasetIterator[_T]):
 
+    _SLEEP_SECONDS = 2.0
+    _MAX_ATTEMPTS = 5
+
     def __init__(
         self,
         parent: DatasetIterator[_S],
@@ -37,9 +45,34 @@ class _DatasetIteratorWithInputSpec(DatasetIterator[_T]):
         super().__init__(parent)
         self._pspec = pspec 
         self._mesh = mesh
+        self._logger = logging.getLogger(__name__)
 
     def __next__(self) -> _T:
-        local_values = next(self._parent)
+        attempts = 0
+        last_error: Exception | None = None
+        while True:
+            try:
+                local_values = next(self._parent)
+                break
+            except StopIteration:
+                raise
+            except Exception as err:  # pylint: disable=broad-except
+                attempts += 1
+                last_error = err
+                if attempts >= self._MAX_ATTEMPTS:
+                    break
+                if self._logger.isEnabledFor(logging.WARNING):
+                    self._logger.warning(
+                        "Failed to fetch next batch (attempt %d/%d): %s. Retrying in %.1fs.",
+                        attempts,
+                        self._MAX_ATTEMPTS,
+                        err,
+                        self._SLEEP_SECONDS,
+                    )
+                time.sleep(self._SLEEP_SECONDS)
+
+        if last_error is not None and attempts >= self._MAX_ATTEMPTS:
+            raise last_error
         with self._stats.record_self_time():
             return self._stats.record_output_spec(
                 jtu.tree_map(self.array_from_local_process, local_values)
@@ -208,6 +241,7 @@ def make_dataloader(
     drop_remainder: bool = True,
     batch_class: type[Batch] | None = None,
     use_thread_prefetch: bool = False,
+    wall_clock: ProgramWallClock | None = None,
 ) -> IterDatasetWithInputSpec:
 
 
@@ -219,6 +253,8 @@ def make_dataloader(
         )
 
     local_process_batch_size = global_batch_size // dataloading_host_count
+
+    measurement = wall_clock.measure("dataloader.prepare", mode="setup") if wall_clock else nullcontext()
 
     prepared: list[grain.MapDataset | grain.IterDataset] = []
     if isinstance(datasets, (str, bytes)) or not isinstance(datasets, Sequence):
@@ -272,16 +308,17 @@ def make_dataloader(
 
         prepared.append(ds)
 
-    return make_iterator_with_inputspec(
-        prepared,
-        pspec=pspec_out,
-        mesh=mesh,
-        global_batch_size=global_batch_size,
-        dataloading_host_count=dataloading_host_count,
-        dataset_weights=dataset_weights,
-        worker_count=worker_count,
-        worker_buffer_size=worker_buffer_size,
-        drop_remainder=drop_remainder,
-        batch_class=batch_class,
-        use_thread_prefetch=use_thread_prefetch,
-    )
+    with measurement:
+        return make_iterator_with_inputspec(
+            prepared,
+            pspec=pspec_out,
+            mesh=mesh,
+            global_batch_size=global_batch_size,
+            dataloading_host_count=dataloading_host_count,
+            dataset_weights=dataset_weights,
+            worker_count=worker_count,
+            worker_buffer_size=worker_buffer_size,
+            drop_remainder=drop_remainder,
+            batch_class=batch_class,
+            use_thread_prefetch=use_thread_prefetch,
+        )

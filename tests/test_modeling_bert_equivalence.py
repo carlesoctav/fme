@@ -27,6 +27,7 @@ try:
 except Exception as e:  # pragma: no cover - skip gracefully when HF is missing
     pytest.skip(f"transformers not available: {e}", allow_module_level=True)
 
+from src.nn import AttentionConfig
 from src.models.bert.modeling_bert import (
     BertAttention,
     BertEmbeddings,
@@ -189,6 +190,12 @@ def make_config(**overrides):
     )
 
 
+def make_attention_config(cfg: BertConfig) -> AttentionConfig:
+    impl = getattr(cfg, "_attn_implementation", "eager") or "eager"
+    is_causal = bool(getattr(cfg, "is_decoder", False))
+    return AttentionConfig(type=impl, is_causal=is_causal)
+
+
 def vmap_embeddings(
     jx_emb: BertEmbeddings,
     input_ids: jnp.ndarray,
@@ -254,6 +261,7 @@ def test_self_attention_equivalence_no_mask_random():
     # No attention mask, random hidden states
     cfg = make_config(hidden_dropout_prob=0.0, attention_probs_dropout_prob=0.0)
     cfg._attn_implementation = "eager"
+    attention_cfg = make_attention_config(cfg)
     bs, seq_len = 2, 8
     key = jax.random.key(42)
 
@@ -268,7 +276,7 @@ def test_self_attention_equivalence_no_mask_random():
         th_out = th_sa(hidden_states_th, attention_mask=None)[0]  # (bs, seq, hidden)
 
     # JAX
-    jx_sa = BertSelfAttention(cfg, key=key)
+    jx_sa = BertSelfAttention(cfg, attention_config=attention_cfg, key=key)
     jx_sa = copy_self_attn_weights(jx_sa, th_sa)
     jx_out = vmap_call(jx_sa, hidden_states_jx, attention_mask=None, key=key)
 
@@ -310,6 +318,7 @@ def _mask_nonpad_rows_and_compare(jx_out: jnp.ndarray, th_out: torch.Tensor, att
 def test_self_attention_equivalence_with_padding_tokenizer(texts):
     cfg = make_config()
     cfg._attn_implementation = "eager"
+    attention_cfg = make_attention_config(cfg)
     key = jax.random.key(0)
 
     # Inputs via tokenizer (padding=True)
@@ -339,7 +348,7 @@ def test_self_attention_equivalence_with_padding_tokenizer(texts):
         th_out = th_sa(th_hidden, attention_mask=extend_attention_mask(attention_mask))[0]
 
     # JAX SelfAttention (per sample, pass 1D mask)
-    jx_sa = BertSelfAttention(cfg, key=key)
+    jx_sa = BertSelfAttention(cfg, attention_config=attention_cfg, key=key)
     jx_sa = copy_self_attn_weights(jx_sa, th_sa)
     jx_out = vmap_call(jx_sa, jx_hidden, arr(attention_mask.numpy()), key=key)
 
@@ -350,6 +359,7 @@ def test_self_attention_equivalence_with_padding_tokenizer(texts):
 def test_bert_attention_equivalence_no_mask_random():
     cfg = make_config()
     cfg._attn_implementation = "eager"
+    attention_cfg = make_attention_config(cfg)
     bs, seq_len = 2, 10
     key = jax.random.key(123)
 
@@ -361,7 +371,7 @@ def test_bert_attention_equivalence_no_mask_random():
     with torch.no_grad():
         th_out = th_attn(hidden_states_th, attention_mask=None)[0]
 
-    jx_attn = BertAttention(cfg, key=key)
+    jx_attn = BertAttention(cfg, attention_config=attention_cfg, key=key)
     jx_attn = copy_attention_weights(jx_attn, th_attn)
     jx_out = vmap_call(jx_attn, hidden_states_jx, None, key=key)
 
@@ -372,6 +382,7 @@ def test_bert_attention_equivalence_no_mask_random():
 def test_bert_attention_equivalence_with_padding_tokenizer(texts):
     cfg = make_config()
     cfg._attn_implementation = "eager"
+    attention_cfg = make_attention_config(cfg)
     key = jax.random.key(7)
 
     input_ids, token_type_ids, attention_mask, position_ids = _prep_tokenized_inputs(cfg, texts, padding=True)
@@ -396,7 +407,7 @@ def test_bert_attention_equivalence_with_padding_tokenizer(texts):
     with torch.no_grad():
         th_out = th_attn(th_hidden, attention_mask=extend_attention_mask(attention_mask))[0]
 
-    jx_attn = BertAttention(cfg, key=key)
+    jx_attn = BertAttention(cfg, attention_config=attention_cfg, key=key)
     jx_attn = copy_attention_weights(jx_attn, th_attn)
     jx_out = vmap_call(jx_attn, jx_hidden, arr(attention_mask.numpy()), key=key)
 
@@ -475,6 +486,7 @@ def test_bert_output_equivalence_random():
 def test_bert_layer_equivalence_no_mask_random():
     cfg = make_config()
     cfg._attn_implementation = "eager"
+    attention_cfg = make_attention_config(cfg)
     bs, seq_len = 2, 7
     key = jax.random.key(99)
 
@@ -486,7 +498,7 @@ def test_bert_layer_equivalence_no_mask_random():
     with torch.no_grad():
         th_out = th_layer(hidden_states_th)[0]
 
-    jx_layer = BertLayer(cfg, rngs=key)
+    jx_layer = BertLayer(cfg, attention_config=attention_cfg, rngs=key)
     jx_layer = copy_layer_weights(jx_layer, th_layer)
     # BertLayer requires an attention_mask positional arg; supply ones for no padding
     attn_ones = jnp.ones((bs, seq_len), dtype=jnp.int32)
@@ -499,6 +511,7 @@ def test_bert_layer_equivalence_no_mask_random():
 def test_bert_layer_equivalence_with_padding_tokenizer(texts):
     cfg = make_config()
     cfg._attn_implementation = "eager"
+    attention_cfg = make_attention_config(cfg)
     key = jax.random.key(1234)
 
     input_ids, token_type_ids, attention_mask, position_ids = _prep_tokenized_inputs(cfg, texts, padding=True)
@@ -523,7 +536,7 @@ def test_bert_layer_equivalence_with_padding_tokenizer(texts):
     with torch.no_grad():
         th_out = th_layer(th_hidden, attention_mask=extend_attention_mask(attention_mask))[0]
 
-    jx_layer = BertLayer(cfg, rngs=key)
+    jx_layer = BertLayer(cfg, attention_config=attention_cfg, rngs=key)
     jx_layer = copy_layer_weights(jx_layer, th_layer)
     jx_out = vmap_call(jx_layer, jx_hidden, arr(attention_mask.numpy()), key=key)
 
@@ -534,6 +547,7 @@ def test_bert_encoder_equivalence_no_mask_random():
     # Multiple layers
     cfg = make_config(num_hidden_layers=2)
     cfg._attn_implementation = "eager"
+    attention_cfg = make_attention_config(cfg)
     bs, seq_len = 2, 6
     key = jax.random.key(2024)
 
@@ -545,7 +559,7 @@ def test_bert_encoder_equivalence_no_mask_random():
     with torch.no_grad():
         th_out = th_encoder(hidden_states_th, attention_mask=None)[0]
 
-    jx_encoder = BertEncoder(cfg, key=key)
+    jx_encoder = BertEncoder(cfg, attention_config=attention_cfg, key=key)
     jx_encoder = copy_encoder_weights(jx_encoder, th_encoder)
     jx_out = vmap_call(jx_encoder, hidden_states_jx, None, key=key)
 
@@ -556,6 +570,7 @@ def test_bert_encoder_equivalence_no_mask_random():
 def test_bert_encoder_equivalence_with_padding_tokenizer(texts):
     cfg = make_config(num_hidden_layers=2)
     cfg._attn_implementation = "eager"
+    attention_cfg = make_attention_config(cfg)
     key = jax.random.key(888)
 
     input_ids, token_type_ids, attention_mask, position_ids = _prep_tokenized_inputs(cfg, texts, padding=True)
@@ -580,7 +595,7 @@ def test_bert_encoder_equivalence_with_padding_tokenizer(texts):
     with torch.no_grad():
         th_out = th_encoder(th_hidden, attention_mask=extend_attention_mask(attention_mask))[0]
 
-    jx_encoder = BertEncoder(cfg, key=key)
+    jx_encoder = BertEncoder(cfg, attention_config=attention_cfg, key=key)
     jx_encoder = copy_encoder_weights(jx_encoder, th_encoder)
     jx_out = vmap_call(jx_encoder, jx_hidden, arr(attention_mask.numpy()), key=key)
 

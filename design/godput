@@ -1,0 +1,195 @@
+so i've a bizzare thing like performance drop because of using dataloader
+then i learn that the problem was on dataloader because i use prefetch on dataset that alrady on my ram 
+
+
+because of this i learn the important having a benchmarkable system, 
+
+can you please add something similar to 
+ml-goodput, please see ./personal/ml-goodput-measurement,
+
+i want system something like this where i can measure each part of my training pipeline
+
+1. gather data step (next(iterator))
+2. the train_step
+3. computing others stuff
+4. all callback step
+and add more if you thing it's propiate
+
+
+please see ~/personal/maxtext,
+remember i dont want to use goodput because it was required me to've cloud logging from gcp
+let's make it local first, i just want the wall-clock, and distribution of the wallclock for each pipeline 
+(hence we can get the others metrics)
+
+i feel like i dont need seperation between goodput and badput, just log the timing 
+and we'll figure out the productivity level later
+
+
+
+other than that, to measure the detail of this
+i need to put jax.profiler
+please see jax.profiler
+please see ~/personal/maxtext/train.py,
+please see ~/personal/xlstm-jax/xlstm-jax/callbacks/profiler,
+
+i feel like we dont need put this profiler as a callback but more part of train_loop, make_module_opts 
+make_dataloader
+
+where i can pass this profiler :D
+add this profiler 
+
+
+also see this:
+https://docs.jax.dev/en/latest/profiling.html
+
+
+
+soo the idea create profiler clas where i can profile anything
+for non train_step (like prep) we can use system like goodput
+for the step we need to use jax.trace i think
+
+-----------------
+okay now i  know what i want
+
+can you please add something similar to 
+ml-goodput, please see ./personal/ml-goodput-measurement,
+
+i want system something like this where i can measure each part of my training pipeline
+
+1. gather data step (next(iterator))
+2. the train_step
+3. computing others stuff
+4. all callback step
+and add more if you thing it's propiate
+
+
+please see ~/personal/maxtext,
+please see ~/personal/axlearn/,
+please see ~/personal/axlearn/docs/05-goodput-monitoring,
+
+i want system something like this where i can measure each part of my training pipeline
+
+1. gather data step (next(iterator))
+2. the train_step
+3. computing others stuff
+4. all callback step
+and add more if you thing it's propiate
+also like prepare the model, datalaoder, etc
+
+remember i dont want to use goodput because it was required me to've cloud logging from gcp
+let's make it local first, i just want the wall-clock, and distribution of the wallclock for each pipeline 
+(hence we can get the others metrics) and potentilaly integration with tensorboard
+
+i feel like i dont need seperation between goodput and badput, just log the timing 
+and we'll figure out the productivity level later
+by grouping later (can you verify this is possible? i mean not caring about the godput and badput)
+
+persoinally i'love the context manager version of this ty :D
+
+
+other than that i also want this jax.profiler on my train loop
+
+make the profiler start and certain step, and stop after certain step and maybe peridocaly after cerain step doing this again,
+
+but i feel like the best way is to use timer, like we'll doing the step after certain time passed. 
+
+
+also remember to turn off this profiler if we're on eval_step, 
+we dont want capture the in between eval step,  the user can setup 
+to trace evaluation detail if he want
+
+by doing trace_on_eval, eval_off_step, eval_step_end, log every certain eval loop (we dont trace on traceall eval loop)
+
+
+for this two to works together 
+we need new class and args, the ProgramWallClock (the goodput), jax_profiler :D
+idk maybe create some class for this :D
+
+_profiler.py, _wallclock.py
+
+
+and i feel like we no need to store everything on kj
+
+for the wallclock i dont thing putting everything on memory is a wise choice 
+
+
+ok now i get it let's make some changes based on this knowledge
+
+first on the logger we should keep logging for each step
+there's no such things as log_interval 
+
+just the log_interval is for flushing to the disk
+
+so there'lbe a conditional that check if
+step % log_interval == 0:
+if yes we flush, this is the same thing as the you know, maxtext (cmiiw)
+
+other than
+
+we need to rethink about the output of train_step
+
+if the output of step just single scalar and we add grad_acc features
+    this loss counting functions is wrong no?
+    (loss_1 + loss_2) /(grad acc step = 2)
+    the total loss shoudl be 
+    loss_1 * count1 + loss_2 * ocutn2 / (count1 + count2)
+
+but why in maxtxt there's a loss function that's possible to just device by the acc step :d
+
+
+loss_1/t1, loss_2/t1
+
+
+(loss1 + loss2)/2t1
+
+
+ok now i get it let's make some changes based on this knowledge
+
+first on the logger we should keep logging for each step
+there's no such things as log_interval, accumulating emtrics, etc 
+
+just the log_interval is for flushing to the disk
+
+so there'lbe a conditional that check if
+step % log_interval == 0:
+if yes we flush, this is the same thing as the you know, maxtext (cmiiw)
+
+
+then the output of aux should be
+dict[str, tuple() | scalar]
+
+if the output of it a tuple we'll reduce it before put into log
+
+
+and also let's add graddient accumulation on the make_train_step, the user need gradient acc_step, and
+on the train_loop we also need to make sure the batch_size is divisble by this graident acc_step :D
+
+we just sum of the aux if it's tuple for each item
+
+and we sum um and also dviided by the gradientacc_step if it's just scalar
+
+on the logger we add new args called reduce [str, reduce_method]
+which show what kind of reduce method wil be applied to this tuple metric
+
+on the train_loop, remove the train_metrics and eval_metrics (the agg) because we dont need this
+since we'll log everything per step (even tho the flush is intervaled by log_Interval)
+
+and when we do log_metrics()
+well just summarywrite this thing and (maybe reduce this ting before if it's a tuple)
+
+for this wallclock, i think we need an histogram instead of scalar,
+the think that i dont know can we infer back which step if we use histogram,
+
+and the end of the train, we called log_historgram function and 
+we also should provide a measure on make_module_opts (mostly the build), and make_dataloader
+
+please add log_histogram i think :D in tensorboard logger,
+i feel like csv logger is not needed because it's to useless
+
+
+oh i forgot this gradient acc_step is only for make_train_step with loss_funcion, if the user provide it's own train_step you need to configure your own way to grad_acc this things :d
+and also please 
+
+
+also for the jaxprofiler do we need to flush this into the tensorboard?
+

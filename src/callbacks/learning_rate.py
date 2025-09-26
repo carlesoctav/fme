@@ -5,7 +5,7 @@ import typing as tp
 import jax
 
 from ._callbacks import Callback
-from ..loggers import CSVLogger, Logger
+from ..loggers import Logger
 
 
 _SchedulerFn = tp.Callable[[int], tp.Any]
@@ -24,13 +24,6 @@ class LearningRateMonitor(Callback):
         log_on_train_end: bool = True,
     ) -> None:
         self.scheduler = scheduler
-        if isinstance(logger, CSVLogger):
-            logger = CSVLogger(
-                log_dir=logger.log_dir,
-                filename="learning_rate.csv",
-                log_interval=logger.log_interval,
-                enabled=logger.enabled,
-            )
         self.logger = logger
         self.metric_name = metric_name
         self.mode = mode
@@ -67,7 +60,7 @@ class LearningRateMonitor(Callback):
         else:
             value = float(value)
         self._latest_value = value
-        self.logger.log_metrics({self.metric_name: value}, step=step, file=self.mode)
+        self.logger.log_metrics({self.metric_name: value}, step=step, mode=self.mode)
 
     @property
     def latest(self) -> float | None:

@@ -1,5 +1,5 @@
 from .base import Logger
-from .csv import CSVLogger
+from .tensorboard import TensorBoardLogger
 from .wandb import WandbLogger
 
-__all__ = ["Logger", "CSVLogger", "WandbLogger"]
+__all__ = ["Logger", "TensorBoardLogger", "WandbLogger"]

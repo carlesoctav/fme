@@ -24,26 +24,6 @@ transformations = [
 # )
 #
 
-class XORDataset(grain.MapDataset):
-    def __init__(self, num_samples: int):
-        self.num_samples = num_samples
-        self.data = np.random.randint(low=0, high=2, size=(self.num_samples, 2)).astype(np.float32)
-        self.label = (self.data.sum(axis=1) == 1).astype(np.int32)
-
-
-    def __len__(self):
-        return self.num_samples
-
-    def __getitem__(self, idx: int):
-        return self.data[idx], self.label[idx]
-
-ds = XORDataset(1000)
-
-data_loader = grain.DataLoader(
-    data_source = ds,
-    operations = transformations, 
-    sampler = IndexSampler(num_records = len(ds), shuffle = True, seed = 42)
-)
 
 class SuperLinear(eqx.Module):
     linear1: Linear

@@ -11,7 +11,7 @@ from jax.sharding import Mesh
 from transformers.models.bert.configuration_bert import BertConfig
 
 from src.models.bert.modeling_bert import BertModel
-from src._training import setup_module_opts
+from src._training import make_module_opts
 from src.distributed import (
     column_parallel,
     row_parallel,
@@ -120,7 +120,7 @@ def test_single_module_tp_then_fsdp():
     fsdp_plan = _bert_fsdp_plan(mesh, axis_name="fsdp")
 
     grad_tx = optax.adam(1e-3)
-    new_model, opt = setup_module_opts(
+    new_model, opt = make_module_opts(
         abs_model,
         grad_tx,
         mesh,
@@ -130,7 +130,7 @@ def test_single_module_tp_then_fsdp():
     )
 
     print(f"DEBUGPRINT[299]: test_training.py:123: opt={opt}")
-    print(f"DEBUGPRINT[298]: test_training.py:123: setup_module_opts={setup_module_opts}")
+    print(f"DEBUGPRINT[298]: test_training.py:123: setup_module_opts={make_module_opts}")
 
     print(f"DEBUGPRINT[293]: test_training.py:111: new_model={new_model}")
     # Basic structural checks on annotated pspecs
@@ -189,7 +189,7 @@ def test_two_modules_with_distinct_tp_fsdp_sequences():
     grad_tx = optax.adam(1e-3)
 
     g_key, d_key = jax.random.split(tkey)
-    new_a, opt_a = setup_module_opts(
+    new_a, opt_a = make_module_opts(
         generator,
         grad_tx,
         mesh,
@@ -197,7 +197,7 @@ def test_two_modules_with_distinct_tp_fsdp_sequences():
         parallelism_plans=[tp_a, fsdp_a],
         key=g_key,
     )
-    new_b, opt_b = setup_module_opts(
+    new_b, opt_b = make_module_opts(
         discriminator,
         grad_tx,
         mesh,

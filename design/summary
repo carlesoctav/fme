@@ -1,0 +1,45 @@
+ - compare_steps.py (pre-generated JAX batches, Optimizer.step now jnp.int32): flax.linen ≈0.00034 s, equinox.nn ≈0.00051 s, custom.nn (src.nn.Linear) ≈0.00057 s per step after warmup.
+  - tmep/test_training.py with pre-generated JAX batches + Optimizer: ≈0.00097 s per step, confirming the retracing bug is gone.
+  - grain.MapDataset.repeat().batch() (indexed, device_put each batch): ≈0.0276 s per step; host→device copy becomes visible but still much faster than iterator mode.
+  - grain.MapDataset.to_iter_dataset().batch() (Python iterator, prefetch off): ≈0.1027 s per step; iterator bookkeeping and transfers dominate.
+  - grain.DataLoader (SequentialSampler + Batch, worker_count=0): ≈0.0992 s per step; similar overhead since batches arrive as NumPy and are copied to device inside the loop.
+
+  Key Learnings
+
+  - Keeping non-array state (like Optimizer.step) static forces JAX to retrace; replacing it with a JAX scalar restores ~1 ms steps.
+  - Equinox’s standard nn.Linear requires vmap; using your src.nn.Linear gives the fused GEMM and sub-ms compute.
+  - Grain pipelines deliver NumPy buffers; without device-side staging those host→device transfers dominate timing. Pre-generated device batches remain the fastest baseline.
+  - Map access (map_ds[i]) avoids iterator overhead but still copies to device; DataLoader adds extra coordination layers, so expect tens of milliseconds unless you push the copies into the Grain transform
+  (e.g., a custom Map that returns jax.device_put arrays).
+
+
+random rant,
+
+gw masih ngurusin dataloader kn, lagi ngebenchmark simple setup dataset (XORDataset)
+terus gw belajar suatuhal lmao,
+
+dataset -> bisa di ram atau di disk
+
+dataloader -> funginsya ngeiter si dataset (dan ngebaca sama preprocess)
+
+nah ngeiter si datasetsnya bisa pake threadprefetch, atau multiprocessing-prefetch (ada dua pilihan soalnya bisa I/O bound doang (kyk cuman read dari disk tapi ga perlu preprocess) 
+atau compute bound (heavy preprocess, biasanya process di collate_fn kalau torch dataloader)
+
+gw benchmarknya pakai dataset yang udh di ram kan, 
+terus -> gapake dataloader (pake dataset di for loop kyk data[idx:idx+batch]) dpt 0.4 ms per step (simple linear layer doang)
+pake dataloader default setting, jadi 100ms wkwkk
+pakai multiprocess-prefetch (bisa naikin workernya) makin tinggi workernya makin ke cut per stepnya, tapi maksimalnya ttp 25ms
+
+
+then gw sadar ada options buat matiin  prefetch/worker ini, jadi si dataloadernya bakal kyk ga pake dataloader, turun jadi 1ms :D (ttp ada overhead lain sih)
+
+terus gw baru sadar, kalau slama ini lu loaddatasetnya diram dan udh dipreprocess sbnrnya gaush pake dataloader, lu nambahin overhead kyk queue management, limited buffer (per thread per worker), and otherthings
+
+
+tapi kn slama ini kyknya di indo jarang training yang memang datasetnya gabsa diload di ram? kyk pretraining memang gabsa load di ram karena datasetsnya 100TB
+i mean tpu gw ramnya itu 400GB, ada 32 machine jadi ada 400GB * 32 ram, masih bisa buat pretraining kecilin-kecilinan :D 
+
+pake data,
+
+only reason pakai dataloader kalau lu somehow ada heavy preprocess, tapi mostly lu bsa preprocess sblmnya (unleass ada yang butuh dynamic preprocess)
+
