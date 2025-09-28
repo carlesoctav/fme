@@ -172,12 +172,12 @@ class JaxProfiler:
 
     def _maybe_start(self, mode: str, *, step: int, metadata: Optional[dict]) -> bool:
         if not self._enabled:
-            return False
+            return
 
         state = self._train_state if mode == "train" else self._eval_state
         cfg = state.config
         if not cfg.enabled:
-            return False
+            return
         if self._active_mode is not None:
             return False
         if state.has_triggered and cfg.repeat_every_steps is None and cfg.repeat_after_seconds is None:

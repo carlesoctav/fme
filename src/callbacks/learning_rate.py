@@ -60,7 +60,7 @@ class LearningRateMonitor(Callback):
         else:
             value = float(value)
         self._latest_value = value
-        self.logger.log_metrics({self.metric_name: value}, step=step, mode=self.mode)
+        self.logger.log_metrics({self.metric_name: value}, step=step, tag=self.mode)
 
     @property
     def latest(self) -> float | None:

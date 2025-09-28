@@ -8,6 +8,8 @@ import numpy as np
 from tensorboardX import SummaryWriter
 import jax.tree_util as jtu
 from jaxtyping import PyTree
+import contextlib
+import time
 
 from .base import Logger
 
@@ -20,6 +22,7 @@ class TensorBoardLogger(Logger):
     flush_interval: int = 1
     enabled: bool = True
     reduce_fn: Callable[[PyTree], PyTree] | None = field(default = None)
+    time_fn: Callable[[], float] = field(default = time.perf_counter)
 
     def __post_init__(self) -> None:
         Logger.__init__(self, enabled=self.enabled)
@@ -33,9 +36,33 @@ class TensorBoardLogger(Logger):
         self._flush_interval = max(1, self.flush_interval)
         self._writes_since_flush = 0
 
-    def log_metrics(self, metrics: dict[str, object], *, step: int, tag: str) -> bool:
+    def log_metric(
+        self,
+        name: str,
+        metric: float,
+        step: int,
+        tag: str
+    ): 
         if not self.enabled or not metrics:
             return False
+
+        name = f"{tag}/{name}"
+
+        self._writer.add_scalar(name, metric, global_step=step)
+
+        self._writes_since_flush += 1
+        if self._writes_since_flush >= self._flush_interval:
+            self._writer.flush()
+            self._writes_since_flush = 0
+
+    def log_metrics(
+        self,
+        metrics: dict[str, object],
+        step: int,
+        tag: str
+    ) -> bool:
+        if not self.enabled or not metrics:
+            return 
 
         def _reduce(x):
             if isinstance(x, tuple):
@@ -49,25 +76,26 @@ class TensorBoardLogger(Logger):
         if self._writes_since_flush >= self._flush_interval:
             self._writer.flush()
             self._writes_since_flush = 0
-        return True
 
-    def log_histogram(self, name: str, values: Iterable[float], *, step: int, mode: str | None = None) -> None:
-        if not self.enabled:
-            return
-        values = np.asarray(list(values), dtype=np.float32)
-        if values.size == 0:
-            return
-        tag = f"{mode}/{name}" if mode else name
-        self._writer.add_histogram(tag=tag, values=values, global_step=step)
-        self._writes_since_flush += 1
-        if self._writes_since_flush >= self._flush_interval:
-            self._writer.flush()
-            self._writes_since_flush = 0
+        return reduced
 
     def finalize(self, status: str = "success") -> None: 
         if not self.enabled:
             return
         self._writer.flush()
         self._writer.close()
+
+    @contextlib.contextmanager
+    def wc(
+        self,
+        name,
+        step,
+    ):
+        try:
+            start = self.time_fn()
+        finally:
+            end = self.time_fn()
+            duration = max(0.0, end-start)
+            self._writer.add_scalar(tag=name, scalar_value=duration, global_step=step)
 
 __all__ = ["TensorBoardLogger"]

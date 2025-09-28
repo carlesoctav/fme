@@ -43,3 +43,67 @@ pake data,
 
 only reason pakai dataloader kalau lu somehow ada heavy preprocess, tapi mostly lu bsa preprocess sblmnya (unleass ada yang butuh dynamic preprocess)
 
+
+----------------------
+
+so i think i want to redisign this wallclock
+let's just make a util function called
+
+
+def make_log_wc(
+    logger,
+    log_histogram
+    sample_size = 
+    enabled
+):
+    dict: [str, np.array]
+
+    def log_event_wc(
+        name_of_event,
+        logger,
+        step,
+        log_histogram = True
+        is_enabled = True (default was jax.process_index9) == 0)
+    ):
+        try:
+            time.start
+            yield
+        finlaly:
+            timediff = start -stop
+            if is_enabled:
+                loggger.log_metric(name_of_event, time_diff, step = step)
+                if log_histogram:
+                    if dict[name_of_event].shape <= sample_size:
+                        dict[name_of_event][curr_step +1] = time_diff
+                    else:
+                        log.historgram(name_of_event, dict[name_of_event], step = step) 
+                        remove dict[name_of_event]
+
+            no need to flush, we'll flush this on the metric?
+            i mean 
+        return log_event_wc (maybe make it class)
+
+
+insetad of function that create this utilites, maybe just create one class ProgramWallClock to handle all of this
+
+
+and i think you need to add log_metric method (instead of log_metrics) for just a single scalar, ty
+
+
+also please add method to add the curr_step :D (or i mean just make it accesible lmao)
+also remvoe name or tag, bot are the sam ething, since we'll put a detail info on name (no need train/eval seperation tho :D)
+please fullfill my dream, this is the idea, ty
+
+i think this is the best we can get :D
+
+
+ahh okay i get it now so let's move this thing and make thing more clear and simple
+
+i want  _EventStats but make this but please just store samples
+
+
+
+
+
+
+

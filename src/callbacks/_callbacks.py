@@ -19,8 +19,6 @@ class Callback:
     def on_train_step(self, **kwargs) -> None:
         pass
 
-    def on_train_step_end(self, **kwargs) -> None:
-        pass
 
     def on_eval_start(self, **kwargs) -> None:
         pass
@@ -28,12 +26,8 @@ class Callback:
     def on_eval_step(self, **kwargs) -> None:
         pass
 
-    def on_eval_step_end(self, **kwargs) -> None:
-        pass
-
     def on_eval_end(self, **kwargs) -> None:
         pass
-
 
 
 @dc.dataclass

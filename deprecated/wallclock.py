@@ -11,16 +11,18 @@ from __future__ import annotations
 import dataclasses
 import math
 import time
-from collections import defaultdict, deque
+import typing
+from collections import defaultdict
 from contextlib import nullcontext
-from typing import Any, Callable, Dict, Iterable, Mapping, Optional
-
-import numpy as np
+from typing import Any, Callable, Dict, Mapping, Optional
 
 try:  # Optional: JAX may not be available at import time for some tools.
     import jax
 except Exception:  # pragma: no cover - fallback when JAX is unavailable.
     jax = None  # type: ignore
+
+if typing.TYPE_CHECKING:  # pragma: no cover
+    from .loggers import Logger
 
 
 @dataclasses.dataclass
@@ -33,7 +35,6 @@ class _EventStats:
     maximum: float = 0.0
     mean: float = 0.0
     m2: float = 0.0  # Sum of squares of differences from the mean (for variance).
-    samples: deque[float] | None = None
 
     def add(self, duration: float) -> None:
         self.count += 1
@@ -46,9 +47,6 @@ class _EventStats:
         self.mean += delta / self.count
         delta2 = duration - self.mean
         self.m2 += delta * delta2
-
-        if self.samples is not None:
-            self.samples.append(duration)
 
     @property
     def variance(self) -> float:
@@ -80,18 +78,6 @@ class _EventStats:
             "max": self.maximum,
         }
 
-        if self.samples is not None and self.samples:
-            # Use numpy for percentile calculations on the recent history.
-            sample_array = np.asarray(self.samples, dtype=np.float64)
-            summary.update(
-                {
-                    "p50": float(np.percentile(sample_array, 50)),
-                    "p90": float(np.percentile(sample_array, 90)),
-                    "p95": float(np.percentile(sample_array, 95)),
-                    "p99": float(np.percentile(sample_array, 99)),
-                }
-            )
-
         return summary
 
 
@@ -109,15 +95,17 @@ class ProgramWallClock:
         *,
         enabled: bool = True,
         main_process_only: bool = True,
-        store_samples: bool = True,
-        history_limit: int | None = 1024,
         time_fn: Callable[[], float] = time.perf_counter,
+        logger: "Logger" | None = None,
+        logger_mode: str = "time",
+        logger_prefix: str = "time",
     ) -> None:
         process_index = jax.process_index() if jax is not None else 0
         self._enabled = enabled and (not main_process_only or process_index == 0)
-        self._store_samples = store_samples
-        self._history_limit = history_limit
         self._time_fn = time_fn
+        self._logger = logger if self._enabled else None
+        self._logger_mode = logger_mode
+        self._logger_prefix = logger_prefix
 
         self._event_stats: Dict[str, _EventStats] = {}
         self._pending: Dict[str, Dict[str, float]] = defaultdict(dict)
@@ -161,8 +149,7 @@ class ProgramWallClock:
 
         key = f"{mode}.{name}" if mode else name
         if key not in self._event_stats:
-            samples = deque(maxlen=self._history_limit) if self._store_samples else None
-            self._event_stats[key] = _EventStats(samples=samples)
+            self._event_stats[key] = _EventStats()
         self._event_stats[key].add(duration)
 
         if mode is not None:
@@ -174,6 +161,14 @@ class ProgramWallClock:
             pending_meta = self._pending.setdefault("metadata", {})
             for meta_key, value in metadata.items():
                 pending_meta[f"{mode}.{name}.{meta_key}" if mode else f"{name}.{meta_key}"] = value
+
+        if self._logger is not None and step is not None:
+            log_mode = mode or self._logger_mode
+            tag = f"{self._logger_prefix}/{name}" if self._logger_prefix else name
+            try:
+                self._logger.log_metrics({tag: duration}, step=int(step), tag=log_mode)
+            except Exception:  # pragma: no cover - logging failures should not break training
+                pass
 
     def collect_pending_metrics(self, mode: str, *, prefix: str = "time") -> Dict[str, float]:
         """Returns and clears pending per-step metrics for a mode."""
@@ -197,13 +192,8 @@ class ProgramWallClock:
     def now(self) -> float:
         return self._time_fn()
 
-    def histogram(self, name: str, *, mode: str | None = None) -> Iterable[float]:
-        """Return a copy of the recorded samples for `name` (if any)."""
-        key = f"{mode}.{name}" if mode else name
-        stats = self._event_stats.get(key)
-        if stats is None or stats.samples is None:
-            return []
-        return list(stats.samples)
+    def histogram(self, name: str, *, mode: str | None = None):  # pragma: no cover - kept for compatibility
+        return []
 
 
 class _Timer:
