@@ -108,7 +108,7 @@ class ModelCheckpoint(Callback):
 
         self._manager, self._item_names = self._build_manager()
 
-    def on_training_step(
+    def on_training_step_end(
         self,
         *,
         module: _M,
@@ -131,16 +131,18 @@ class ModelCheckpoint(Callback):
             reason="train",
         )
 
-    def on_eval_end(
+    def on_validation_end(
         self,
         *,
         module: _M,
         optimizer: _O,
         step: int,
         metrics: Mapping[str, tp.Any] | None = None,
+        logs: Mapping[str, tp.Any] | None = None,
         **_: tp.Any,
     ) -> None:
-        cleaned_metrics = _clean_metrics(metrics)
+        source_metrics: Mapping[str, tp.Any] | None = metrics or logs
+        cleaned_metrics = _clean_metrics(source_metrics)
         self._last_eval_metrics = cleaned_metrics
         if self.save_on != "eval":
             return

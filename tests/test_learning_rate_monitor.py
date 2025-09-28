@@ -17,6 +17,10 @@ class RecordingLogger(Logger):
         self.records.append((step, mode, dict(metrics)))
         return True
 
+    def log_scalars(self, metrics, *, step: int, tag: str):
+        self.records.append((step, tag, dict(metrics)))
+        return dict(metrics)
+
 
 def test_learning_rate_monitor_logs_by_step() -> None:
     logger = RecordingLogger()
@@ -25,10 +29,10 @@ def test_learning_rate_monitor_logs_by_step() -> None:
         logger=logger,
         every_n_steps=2,
     )
-    monitor.on_train_step_end(step=1)
-    monitor.on_train_step_end(step=2)
-    monitor.on_train_step_end(step=3)
-    monitor.on_train_step_end(step=4)
+    monitor.on_training_step_end(step=1)
+    monitor.on_training_step_end(step=2)
+    monitor.on_training_step_end(step=3)
+    monitor.on_training_step_end(step=4)
     assert logger.records == [
         (2, "lr", {"learning_rate": 1.0}),
         (4, "lr", {"learning_rate": 2.0}),
@@ -42,7 +46,7 @@ def test_learning_rate_monitor_logs_on_eval() -> None:
         logger=logger,
         every_n_steps=10,
     )
-    monitor.on_eval_end(step=5)
+    monitor.on_validation_end(step=5)
     assert logger.records == [(5, "lr", {"learning_rate": 5.0})]
 
 
@@ -53,7 +57,7 @@ def test_learning_rate_monitor_uses_separate_csv(tmp_path) -> None:
         logger=logger,
         every_n_steps=1,
     )
-    monitor.on_train_step_end(step=3)
+    monitor.on_training_step_end(step=3)
     lr_file = Path(tmp_path) / "learning_rate.csv"
     assert lr_file.exists()
     contents = lr_file.read_text().strip().splitlines()

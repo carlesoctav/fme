@@ -61,7 +61,7 @@ class JaxProfiler(Callback):
         self._deadline = None
         self._last_profile_time = self._time()
 
-    def on_training_step(self, *, step: int, metrics: Any | None = None, **kwargs: Any) -> None:
+    def on_training_step_end(self, *, step: int, aux: Any | None = None, metrics: Any | None = None, **kwargs: Any) -> None:
         del kwargs
 
         if self.main_process_only and jax.process_index() != 0:
@@ -75,8 +75,9 @@ class JaxProfiler(Callback):
                 should_stop = True
             if self._deadline is not None and now >= self._deadline:
                 should_stop = True
+            payload = metrics if metrics is not None else aux
             if should_stop:
-                self._stop(metrics)
+                self._stop(payload)
             return
 
         should_start = False
@@ -94,7 +95,7 @@ class JaxProfiler(Callback):
         del kwargs
         self._stop(None)
 
-    def on_eval_start(self, **kwargs: Any) -> None:  # type: ignore[override]
+    def on_validation_start(self, **kwargs: Any) -> None:  # type: ignore[override]
         del kwargs
         if self.main_process_only and jax.process_index() != 0:
             return

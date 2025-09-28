@@ -13,21 +13,39 @@ class Callback:
     def on_training_start(self, **kwargs) -> None:
         pass
 
+    def on_training_step_start(self, **kwargs) -> None:
+        pass
+
+    def on_training_step_end(self, **kwargs) -> None:
+        pass
+
     def on_training_end(self, **kwargs) -> None:
         pass
 
-    def on_training_step(self, **kwargs) -> None:
+    def on_validation_start(self, **kwargs) -> None:
         pass
 
-
-    def on_eval_start(self, **kwargs) -> None:
+    def on_validation_step_start(self, **kwargs) -> None:
         pass
 
-    def on_eval_step(self, **kwargs) -> None:
+    def on_validation_step_end(self, **kwargs) -> None:
         pass
 
-    def on_eval_end(self, **kwargs) -> None:
+    def on_validation_end(self, **kwargs) -> None:
         pass
+
+    # Backwards compatibility -------------------------------------------------------------------
+    def on_training_step(self, **kwargs) -> None:  # pragma: no cover - compatibility shim
+        self.on_training_step_end(**kwargs)
+
+    def on_eval_start(self, **kwargs) -> None:  # pragma: no cover - compatibility shim
+        self.on_validation_start(**kwargs)
+
+    def on_eval_step(self, **kwargs) -> None:  # pragma: no cover - compatibility shim
+        self.on_validation_step_end(**kwargs)
+
+    def on_eval_end(self, **kwargs) -> None:  # pragma: no cover - compatibility shim
+        self.on_validation_end(**kwargs)
 
 
 @dc.dataclass

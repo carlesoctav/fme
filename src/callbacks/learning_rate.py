@@ -33,14 +33,14 @@ class LearningRateMonitor(Callback):
         self.log_on_train_end = log_on_train_end
         self._latest_value: float | None = None
 
-    def on_training_step(self, *, step: int, **kwargs: tp.Any) -> None:
+    def on_training_step_end(self, *, step: int, **kwargs: tp.Any) -> None:
         if self.every_n_steps <= 0:
             return
         if step % self.every_n_steps != 0:
             return
         self._emit(step)
 
-    def on_eval_end(self, *, step: int, **kwargs: tp.Any) -> None:
+    def on_validation_end(self, *, step: int, **kwargs: tp.Any) -> None:
         if not self.log_on_eval_end:
             return
         self._emit(step)
