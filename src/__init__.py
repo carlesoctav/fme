@@ -2,7 +2,6 @@ from ._darray import DArray
 from ._filter import apply_transforms, iter_module
 from ._huggingface import HuggingFaceCompatibleModule
 from ._metrics import MetricsAgg
-from ._profiler import JaxProfiler
 from ._training import (
     Optimizer,
     init_module,
@@ -15,6 +14,7 @@ from ._wallclock import ProgramWallClock
 from .callbacks import (
     Callback,
     CallbackManager,
+    JaxProfiler,
     LearningRateMonitor,
     ModelCheckpoint,
 )

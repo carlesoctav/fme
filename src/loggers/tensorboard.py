@@ -20,14 +20,10 @@ class TensorBoardLogger(Logger):
     log_dir: str | Path
     experiment_name: str | None = None
     flush_interval: int = 1
-    enabled: bool = True
     reduce_fn: Callable[[PyTree], PyTree] | None = field(default = None)
     time_fn: Callable[[], float] = field(default = time.perf_counter)
 
     def __post_init__(self) -> None:
-        Logger.__init__(self, enabled=self.enabled)
-        if not self.enabled:
-            return
         base_dir = Path(self.log_dir)
         if self.experiment_name:
             base_dir = base_dir / self.experiment_name
@@ -36,17 +32,12 @@ class TensorBoardLogger(Logger):
         self._flush_interval = max(1, self.flush_interval)
         self._writes_since_flush = 0
 
-    def log_metric(
+    def log_scalar(
         self,
         name: str,
         metric: float,
         step: int,
-        tag: str
     ): 
-        if not self.enabled or not metrics:
-            return False
-
-        name = f"{tag}/{name}"
 
         self._writer.add_scalar(name, metric, global_step=step)
 
@@ -55,14 +46,12 @@ class TensorBoardLogger(Logger):
             self._writer.flush()
             self._writes_since_flush = 0
 
-    def log_metrics(
+    def log_scalars(
         self,
         metrics: dict[str, object],
         step: int,
         tag: str
     ) -> bool:
-        if not self.enabled or not metrics:
-            return 
 
         def _reduce(x):
             if isinstance(x, tuple):
@@ -80,8 +69,6 @@ class TensorBoardLogger(Logger):
         return reduced
 
     def finalize(self, status: str = "success") -> None: 
-        if not self.enabled:
-            return
         self._writer.flush()
         self._writer.close()
 

@@ -14,3 +14,30 @@ def eval(
     dataset = load_dataset()
     make_datasets() = 
 
+
+
+
+
+mmm about training loop, i feel like we've a wrong api here for the eval part
+sometimes eval has different 
+
+we should've a EvalCallback where consist of
+
+
+class EvalCallback:
+    datasets: list[iterdataset] | dataset
+    logger: Logger (same logger as the train)
+
+    def prepare_dataset():
+        pass
+
+    def eval_step():
+        for dataset in datasets:
+            dataset_aux = None
+            for batch in dataset:
+                aux = self.eval_step(model, optimizer, batch, key)
+                dataset_aux = jtu.treemap(self.aux[xx], aux)
+
+            
+
+

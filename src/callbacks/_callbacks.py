@@ -16,7 +16,7 @@ class Callback:
     def on_training_end(self, **kwargs) -> None:
         pass
 
-    def on_train_step(self, **kwargs) -> None:
+    def on_training_step(self, **kwargs) -> None:
         pass
 
 

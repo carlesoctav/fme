@@ -1,19 +1,23 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from typing import Mapping
 
 
-class Logger(ABC):
-    def __init__(self, *, enabled: bool = True) -> None:
-        self.enabled = enabled
-
-    @abstractmethod
-    def log_metrics(self, metrics: Mapping[str, float], *, step: int, mode: str) -> bool:
+class Logger:
+    def __init__(self, *args, **kwargs) -> None:
         ...
 
+    def log_scalars(self, metrics: dict[str, object], step: int, tag: str) -> dict[str, float]:
+        raise NotImplementedError
+
+    def log_scalar(self, name: str, metric: float, step: int, tag: str)-> dict[str, float]: 
+        raise NotImplementedError
+
+    def wc(self, name, step):
+        raise NotImplementedError
+
     def log_hyperparams(self, params: Mapping[str, object] | None = None) -> None:
-        return None
+        raise NotImplementedError
 
     def finalize(self, status: str = "success") -> None:
         return None

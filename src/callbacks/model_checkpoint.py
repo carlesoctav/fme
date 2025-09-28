@@ -108,7 +108,7 @@ class ModelCheckpoint(Callback):
 
         self._manager, self._item_names = self._build_manager()
 
-    def on_train_step_end(
+    def on_training_step(
         self,
         *,
         module: _M,

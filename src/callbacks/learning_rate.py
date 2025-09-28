@@ -6,6 +6,7 @@ import jax
 
 from ._callbacks import Callback
 from ..loggers import Logger
+from .._utils import rank_zero
 
 
 _SchedulerFn = tp.Callable[[int], tp.Any]
@@ -18,7 +19,7 @@ class LearningRateMonitor(Callback):
         scheduler: _SchedulerFn,
         logger: Logger,
         metric_name: str = "learning_rate",
-        mode: str = "lr",
+        train: str = "lr",
         every_n_steps: int = 50,
         log_on_eval_end: bool = True,
         log_on_train_end: bool = True,
@@ -26,13 +27,13 @@ class LearningRateMonitor(Callback):
         self.scheduler = scheduler
         self.logger = logger
         self.metric_name = metric_name
-        self.mode = mode
+        self.tag = train
         self.every_n_steps = every_n_steps
         self.log_on_eval_end = log_on_eval_end
         self.log_on_train_end = log_on_train_end
         self._latest_value: float | None = None
 
-    def on_train_step_end(self, *, step: int, **kwargs: tp.Any) -> None:
+    def on_training_step(self, *, step: int, **kwargs: tp.Any) -> None:
         if self.every_n_steps <= 0:
             return
         if step % self.every_n_steps != 0:
@@ -49,9 +50,8 @@ class LearningRateMonitor(Callback):
             return
         self._emit(step)
 
+    @rank_zero
     def _emit(self, step: int) -> None:
-        if not getattr(self.logger, "enabled", True):
-            return
         value = self.scheduler(step)
         if isinstance(value, jax.Array):
             value = jax.device_get(value)
@@ -60,7 +60,9 @@ class LearningRateMonitor(Callback):
         else:
             value = float(value)
         self._latest_value = value
-        self.logger.log_metrics({self.metric_name: value}, step=step, tag=self.mode)
+        if not getattr(self.logger, "enabled", True):
+            return
+        self.logger.log_metrics({self.metric_name: value}, step=step, tag=self.tag)
 
     @property
     def latest(self) -> float | None:
