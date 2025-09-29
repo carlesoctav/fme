@@ -110,22 +110,21 @@ class ModelCheckpoint(Callback):
 
     def on_training_step_end(
         self,
-        *,
         module: _M,
         optimizer: _O,
-        step_idx: int,
-        aux: Mapping[str, tp.Any] | None = None,
-        reduce: Mapping[str, tp.Any] | None = None,
-        **_: tp.Any,
+        batch: tp.Any,
+        aux: Mapping[str, tp.Any],
+        logs: Mapping[str, tp.Any],
+        step: int,
     ) -> None:
-        metrics = _clean_metrics(reduce or aux)
+        metrics = _clean_metrics(logs or aux)
         self._last_train_metrics = metrics
         if self.save_on != "train":
             return
-        if not self._periodic_trigger(step_idx):
+        if not self._periodic_trigger(step):
             return
         self._save_step(
-            step_idx,
+            step,
             module,
             optimizer,
             metrics=metrics,

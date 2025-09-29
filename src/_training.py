@@ -21,7 +21,7 @@ from ._utils import first_from, rank_zero
 from .callbacks import Callback
 from .distributed import get_partition_spec
 from .loggers import Logger, TensorBoardLogger
-from ._metrics import SufficientMetrics
+from ._metrics import SufficientMetric
 
 
 LOGGER = logging.getLogger(__name__)
@@ -67,7 +67,6 @@ class _EvalStepCallable(Protocol[_ModuleInput, _OptimizerInput]):
         ...
 
 
-EvalLoopResult = tuple[dict[str, tp.Any], PRNGKeyArray | None]
 
 @dataclass
 class Eval:
@@ -77,7 +76,6 @@ class Eval:
     unload_dataset_fn: tp.Callable[[tp.Iterable[tp.Any]], None] | None = None
     eval_step: _EvalStepCallable[_ModuleInput, _OptimizerInput] | None = None
     loss_function: _LossFn | None = None
-    logger: Logger | None = None
     enable_wallclock: bool | None = None
     reduce_fn: tp.Callable[[tp.Any, int], tp.Any] | None = None
     jit: bool = True
@@ -144,6 +142,7 @@ class Eval:
         step: int,
         *,
         logger: Logger | None = None,
+        callback: list[Callback] | None = None
     ) -> None:
         del module, optimizer, batch, logs, step, logger
 
@@ -163,21 +162,20 @@ class Eval:
         self,
         module: _ModuleInput,
         optimizer: _OptimizerInput,
-        *,
-        key: PRNGKeyArray | None = None,
-        logger: Logger | None = None,
+        logger: Logger, 
+        callback: list[callback],
         enable_wallclock: bool = True,
         global_step_idx: int | None = None,
-    ) -> tuple[dict[str, float], PRNGKeyArray | None]:
+        key: PRNGKeyArray | None = None,
+    ) -> tuple[dict[str, float]]:
 
-        eval_logger = self.logger or logger
         eval_step_fn = self._resolve_eval_step()
         dataset, handle = self._resolve_dataset()
         aggregated = None
         step_idx = 0
-        eval_metrics = SufficientMetrics(log_every_n_steps=None, reduce_fn=self.reduce_fn)
+        eval_metrics = SufficientMetric(name = self.name, log_every_n_steps=None, reduce_fn=self.reduce_fn)
 
-        def _wallclock(name: str, idx: int | None = None):
+        def wallclock(name: str, idx: int | None = None):
             use_wallclock = self.enable_wallclock if self.enable_wallclock is not None else enable_wallclock
             if not use_wallclock or eval_logger is None:
                 return nullcontext()
@@ -193,7 +191,7 @@ class Eval:
             raise RuntimeError("Eval dataset is not iterable") from exc
 
         try:
-            self.on_eval_start(module, optimizer, logger=eval_logger)
+            self.on_eval_start(module, optimizer, logger=logger, callback = callback)
 
             for batch in iterator:
                 step_idx += 1
@@ -202,13 +200,14 @@ class Eval:
                     module,
                     optimizer,
                     batch,
-                    step_idx,
-                    logger=eval_logger,
+                    step = step_idx,
+                    logger =logger,
+                    callback = callback,
                 )
 
                 key, eval_key = jax.random.split(key, 2) if key is not None else (key, None)
 
-                with _wallclock(f"eval.{self.name}.step", step_idx):
+                with wallclock(f"eval.{self.name}.step", step_idx):
                     aux = eval_step_fn(
                         module,
                         optimizer,
@@ -218,7 +217,7 @@ class Eval:
 
                 eval_metrics += aux
                 logs = eval_metrics.step_metrics()
-                rank_zero(eval_logger.log, self.name, logs, step=step_idx)
+                rank_zero(logger.log, self.name, logs, step=step_idx)
 
                 self.on_eval_step_end(
                     module,
@@ -226,22 +225,25 @@ class Eval:
                     batch,
                     aux,
                     logs,
-                    step_idx,
-                    logger=eval_logger,
+                    step = step_idx,
+                    logger=logger,
+                    callback = callback,
                 )
 
 
-            reduced = eval_metrics.per_N_metrics(step_idx, skip_check=True)
-            rank_zero(eval_logger.log, self.name, reduced, step_idx)
+            logs = eval_metrics.per_N_metrics(step_idx, skip_check=True)
+            rank_zero(logger.log, self.name, logs, step_idx)
 
             self.on_eval_end(
                 module,
                 optimizer,
-                reduced,
-                logger=eval_logger,
+                aux,
+                logs,
+                logger=logger,
+                callback = callback,
             )
 
-            return aux, reduced
+            return eval_metrics, reduce
         finally:
             if self.unload_dataset_fn is not None and handle is not None:
                 self.unload_dataset_fn(handle)
@@ -460,21 +462,21 @@ def make_train_step(
                 return leaf.reshape((gradient_accumulation_steps, B // gradient_accumulation_steps) + leaf.shape[1:])
 
         if gradient_accumulation_steps == 1:
-            (_, aux), grad = _minibatch_step(batch)
+            (_, aux), grad = grad_fn(module, optimizer, batch, key=key)
             new_module, new_opt = optimizer(grad, module)
             return new_module, new_opt, aux or {}
+        else:
+            grad_shapes, aux_shape = jax.eval_shape(_minibatch_step, 0)
+            grad = jax.tree.map(lambda x: jnp.zeros(x.shape, x.dtype), grad_shapes)
+            aux = jax.tree.map(lambda x: jnp.zeros(x.shape, x.dtype), aux_shape)
 
-        grad_shapes, aux_shape = jax.eval_shape(_minibatch_step, 0)
-        grad = jax.tree.map(lambda x: jnp.zeros(x.shape, x.dtype), grad_shapes)
-        aux = jax.tree.map(lambda x: jnp.zeros(x.shape, x.dtype), aux_shape)
+            batch = jtu.tree_map(_stack_batch, batch) 
 
-        batch = jtu.tree_map(_stack_batch, batch) 
+            (grad, aux), _ = jax.lax.scan(_scan_step, (grad, aux), batch, length = gradient_accumulation_steps)
 
-        (grad, aux), _ = jax.lax.scan(_scan_step, (grad, aux), batch, length = gradient_accumulation_steps)
-
-        grad = jax.tree_util.tree_map(lambda g: g / gradient_accumulation_steps, grad)
-        new_module, new_opt = optimizer(grad, module)
-        return new_module, new_opt, aux or {}
+            grad = jax.tree_util.tree_map(lambda g: g / gradient_accumulation_steps, grad)
+            new_module, new_opt = optimizer(grad, module)
+            return new_module, new_opt, aux or {}
 
     fn = eqx.filter_jit(_step) if jit else _step
     return fn
@@ -508,6 +510,37 @@ def make_eval_step(
     return eqx.filter_jit(_step) if jit else _step
 
 
+@tp.overload
+def eval_loop(
+    module: _ModuleInput,
+    optimizer: _OptimizerInput,
+    *,
+    eval_loader: tp.Iterable[tp.Any],
+    eval_step: _EvalStepCallable[_ModuleInput, _OptimizerInput],
+    evals: None = None,
+    logger: Logger | None,
+    callbacks: tp.Sequence[Callback],
+    enable_wallclock: bool,
+    key: PRNGKeyArray | None,
+    global_step_idx: int | None = None,
+) -> SufficientMetric:
+    ...
+
+@tp.overload
+def eval_loop(
+    module: _ModuleInput,
+    optimizer: _OptimizerInput,
+    *,
+    eval_loader: None = None,
+    eval_step: None = None,
+    evals: tp.Sequence[Eval],
+    logger: Logger | None,
+    callbacks: tp.Sequence[Callback],
+    enable_wallclock: bool,
+    key: PRNGKeyArray | None,
+    global_step_idx: int | None = None,
+) -> dict[str, SufficientMetric]:
+    ...
 def eval_loop(
     module: _ModuleInput,
     optimizer: _OptimizerInput,
@@ -519,9 +552,12 @@ def eval_loop(
     callbacks: tp.Sequence[Callback],
     enable_wallclock: bool,
     key: PRNGKeyArray | None,
-    global_step_idx: int | None = None,
-) -> EvalLoopResult:
+    global_step: int | None = None,
+) -> SufficientMetric | dict[str, SufficientMetric]:
     callbacks_list = list(callbacks)
+
+    if evals is not None and (eval_loader is not None or eval_step is not None):
+        raise ValueError("Provide either evals or eval_loader/eval_step, not both")
 
     def wallclock(name: str, idx: int | None = None):
         if not enable_wallclock or logger is None:
@@ -530,153 +566,149 @@ def eval_loop(
         return ctx if ctx is not None else nullcontext()
 
     if evals:
-        results: dict[str, tp.Any] = {}
-
+        eval_logs: dict[str, tp.Any] = {}
+        eval_metrics: dict[str, SufficientMetric] = {}
         for callback in callbacks_list:
             method = getattr(callback, "on_validation_start", None)
             if method is not None:
-                method(module, optimizer)
+                method(module, optimizer, global_step)
 
         for eval_obj in evals:
-            aux, logs = eval_obj.eval(
+            eval_aux, eval_log, eval_metric = eval_obj.eval(
                 module,
                 optimizer,
-                callbacks=callbacks_list,
                 key=key,
                 logger=logger,
                 enable_wallclock=enable_wallclock,
-                global_step_idx=global_step_idx,
+                global_step_idx=global_step,
             )
-            results[eval_obj.name] = logs
+            eval_logs[eval_obj.name] = eval_log
+            eval_metrics[eval_obj.name] = eval_metric
 
         for callback in callbacks_list:
             method = getattr(callback, "on_validation_end", None)
             if method is not None:
-                method(module, optimizer, aux=aux, logs=results)
+                method(
+                    module,
+                    optimizer,
+                    eval_aux,
+                    eval_logs,
+                    global_step,
+                )
 
-        return results, key
+        return eval_metrics
 
-    if eval_loader is None or eval_step is None:
-        return {}, key
+    elif eval_loader is None or eval_step is None:
+        return {}, None
+    else:
+        eval_step = 0
+        aggregated_aux = None
+        eval_metric = SufficientMetric(name = "eval" log_every_n_steps=None)
 
-    eval_step_idx = 0
-    aggregated_aux = None
-    eval_metric = SufficientMetrics(log_every_n_steps=None)
+        @rank_zero
+        def _make_progress(desc: str, total: int | None):
+            bar_format = None if total is not None else "{desc}: {n}"
+            return tqdm(total=total, desc=desc, leave=False, bar_format=bar_format)
 
-    @rank_zero
-    def _make_progress(desc: str, total: int | None):
-        bar_format = None if total is not None else "{desc}: {n}"
-        return tqdm(total=total, desc=desc, leave=False, bar_format=bar_format)
+        eval_progress = _make_progress(
+            "eval",
+            len(eval_loader) if hasattr(eval_loader, "__len__") else None,
+        )
 
-    eval_progress = _make_progress(
-        "eval",
-        len(eval_loader) if hasattr(eval_loader, "__len__") else None,
-    )
-
-    try:
         try:
-            eval_iter = iter(eval_loader)
-        except Exception as exc:
-            raise RuntimeError("Exception creating evaluation data iterator") from exc
-
-        for callback in callbacks_list:
-            method = getattr(callback, "on_validation_start", None)
-            if method is not None:
-                method(module, optimizer)
-
-        key = key
-
-        while True:
-            with wallclock("eval/data.next", eval_step_idx + 1):
-                try:
-                    batch = next(eval_iter)
-                except StopIteration:
-                    break
-
-            eval_step_idx += 1
-            rank_zero(eval_progress.update, 1)
+            try:
+                eval_iter = iter(eval_loader)
+            except Exception as exc:
+                raise RuntimeError("Exception creating evaluation data iterator") from exc
 
             for callback in callbacks_list:
-                method = getattr(callback, "on_validation_step_start", None)
+                method = getattr(callback, "on_validation_start", None)
                 if method is not None:
-                    method(module, optimizer, batch, step_idx=eval_step_idx)
+                    method(module, optimizer)
 
-            if key is not None:
-                key, eval_key = jax.random.split(key)
-            else:
-                eval_key = None
+            while True:
+                with wallclock("eval/data.next", eval_step + 1):
+                    try:
+                        batch = next(eval_iter)
+                    except StopIteration:
+                        break
 
-            with wallclock("eval/step", eval_step_idx):
-                aux = eval_step(module, optimizer, batch, key=eval_key)
+                eval_step += 1
+                rank_zero(eval_progress.update, 1)
 
-            aggregated_aux = _merge_metrics(aggregated_aux, aux)
-            eval_metric += aux
-            step_metrics = eval_metric.step_metrics()
+                for callback in callbacks_list:
+                    method = getattr(callback, "on_validation_step_start", None)
+                    if method is not None:
+                        method(
+                            module,
+                            optimizer,
+                            batch,
+                            step = eval_step
+                        )
 
-            if logger is not None and step_metrics:
-                log_method = getattr(logger, "log", None)
-                if log_method is not None:
-                    rank_zero(
-                        log_method,
-                        "eval",
-                        step_metrics,
-                        step=eval_step_idx,
-                    )
+                if key is not None:
+                    key, eval_key = jax.random.split(key)
                 else:
-                    rank_zero(
-                        logger.log_scalars,
-                        "eval",
-                        step_metrics,
-                        step=eval_step_idx,
-                    )
+                    eval_key = None
+
+                with wallclock("eval/step", eval_step):
+                    eval_aux = eval_step(module, optimizer, batch, key=eval_key)
+
+                aggregated_aux = _merge_metrics(aggregated_aux, eval_aux)
+                eval_metric += eval_aux
+                eval_logs = eval_metric.step_metrics()
+                rank_zero(log_method, "eval", eval_logs, step=eval_step)
+
+                for callback in callbacks_list:
+                    method = getattr(callback, "on_validation_step_end", None)
+                    if method is not None:
+                        method(
+                            module,
+                            optimizer,
+                            batch,
+                            eval_aux,
+                            eval_logs
+                            step=eval_step
+                        )
+
+            eval_logs = eval_metric.per_N_metrics(skip_check = True)
+            rank_zero(logger.log, "eval", eval_logs, eval_step, )
+
+                for callback in callbacks_list:
+                    method = getattr(callback, "on_validation_step_end", None)
+                    if method is not None:
+                        method(module, optimizer, None, aux=reduced, step_idx=eval_step)
 
             for callback in callbacks_list:
-                method = getattr(callback, "on_validation_step_end", None)
+                method = getattr(callback, "on_validation_end", None)
                 if method is not None:
-                    method(module, optimizer, batch, aux=aux, step_idx=eval_step_idx)
-
-        reduced = eval_metric.reduce_last()
-
-        if reduced:
-            if logger is not None:
-                final_method = getattr(logger, "log_scalars", None)
-                if final_method is None:
-                    final_method = getattr(logger, "log", None)
-                if final_method is not None:
-                    rank_zero(
-                        final_method,
-                        "eval",
-                        reduced,
-                        step=global_step_idx or eval_step_idx,
+                    method(
+                        module,
+                        optimizer,
+                        aux=aggregated_aux,
+                        logs=reduced,
+                        global_step
                     )
-            for callback in callbacks_list:
-                method = getattr(callback, "on_validation_step_end", None)
-                if method is not None:
-                    method(module, optimizer, None, aux=reduced, step_idx=eval_step_idx)
 
-        for callback in callbacks_list:
-            method = getattr(callback, "on_validation_end", None)
-            if method is not None:
-                method(module, optimizer, aux=aggregated_aux, metrics=reduced, step_idx=eval_step_idx)
+            return reduced, key
 
-        return reduced, key
+        finally:
+            rank_zero(eval_progress.close)
 
-    finally:
-        rank_zero(eval_progress.close)
 
 
 @tp.overload
 def train_loop(
     module: _ModuleInput,
     optimizer: _OptimizerInput,
-    train_step: _TrainStepCallable[_ModuleInput, _OptimizerInput],
+    train_step_fn: _TrainStepCallable[_ModuleInput, _OptimizerInput],
     train_loader: tp.Iterable[tp.Any],
     num_train_steps: int | None = None,
     *,
     logger: Logger | None = None,
     enable_wallclock: bool = True,
     eval_loader: tp.Iterable[tp.Any] | None = None,
-    eval_step: _EvalStepCallable[_ModuleInput, _OptimizerInput] | None = None,
+    eval_step_fn: _EvalStepCallable[_ModuleInput, _OptimizerInput] | None = None,
     evals: None = None,
     eval_interval: int | None = None,
     callbacks: tp.Sequence[Callback] | None = None,
@@ -689,14 +721,14 @@ def train_loop(
 def train_loop(
     module: _ModuleInput,
     optimizer: _OptimizerInput,
-    train_step: _TrainStepCallable[_ModuleInput, _OptimizerInput],
+    train_step_fn: _TrainStepCallable[_ModuleInput, _OptimizerInput],
     train_loader: tp.Iterable[tp.Any],
     num_train_steps: int | None = None,
     *,
     logger: Logger | None = None,
     enable_wallclock: bool = True,
     eval_loader: None = None,
-    eval_step: None = None,
+    eval_step_fn: None = None,
     evals: tp.Sequence[Eval],
     eval_interval: int | None = None,
     callbacks: tp.Sequence[Callback] | None = None,
@@ -708,28 +740,30 @@ def train_loop(
 def train_loop(
     module: _ModuleInput,
     optimizer: _OptimizerInput,
-    train_step: _TrainStepCallable[_ModuleInput, _OptimizerInput],
+    train_step_fn: _TrainStepCallable[_ModuleInput, _OptimizerInput],
     train_loader: tp.Iterable[tp.Any],
     num_train_steps: int | None = None,
     *,
     logger: Logger | None = None,
     log_every_n_steps: int | None = None,
-    metrics: SufficientMetrics | None = None,
+    train_metric: SufficientMetric | None = None,
     enable_wallclock: bool = True,
     eval_loader: tp.Iterable[tp.Any] | None = None,
-    eval_step: _EvalStepCallable[_ModuleInput, _OptimizerInput] | None = None,
+    eval_step_fn: _EvalStepCallable[_ModuleInput, _OptimizerInput] | None = None,
     evals: tp.Sequence[Eval] | None = None,
+    eval_metric: SufficientMetric | None = None,
     eval_interval: int | None = None,
     callbacks: tp.Sequence[Callback] | None = None,
     key: PRNGKeyArray | None = None,
 ) -> tuple[_ModuleInput, _OptimizerInput, dict[str, tp.Any], dict[str, tp.Any]]:
-    if eval_loader is not None and eval_step is None:
+    if eval_loader is not None and eval_step_fn is None:
         raise ValueError("eval_step must be provided when eval_loader is set")
-    if evals is not None and (eval_loader is not None or eval_step is not None):
+    if evals is not None and (eval_loader is not None or eval_step_fn is not None):
         raise ValueError("Provide either evals or eval_loader/eval_step, not both")
 
     callbacks_list = list(callbacks or [])
     evals_list = list(evals or [])
+    train_metric = SufficientMetric(name = "train", log_every_n_steps=log_every_n_steps) if train_metric is None else train_metric
 
     if logger is None:
         logger = rank_zero(
@@ -739,7 +773,7 @@ def train_loop(
             enabled=True,
         )
 
-    train_step_idx = 0
+    train_step = 0
 
     def wallclock(name: str, step_idx: int | None = None):
         if not enable_wallclock:
@@ -757,12 +791,8 @@ def train_loop(
     for callback in callbacks_list:
         method = getattr(callback, "on_training_start", None)
         if method is not None:
-            method(module, optimizer)
+            method(module, optimizer, train_step)
 
-    last_train_aux: dict[str, tp.Any] = {}
-    last_eval_aux: dict[str, tp.Any] = {}
-    last_logged_metrics: dict[str, float] = {}
-    train_metric = SufficientMetrics(log_every_n_steps=log_every_n_steps)
 
     try:
         train_iter = iter(train_loader)
@@ -771,12 +801,12 @@ def train_loop(
 
     try:
         while True:
-            if num_train_steps is not None and train_step_idx >= num_train_steps:
+            if num_train_steps is not None and train_step >= num_train_steps:
                 break
 
-            train_step_idx += 1
+            train_step += 1
 
-            with wallclock("train/data.next", train_step_idx):
+            with wallclock("train/data.next", train_step):
                 try:
                     batch = next(train_iter)
                 except StopIteration:
@@ -788,30 +818,28 @@ def train_loop(
             for callback in callbacks_list:
                 method = getattr(callback, "on_training_step_start", None)
                 if method is not None:
-                    method(module, optimizer, batch, step_idx=train_step_idx)
+                    method(module, optimizer, batch, step=train_step)
 
             key, step_key = jax.random.split(key, 2) if key is not None else (key, None)
 
-            with wallclock("train/step", train_step_idx):
-                module, optimizer, aux = train_step(module, optimizer, batch, key=step_key)
+            with wallclock("train/step", train_step):
+                module, optimizer, aux = train_step_fn(module, optimizer, batch, key=step_key)
 
             aux = aux or {}
 
             train_metric += aux
             step_metrics = train_metric.step_metrics()
-            per_n_metrics = train_metric.per_N_metrics(step=train_step_idx)
+            per_n_metrics = train_metric.per_N_metrics(step=train_step)
             logs = {**step_metrics, **per_n_metrics}
 
-            last_train_logs = logs
-            last_train_aux = aux 
 
-            rank_zero(logger.log, "train_step", step_metric, step = train_step_idx)
-            rank_zero(logger.log, "per_N_train_step", per_n_metrics, step = train_step_idx)
+            rank_zero(logger.log, "train_step", step_metrics, step = train_step)
+            rank_zero(logger.log, "per_N_train_step", per_n_metrics, step = train_step)
 
             should_eval = (
                 eval_interval is not None
                 and eval_interval > 0
-                and train_step_idx % eval_interval == 0
+                and train_step % eval_interval == 0
             )
 
             for callback in callbacks_list:
@@ -821,27 +849,28 @@ def train_loop(
                         module,
                         optimizer,
                         batch,
-                        aux=last_train_aux,
-                        logs=logs,
-                        step_idx=train_step_idx,
+                        aux,
+                        logs,
+                        train_step,
                     )
 
             if should_eval:
                 key, eval_key = jax.random.split(key, 2) if key is not None else (key, None)
-                eval_results = eval_loop(
+                eval_metric = eval_loop(
                     module,
                     optimizer,
                     eval_loader=eval_loader,
-                    eval_step=eval_step,
+                    eval_step=eval_step_fn,
                     evals=evals_list,
+                    eval_metric = 
                     logger=logger,
                     callbacks=callbacks_list,
                     enable_wallclock=enable_wallclock,
                     key=eval_key,
-                    global_step_idx=train_step_idx,
+                    global_step_idx=train_step,
                 )
-            if eval_results:
-                last_eval_aux = eval_results
+            if eval_logs:
+                last_eval_logs = eval_logs
 
     except Exception:
         LOGGER.error("Exception during training loop", exc_info=True)
@@ -850,9 +879,7 @@ def train_loop(
         LOGGER.info("Training loop ended")
         rank_zero(train_progress.close)
 
-    per_N_metrics = train_metric.per_N_metrics(step = train_step_idx, skip_check = True)
-    if not final_metrics:
-        final_metrics = last_logged_metrics
+    per_N_metrics = train_metric.per_N_metrics(step = train_step, skip_check = True)
 
     for callback in callbacks_list:
         method = getattr(callback, "on_training_end", None)
@@ -860,10 +887,11 @@ def train_loop(
             method(
                 module,
                 optimizer,
-                aux=last_train_aux,
-                logs=per_N_metrics,
+                aux,
+                per_N_metrics,
+                train_step
             )
 
     rank_zero(logger.finalize)
 
-    return module, optimizer, last_train_aux, last_eval_aux
+    return module, optimizer, train_metric, eval_metric 

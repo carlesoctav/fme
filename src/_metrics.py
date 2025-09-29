@@ -12,15 +12,16 @@ def _is_tuple_leaf(x: tp.Any) -> bool:
 class SufficientMetric:
     def __init__(
         self,
-        *,
+        name: str
         log_every_n_steps: int | None = None,
         reduce_fn: tp.Callable[[tp.Any], tp.Any] | None = None,
     ) -> None:
+        self.name = name
         self.log_every_n_steps = log_every_n_steps or 0
         self.reduce_fn = reduce_fn
         self._buffer: tp.Any = None
         self._last_added: tp.Any = None
-        self.reduced_buffer: dict[int, dict[str, float]] = {}
+        self.per_N_metrics_buffer: dict[int, dict[str, float]] = {}
         self.count = 0
 
     def __iadd__(self, other: tp.Any) -> SufficientMetric:
@@ -36,11 +37,6 @@ class SufficientMetric:
             self._buffer = jtu.tree_map(lambda x: x, other_tree)
         else:
             self._buffer = jtu.tree_map(lambda a, b: a + b, self._buffer, other_tree)
-
-        if self._total_buffer is None:
-            self._total_buffer = jtu.tree_map(lambda x: x, other_tree)
-        else:
-            self._total_buffer = jtu.tree_map(lambda a, b: a + b, self._total_buffer, other_tree)
 
         self._last_added = other_tree
         self.count+=1
@@ -60,12 +56,11 @@ class SufficientMetric:
                 return {}
 
         reduced_tree = self._apply_reduce(self._buffer)
-        flattened = self._flatten(reduced_tree)
         averaged = {
             f"{key}_per_N": value for key,
             value in flattened.items()
         }
-        self.reduced_buffer[step] = averaged
+        self.per_N_metrics_buffer[step] = averaged
         self._buffer = None
         self._window_steps = 0
         return averaged

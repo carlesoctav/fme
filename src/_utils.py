@@ -25,12 +25,7 @@ def _is_rank_zero() -> bool:
         return True
 
 
-def rank_zero(
-    fn: tp.Callable[..., A] | None = None,
-    /,
-    *args: tp.Any,
-    **kwargs: tp.Any,
-) -> A | None | tp.Callable[..., A | None]:
+def rank_zero(fn: tp.Callable[..., A] | None = None, /, *args: tp.Any, **kwargs: tp.Any,) -> A | None | tp.Callable[..., A | None]:
     """Invoke or decorate ``fn`` so it executes only on JAX process rank 0."""
 
     def _call(callable_fn: tp.Callable[..., A], *call_args: tp.Any, **call_kwargs: tp.Any) -> A | None:

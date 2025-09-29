@@ -77,21 +77,21 @@ class TensorBoardLogger(Logger):
     def log(
         self,
         tag: str,
-        metrics: Mapping[str, object] | None,
+        metrics: Mapping[str, object],
         *,
         step: int,
-    ) -> Mapping[str, float] | None:
-        normalised = self._normalise_metrics(metrics)
-        if not normalised:
-            return None
-        self._writer.add_scalars(tag=tag, tag_scalar_dict=normalised, global_step=step)
+    )-> None: 
+        if not metrics:
+            return
+
+        self._writer.add_scalars(tag=tag, tag_scalar_dict=metrics, global_step=step)
         self._flush_required()
-        return normalised
+        return 
 
     def log_scalars(
         self,
         tag: str,
-        metrics: Mapping[str, object] | None,
+        metrics: Mapping[str, object],
         *,
         step: int,
     ) -> Mapping[str, float] | None:
@@ -109,6 +109,7 @@ class TensorBoardLogger(Logger):
     ):
         try:
             start = self.time_fn()
+            yield
         finally:
             end = self.time_fn()
             duration = max(0.0, end-start)

@@ -35,7 +35,15 @@ class LearningRateMonitor(Callback):
         self._window_sum: float = 0.0
         self._window_count: int = 0
 
-    def on_training_step_end(self, *, step_idx: int | None = None, **kwargs: tp.Any) -> None:
+    def on_training_end(
+        self,
+        module,
+        optimizer,
+        batch,
+        aux,
+        logs,
+        step
+    ) -> None:
         if step_idx is None or self.every_n_steps <= 0:
             return
         if step_idx % self.every_n_steps != 0:

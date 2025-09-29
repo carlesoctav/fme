@@ -156,15 +156,15 @@ def test_model_checkpoint_saves_and_restores(tmp_path) -> None:
     callback.on_training_step_end(
         module=module,
         optimizer=optimizer,
-        step_idx=1,
+        step=1,
         aux={"loss": 1.0},
     )
     callback.on_training_step_end(
         module=module,
         optimizer=optimizer,
-        step_idx=2,
+        step=2,
         aux={"loss": 0.9},
-        reduce={"loss": 0.9, "loss_per_N": 0.9},
+        logs={"loss": 0.9, "loss_per_N": 0.9},
     )
     callback.on_validation_step_end(
         module=module,
@@ -222,7 +222,7 @@ def test_model_checkpoint_train_mode(tmp_path) -> None:
         callback.on_training_step_end(
             module=module,
             optimizer=optimizer,
-            step_idx=step,
+            step=step,
             aux=metrics,
         )
 
