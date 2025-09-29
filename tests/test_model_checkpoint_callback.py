@@ -153,11 +153,35 @@ def test_model_checkpoint_saves_and_restores(tmp_path) -> None:
     assert isinstance(callback.manager.options.kwargs["preservation_policy"], _DummyPolicy)
     assert callback.manager.metadata == {"run": "demo"}
 
-    callback.on_training_step_end(module=module, optimizer=optimizer, step=1, metrics={"loss": 1.0})
-    callback.on_training_step_end(module=module, optimizer=optimizer, step=2, metrics={"loss": 0.9})
-    callback.on_validation_end(module=module, optimizer=optimizer, step=2, metrics={"val_loss": 0.5})
-    callback.on_validation_end(module=module, optimizer=optimizer, step=3, metrics={"val_loss": 0.6})
-    callback.on_training_end(module=module, optimizer=optimizer, step=5)
+    callback.on_training_step_end(
+        module=module,
+        optimizer=optimizer,
+        step_idx=1,
+        aux={"loss": 1.0},
+    )
+    callback.on_training_step_end(
+        module=module,
+        optimizer=optimizer,
+        step_idx=2,
+        aux={"loss": 0.9},
+        reduce={"loss": 0.9, "loss_per_N": 0.9},
+    )
+    callback.on_validation_step_end(
+        module=module,
+        optimizer=optimizer,
+        batch=None,
+        aux={"val_loss": 0.5},
+        step_idx=2,
+    )
+    callback.on_validation_step_end(
+        module=module,
+        optimizer=optimizer,
+        batch=None,
+        aux={"val_loss": 0.6},
+        step_idx=3,
+    )
+    callback.on_validation_end(module=module, optimizer=optimizer)
+    callback.on_training_end(module=module, optimizer=optimizer, step_idx=5)
 
     assert [s for s, _ in callback.manager.save_calls] == [2, 5]
     assert callback.manager.wait_called
@@ -198,11 +222,11 @@ def test_model_checkpoint_train_mode(tmp_path) -> None:
         callback.on_training_step_end(
             module=module,
             optimizer=optimizer,
-            step=step,
-            metrics=metrics,
+            step_idx=step,
+            aux=metrics,
         )
 
-    callback.on_training_end(module=module, optimizer=optimizer, step=4)
+    callback.on_training_end(module=module, optimizer=optimizer, step_idx=4)
 
     saved_steps = [s for s, _ in callback.manager.save_calls]
     assert saved_steps == [2, 4]

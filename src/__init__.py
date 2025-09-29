@@ -3,6 +3,7 @@ from ._filter import apply_transforms, iter_module
 from ._huggingface import HuggingFaceCompatibleModule
 from ._metrics import MetricsAgg
 from ._training import (
+    SufficientMetric,
     Eval,
     Optimizer,
     init_module,
@@ -27,6 +28,7 @@ __all__ = [
     "DArray",
     "iter_module",
     "apply_transforms",
+    "SufficientMetric",
     "Eval",
     "Optimizer",
     "make_module_opt",

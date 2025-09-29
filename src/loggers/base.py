@@ -4,13 +4,30 @@ from typing import Mapping
 
 
 class Logger:
-    def __init__(self, *args, **kwargs) -> None:
+    log_every_n_steps: int | None = None
+
+    def __init__(self, *args, **kwargs) -> None:  # pragma: no cover - base class
         ...
 
-    def log_scalars(self, metrics: dict[str, object], step: int, tag: str) -> dict[str, float]:
+    def log(
+        self,
+        tag: str,
+        metrics: Mapping[str, object] | None,
+        *,
+        step: int,
+    ) -> Mapping[str, float] | None:
         raise NotImplementedError
 
-    def log_scalar(self, name: str, metric: float, step: int, tag: str)-> dict[str, float]: 
+    def log_scalars(
+        self,
+        tag: str,
+        metrics: Mapping[str, object] | None,
+        *,
+        step: int,
+    ) -> Mapping[str, float] | None:
+        raise NotImplementedError
+
+    def log_scalar(self, tag: str, metric: float, *, step: int) -> Mapping[str, float]:
         raise NotImplementedError
 
     def wc(self, name, step):

@@ -113,43 +113,46 @@ class ModelCheckpoint(Callback):
         *,
         module: _M,
         optimizer: _O,
-        step: int,
-        metrics: Mapping[str, tp.Any] | None = None,
+        step_idx: int,
+        aux: Mapping[str, tp.Any] | None = None,
+        reduce: Mapping[str, tp.Any] | None = None,
         **_: tp.Any,
     ) -> None:
+        metrics = _clean_metrics(reduce or aux)
+        self._last_train_metrics = metrics
         if self.save_on != "train":
-            self._last_train_metrics = _clean_metrics(metrics)
             return
-        self._last_train_metrics = _clean_metrics(metrics)
-        if not self._periodic_trigger(step):
+        if not self._periodic_trigger(step_idx):
             return
         self._save_step(
-            step,
+            step_idx,
             module,
             optimizer,
-            metrics=self._last_train_metrics,
+            metrics=metrics,
             reason="train",
         )
 
-    def on_validation_end(
+    def on_validation_step_end(
         self,
         *,
         module: _M,
         optimizer: _O,
-        step: int,
-        metrics: Mapping[str, tp.Any] | None = None,
-        logs: Mapping[str, tp.Any] | None = None,
+        batch: tp.Any,
+        aux: Mapping[str, tp.Any] | None = None,
+        step_idx: int,
         **_: tp.Any,
     ) -> None:
-        source_metrics: Mapping[str, tp.Any] | None = metrics or logs
-        cleaned_metrics = _clean_metrics(source_metrics)
-        self._last_eval_metrics = cleaned_metrics
+        del batch
+        metrics = _clean_metrics(aux)
+        if not metrics:
+            return
+        self._last_eval_metrics = metrics
         if self.save_on != "eval":
             return
         if self.monitor is None:
-            self._save_step(step, module, optimizer, metrics=cleaned_metrics, reason="eval")
+            self._save_step(step_idx, module, optimizer, metrics=metrics, reason="eval")
             return
-        metric_value = cleaned_metrics.get(self.monitor)
+        metric_value = metrics.get(self.monitor)
         if metric_value is None:
             return
         if self._best_metric is None or _is_improvement(
@@ -158,28 +161,40 @@ class ModelCheckpoint(Callback):
             minimise=self._should_minimise,
         ):
             self._best_metric = metric_value
-            self._best_step = step
-            self._save_step(step, module, optimizer, metrics=cleaned_metrics, reason="metric")
+            self._best_step = step_idx
+            self._save_step(step_idx, module, optimizer, metrics=metrics, reason="metric")
+
+    def on_validation_end(
+        self,
+        *,
+        module: _M,
+        optimizer: _O,
+        **_: tp.Any,
+    ) -> None:
+        del module, optimizer
 
     def on_training_end(
         self,
         *,
         module: _M,
         optimizer: _O,
-        step: int,
+        step_idx: int | None = None,
+        aux: Mapping[str, tp.Any] | None = None,
+        metrics: Mapping[str, tp.Any] | None = None,
         **_: tp.Any,
     ) -> None:
         if not self.save_on_end:
             self._finalize_manager()
             return
-        if self._last_saved_step == step:
+        if step_idx is not None and self._last_saved_step == step_idx:
             self._finalize_manager()
             return
-        if self.save_on == "eval":
-            metrics = self._last_eval_metrics
-        else:
-            metrics = self._last_train_metrics
-        self._save_step(step, module, optimizer, metrics=metrics, reason="final")
+        if metrics is None:
+            metrics = self._last_eval_metrics if self.save_on == "eval" else self._last_train_metrics
+        if metrics is None and aux is not None:
+            metrics = _clean_metrics(aux)
+        final_step = step_idx if step_idx is not None else (self._last_saved_step or 0)
+        self._save_step(final_step, module, optimizer, metrics=metrics, reason="final")
         self._finalize_manager()
 
     @property

@@ -1,105 +1,93 @@
 from __future__ import annotations
 
-import dataclasses as dc
 import typing as tp
 
-
-_Number = tp.Union[int, float]
-
-
-@dc.dataclass
-class _MetricAccumulator:
-    total: float = 0.0
-    count: float = 0.0
-
-    def add(self, values: _Number, counts: _Number = 1) -> None:
-        self.total += float(values)
-        self.count += float(counts)
-
-    def reset(self) -> None:
-        self.total = 0.0
-        self.count = 0.0
-
-    def state(self) -> dict[str, float]:
-        return {"values": self.total, "counts": self.count}
+import jax.tree_util as jtu
 
 
-class MetricsAgg:
+def _is_tuple_leaf(x: tp.Any) -> bool:
+    return isinstance(x, tuple)
 
-    def __init__(self, **reducers: dict[str, str]) -> None:
-        self._reducers: dict[str, str] = {k: v for k, v in reducers.items()}
-        self._acc: dict[str, _MetricAccumulator] = {
-            k: _MetricAccumulator() for k in self._reducers
-        }
 
-    def _ensure(self, key: str) -> _MetricAccumulator:
-        if key not in self._acc:
-            self._acc[key] = _MetricAccumulator()
-            self._reducers.setdefault(key, "mean")
-        return self._acc[key]
-
-    def update(self, metrics: tp.Mapping[str, tp.Any] | None) -> None:
-        if not metrics:
-            return
-        for name, payload in metrics.items():
-            values, counts = _extract_values_counts(payload)
-            self._ensure(name).add(values, counts)
-
-    def compute(
+class SufficientMetric:
+    def __init__(
         self,
         *,
-        reset: bool = False,
-        reduce: bool = True,
-    ) -> dict[str, float] | dict[str, dict[str, float]]:
-        result: dict[str, tp.Any] = {}
-        for name, acc in self._acc.items():
-            raw = acc.state()
-            if reduce:
-                reducer = self._reducers.get(name, "mean")
-                result[name] = _reduce(raw, reducer)
-            else:
-                result[name] = raw
-        if reset:
-            self.reset()
-        return result
+        log_every_n_steps: int | None = None,
+        reduce_fn: tp.Callable[[tp.Any], tp.Any] | None = None,
+    ) -> None:
+        self.log_every_n_steps = log_every_n_steps or 0
+        self.reduce_fn = reduce_fn
+        self._buffer: tp.Any = None
+        self._last_added: tp.Any = None
+        self.reduced_buffer: dict[int, dict[str, float]] = {}
+        self.count = 0
 
-    def state(self) -> dict[str, dict[str, float]]:
-        return {name: acc.state() for name, acc in self._acc.items()}
+    def __iadd__(self, other: tp.Any) -> SufficientMetric:
+        return self.__add__(other)
 
-    def reset(self) -> None:
-        for acc in self._acc.values():
-            acc.reset()
+    def __add__(self, other: tp.Any) -> SufficientMetric:
+        if other is None:
+            return self
 
-    def __bool__(self) -> bool: 
-        return any(acc.count > 0 for acc in self._acc.values())
+        other_tree = jtu.tree_map(lambda x: x, other)
 
+        if self._buffer is None:
+            self._buffer = jtu.tree_map(lambda x: x, other_tree)
+        else:
+            self._buffer = jtu.tree_map(lambda a, b: a + b, self._buffer, other_tree)
 
-def _extract_values_counts(payload: tp.Any) -> tuple[float, float]:
-    if payload is None:
-        return 0.0, 0.0
-    if isinstance(payload, (tuple, list)) and len(payload) >= 2:
-        return float(payload[0]), float(payload[1])
-    if isinstance(payload, dict):
-        values = payload.get("values", payload.get("value", 0.0))
-        counts = payload.get("counts", payload.get("count", 1.0))
-        return float(values), float(counts)
-    if hasattr(payload, "values") and hasattr(payload, "counts"):
-        return float(payload.values), float(payload.counts)
-    return float(payload), 1.0
+        if self._total_buffer is None:
+            self._total_buffer = jtu.tree_map(lambda x: x, other_tree)
+        else:
+            self._total_buffer = jtu.tree_map(lambda a, b: a + b, self._total_buffer, other_tree)
 
+        self._last_added = other_tree
+        self.count+=1
+        return self
 
-def _reduce(raw: dict[str, float], reducer: str) -> float:
-    reducer = reducer.lower()
-    values = float(raw.get("values", 0.0))
-    counts = float(raw.get("counts", 0.0))
-    if reducer == "mean":
-        denom = counts if counts > 0 else 1.0
-        return values / denom
-    if reducer == "sum":
-        return values
-    if reducer == "count":
-        return counts
-    raise ValueError(f"Unknown reducer '{reducer}'")
+    def step_metrics(self) -> dict[str, float]:
+        if self._last_added is None:
+            return {}
+        reduced_tree = self._apply_reduce(self._last_added)
+        return reduced_tree 
 
+    def per_N_metrics(self, step: int, skip_check = False) -> dict[str, float]:
+        if not skip_check:
+            if self.log_every_n_steps <= 0:
+                return {}
+            if step % self.log_every_n_steps != 0 or self._buffer is None or self._window_steps == 0:
+                return {}
 
-__all__ = ["MetricsAgg"]
+        reduced_tree = self._apply_reduce(self._buffer)
+        flattened = self._flatten(reduced_tree)
+        averaged = {
+            f"{key}_per_N": value for key,
+            value in flattened.items()
+        }
+        self.reduced_buffer[step] = averaged
+        self._buffer = None
+        self._window_steps = 0
+        return averaged
+
+    def _apply_reduce(self, tree: tp.Any) -> tp.Any:
+        if tree is None:
+            return {}
+
+        def _reduce_leaf(x: tp.Any) -> tp.Any:
+            if isinstance(x, tuple) and len(x) == 2 and x[1] not in (0, None):
+                return x[0] / x[1]
+            if isinstance(x, tuple):
+                try:
+                    return x[0]
+                except Exception:  
+                    return x
+            return x
+
+        if self.reduce_fn is not None:
+            reduced = self.reduce_fn(tree)
+        else:
+            reduced = jtu.tree_map(_reduce_leaf, tree, is_leaf=_is_tuple_leaf)
+
+        return reduced
+

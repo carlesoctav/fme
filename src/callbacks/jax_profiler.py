@@ -61,7 +61,14 @@ class JaxProfiler(Callback):
         self._deadline = None
         self._last_profile_time = self._time()
 
-    def on_training_step_end(self, *, step: int, aux: Any | None = None, metrics: Any | None = None, **kwargs: Any) -> None:
+    def on_training_step_end(
+        self,
+        *,
+        step_idx: int,
+        aux: Any | None = None,
+        reduce: Any | None = None,
+        **kwargs: Any,
+    ) -> None:
         del kwargs
 
         if self.main_process_only and jax.process_index() != 0:
@@ -71,17 +78,17 @@ class JaxProfiler(Callback):
 
         if self._active:
             should_stop = False
-            if self._trace_start_step is not None and step >= self._trace_start_step + self.profile_n_steps:
+            if self._trace_start_step is not None and step_idx >= self._trace_start_step + self.profile_n_steps:
                 should_stop = True
             if self._deadline is not None and now >= self._deadline:
                 should_stop = True
-            payload = metrics if metrics is not None else aux
+            payload = reduce if reduce is not None else aux
             if should_stop:
                 self._stop(payload)
             return
 
         should_start = False
-        if step == self.profile_first_step:
+        if step_idx == self.profile_first_step:
             should_start = True
         elif self.profile_every_n_minutes >= 0:
             elapsed = now - self._last_profile_time
@@ -89,7 +96,7 @@ class JaxProfiler(Callback):
                 should_start = True
 
         if should_start:
-            self._start(step)
+            self._start(step_idx)
 
     def on_training_end(self, **kwargs: Any) -> None:  # type: ignore[override]
         del kwargs
