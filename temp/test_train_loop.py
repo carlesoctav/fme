@@ -9,13 +9,15 @@ import optax
 
 from src import Optimizer, make_train_step, nn
 import numpy as np
+import trackio
+from src import train_loop, Eval
 
-BATCH_SIZE = 64
+BATCH_SIZE = 100
 HIDDEN_DIM = 64
 NUM_WARMUP = 1
 NUM_STEPS = 100
 LEARNING_RATE = 1e-2
-NUM_SAMPLES = 1000
+NUM_SAMPLES = 10000
 REPEAT_EPOCHS = 100
 
 
@@ -58,14 +60,6 @@ class SuperLinear(eqx.Module):
         h = jax.nn.tanh(self.linear1(x))
         return self.linear2(h)
 
-
-def to_device(batch):
-    x, y = batch
-    x = jnp.asarray(x, dtype=jnp.float32)
-    y = jnp.asarray(y, dtype=jnp.float32)
-    return x, y
-
-
 def main():
     key = jr.PRNGKey(10)
     key, model_key = jr.split(key)
@@ -74,32 +68,25 @@ def main():
     grad_tx = optax.sgd(LEARNING_RATE)
     optimizer = Optimizer(grad_tx, model)
 
-    train_step = make_train_step(loss_function)
+    train_step_fn = make_train_step(loss_function)
 
-    map_ds = grain.MapDataset.source(XORDataset(NUM_SAMPLES)).repeat(REPEAT_EPOCHS)
+    map_ds = grain.MapDataset.source(XORDataset(NUM_SAMPLES)).repeat(1)
     iter_ds = map_ds.to_iter_dataset(grain.ReadOptions(num_threads = 0, prefetch_buffer_size = 0)).batch(BATCH_SIZE)
-    data_iter = iter(iter_ds)
+    eval_ds = grain.MapDataset.source(XORDataset(NUM_SAMPLES)).to_iter_dataset(grain.ReadOptions(num_threads = 0, prefetch_buffer_size = 0)).batch(BATCH_SIZE)
 
-    warmup_batch = to_device(next(data_iter))
-    key, warmup_key = jr.split(key)
-    model, optimizer, _ = train_step(model, optimizer, warmup_batch, key=warmup_key)
+    eval = Eval(name = "xor_eval", dataset = eval_ds, loss_function = loss_function)
 
-    start = time.perf_counter()
-    last_aux = None
-    for _ in range(NUM_STEPS):
-        batch = next(data_iter)
-        key, step_key = jr.split(key)
-        model, optimizer, last_aux = train_step(model, optimizer, batch, key=step_key)
+    logger = trackio.init(project="test_project", name="test_run") 
 
-    elapsed = time.perf_counter() - start
-    avg_step = elapsed / NUM_STEPS
-
-    loss = float(last_aux["loss"]) if last_aux is not None else float("nan")
-    acc = float(last_aux["acc"]) if last_aux is not None else float("nan")
-
-    print(f"Average step time (excluding first) over {NUM_STEPS} steps: {avg_step:.6f}s")
-    print(f"Final loss: {loss:.6f}, final acc: {acc:.6f}")
-
+    train_loop(
+        model,
+        optimizer,
+        train_step_fn,
+        iter_ds,
+        logger,
+        evals = [eval],
+        eval_interval = 10,
+    )
 
 if __name__ == "__main__":
     main()

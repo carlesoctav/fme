@@ -16,6 +16,7 @@ dependencies = [
     "tensorboard>=2.20.0",
     "tensorboardx>=2.6.4",
     "tqdm>=4.66.5",
+    "trackio>=0.4.1",
     "transformers>=4.55.4",
 ]
 

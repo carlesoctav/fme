@@ -1,14 +1,41 @@
 from __future__ import annotations
 
+import contextlib
 import functools
 import typing as tp
+import time
 
 import jax
+from typing import TypeVar, TYPE_CHECKING
 
-from typing import TypeVar
+if TYPE_CHECKING:
+    from .loggers import Logger
 
 
 A = TypeVar("A")
+
+
+# @contextlib.contextmanager
+# def wallclock(
+#     name: str,
+#     logger: "Logger" | None = None,
+#     step: int | None = None,
+# ):
+#     try:
+#         t0 = time.monotonic()
+#         yield
+#     finally:
+#         diff = time.monotonic() - t0
+#         if logger:
+#             rank_zero(logger.log_scalar)(name, diff, step)
+
+def wallclock(
+    name: str,
+    logger: "Logger" | None = None,
+    step: int | None = None,
+):
+    return contextlib.nullcontext()
+    # return contextlib.nullcontext()
 
 
 def first_from(*args: A | None, error_msg: str) -> A:
@@ -18,30 +45,14 @@ def first_from(*args: A | None, error_msg: str) -> A:
     raise ValueError(error_msg)
 
 
-def _is_rank_zero() -> bool:
-    try:
-        return jax.process_index() == 0
-    except Exception:
-        return True
-
-
-def rank_zero(fn: tp.Callable[..., A] | None = None, /, *args: tp.Any, **kwargs: tp.Any,) -> A | None | tp.Callable[..., A | None]:
-    """Invoke or decorate ``fn`` so it executes only on JAX process rank 0."""
-
-    def _call(callable_fn: tp.Callable[..., A], *call_args: tp.Any, **call_kwargs: tp.Any) -> A | None:
-        if not _is_rank_zero():
-            return None
-        return callable_fn(*call_args, **call_kwargs)
-
-    if fn is None:
-        return lambda inner_fn: rank_zero(inner_fn)
-
-    if args or kwargs:
-        return _call(fn, *args, **kwargs)
+def rank_zero(fn: tp.Callable[..., A]) -> tp.Callable[..., A | None]:
+    """Decorate ``fn`` so it executes only on JAX process rank 0."""
 
     @functools.wraps(fn)
-    def _wrapped(*wrapped_args: tp.Any, **wrapped_kwargs: tp.Any) -> A | None:
-        return _call(fn, *wrapped_args, **wrapped_kwargs)
+    def _wrapped(*args: tp.Any, **kwargs: tp.Any) -> A | None:
+        if not jax.process_index() == 0:
+            return None
+        return fn(*args, **kwargs)
 
     return _wrapped
 

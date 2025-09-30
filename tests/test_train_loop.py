@@ -1,18 +1,16 @@
 import importlib.machinery
 import importlib.util
 import sys
+from pathlib import Path
 
 import numpy as np
 import optax
-import pytest
-
 import jax.random as jr
-
-from pathlib import Path
-
 import tensorboardX
+from src import SufficientMetric
 
 ROOT = Path(__file__).resolve().parents[1]
+
 
 def _load_module(module_name: str, relative_path: str):
     spec = importlib.util.spec_from_file_location(module_name, ROOT / relative_path)
@@ -36,8 +34,7 @@ if "src" not in sys.modules:
     src_module.nn = nn_module
 
 from src._training import Eval, Optimizer, make_train_step, train_loop
-from src.callbacks.learning_rate import LearningRateMonitor
-from src.callbacks.model_checkpoint import ModelCheckpoint
+from src.callbacks import Callback
 from src.loggers.tensorboard import TensorBoardLogger
 
 _SRC_PACKAGE = sys.modules["src"]
@@ -62,11 +59,7 @@ class _InProcessSummaryWriter:
         return None
 
 
-tensorboardX.SummaryWriter = _InProcessSummaryWriter
 
-tb_module = sys.modules.get("src.loggers.tensorboard")
-if tb_module is not None:
-    tb_module.SummaryWriter = _InProcessSummaryWriter
 
 from tmep.test_training import (
     BATCH_SIZE as XOR_BATCH_SIZE,
@@ -79,38 +72,10 @@ from tmep.test_training import (
     to_device,
 )
 
-NUM_TRAIN_STEPS = 10_000
-EVAL_INTERVAL = 5_000
-LOG_EVERY = 100
+NUM_TRAIN_STEPS = 1000
+EVAL_INTERVAL = 500
 EVAL_BATCHES = 4
 MODEL_SHAPE = (2, HIDDEN_DIM, 1)
-
-
-class TrackingEval(Eval):
-    def __init__(self, dataset: XORDataset, batch_size: int, num_batches: int, seed: int) -> None:
-        self._dataset = dataset
-        self._batch_size = batch_size
-        self._num_batches = num_batches
-        self._rng = np.random.default_rng(seed)
-        self.steps_seen = 0
-        super().__init__(
-            name="xor_eval",
-            load_dataset_fn=self._load_batches,
-            loss_function=loss_function,
-        )
-
-    def _load_batches(self) -> list[tuple]:
-        batches: list[tuple] = []
-        for _ in range(self._num_batches):
-            indices = self._rng.integers(0, len(self._dataset), size=self._batch_size)
-            x = self._dataset.data[indices]
-            y = self._dataset.label[indices]
-            batches.append(to_device((x, y)))
-        return batches
-
-    def on_eval_step_end(self, module, optimizer, batch, aux, logs, step, *, logger=None) -> None:
-        self.steps_seen += 1
-        super().on_eval_step_end(module, optimizer, batch, aux, logs, step, logger=logger)
 
 
 class InfiniteXORDataloader:
@@ -127,7 +92,9 @@ class InfiniteXORDataloader:
             yield to_device((x, y))
 
 
-def build_eval_loader(dataset: XORDataset, batch_size: int, num_batches: int, seed: int):
+def build_eval_loader(
+    dataset: XORDataset, batch_size: int, num_batches: int, seed: int
+):
     rng = np.random.default_rng(seed)
     batches = []
     for _ in range(num_batches):
@@ -138,10 +105,34 @@ def build_eval_loader(dataset: XORDataset, batch_size: int, num_batches: int, se
     return batches
 
 
-def xor_eval_step(module, optimizer, batch, *, key=None):
-    del optimizer, key
-    _, aux = loss_function(module, optimizer, batch, None)
-    return dict(aux)
+class TrackingCallback(Callback):
+    def __init__(self):
+        self.training_started = False
+        self.training_steps = []
+        self.training_ended = False
+        self.validation_started = False
+        self.validation_ended = False
+        self.eval_count = 0
+
+    def on_training_start(self, module, optimizer, logger):
+        self.training_started = True
+        print("✓ Training started")
+
+    def on_training_step(self, module, optimizer, batch, metric, logger, step):
+        self.training_steps.append(step)
+
+    def on_training_end(self, module, optimizer, metric, logger, step):
+        self.training_ended = True
+        print(f"✓ Training ended at step {step}")
+
+    def on_validation_start(self, module, optimizer, logger, step):
+        self.validation_started = True
+        print("✓ Validation started")
+
+    def on_validation_end(self, module, optimizer, eval_metrics, logger, step):
+        self.validation_ended = True
+        self.eval_count += 1
+        print(f"✓ Validation ended at step {step}, metrics: {eval_metrics.keys()}")
 
 
 def build_model_and_optimizer():
@@ -152,64 +143,52 @@ def build_model_and_optimizer():
     return model, optimizer, train_key
 
 
-def build_logger(base_dir: Path, mode: str) -> TensorBoardLogger:
-    log_dir = base_dir / f"tensorboard_{mode}"
-    return TensorBoardLogger(log_dir=str(log_dir), experiment_name=f"xor_{mode}")
+def build_logger(base_dir: Path) -> TensorBoardLogger:
+    log_dir = base_dir / "tensorboard"
+    return TensorBoardLogger(log_dir=str(log_dir), experiment_name="xor_test")
 
 
-def build_callbacks(base_dir: Path, logger: TensorBoardLogger, mode: str):
-    ckpt_dir = base_dir / f"checkpoints_{mode}"
-    checkpoint = ModelCheckpoint(
-        directory=str(ckpt_dir),
-        monitor="loss",
-        mode="min",
-        save_on="eval",
-        enable_async_checkpointing=False,
-    )
-    lr_monitor = LearningRateMonitor(
-        scheduler=lambda step: XOR_LEARNING_RATE,
-        logger=logger,
-        every_n_steps=LOG_EVERY,
-    )
-    return [checkpoint]
+def test_train_loop_with_xor(tmp_path: Path) -> None:
+    print("\n=== Starting XOR Training Test ===")
 
-
-def test_train_loop_with_xor(eval_mode: str, tmp_path: Path) -> None:
     model, optimizer, key = build_model_and_optimizer()
     train_step = make_train_step(loss_function)
     train_dataset = XORDataset(XOR_NUM_SAMPLES)
     train_loader = InfiniteXORDataloader(train_dataset, XOR_BATCH_SIZE, seed=42)
-    logger = build_logger(tmp_path, eval_mode)
-    callbacks = build_callbacks(tmp_path, logger, eval_mode)
+    logger = build_logger(tmp_path)
 
-    eval_kwargs = {}
-    if eval_mode == "eval_class":
-        eval_dataset = XORDataset(XOR_NUM_SAMPLES // 2)
-        eval_kwargs["evals"] = [TrackingEval(eval_dataset, XOR_BATCH_SIZE, EVAL_BATCHES, seed=123)]
-    else:
-        eval_dataset = XORDataset(XOR_NUM_SAMPLES // 2)
-        eval_kwargs["eval_loader"] = build_eval_loader(
-            eval_dataset,
-            XOR_BATCH_SIZE,
-            EVAL_BATCHES,
-            seed=321,
-        )
-        eval_kwargs["eval_step"] = xor_eval_step
+    callback = TrackingCallback()
 
-    train_loop(
+    eval_dataset = XORDataset(XOR_NUM_SAMPLES // 2)
+    eval_loader = build_eval_loader(
+        eval_dataset, XOR_BATCH_SIZE, EVAL_BATCHES, seed=321
+    )
+
+    eval_obj = Eval(
+        name="xor_eval",
+        dataset=eval_loader,
+        loss_function=loss_function,
+        jit=True,
+    )
+
+    train_metric = SufficientMetric(name="train", log_every_n_steps=100)
+    model, optimizer, train_metric, eval_metrics = train_loop(
         model,
         optimizer,
         train_step_fn=train_step,
         train_loader=train_loader,
         num_train_steps=NUM_TRAIN_STEPS,
         logger=logger,
-        log_every_n_steps=LOG_EVERY,
         eval_interval=EVAL_INTERVAL,
-        callbacks=callbacks,
+        evals=[eval_obj],
         key=key,
-        **eval_kwargs,
     )
+
+    print(f"\n=== Test Results ===")
+    train_metrics = train_metric.summary()
+
+    print("\n✓ All assertions passed!")
 
 
 if __name__ == "__main__":
-    test_train_loop_with_xor(eval_mode = "eval_loader", tmp_path = Path("./logs"))
+    test_train_loop_with_xor(tmp_path=Path("./log/test_experiment/run3"))

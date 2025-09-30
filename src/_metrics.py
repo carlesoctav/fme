@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import typing as tp
 
+import logging
 import jax.tree_util as jtu
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _is_tuple_leaf(x: tp.Any) -> bool:
@@ -12,77 +15,101 @@ def _is_tuple_leaf(x: tp.Any) -> bool:
 class SufficientMetric:
     def __init__(
         self,
-        name: str
+        *,
+        name: str,
         log_every_n_steps: int | None = None,
-        reduce_fn: tp.Callable[[tp.Any], tp.Any] | None = None,
     ) -> None:
         self.name = name
         self.log_every_n_steps = log_every_n_steps or 0
-        self.reduce_fn = reduce_fn
-        self._buffer: tp.Any = None
+        self._buffer_tree: tp.Any = None
         self._last_added: tp.Any = None
         self.per_N_metrics_buffer: dict[int, dict[str, float]] = {}
-        self.count = 0
+        self._count = 0
+        self._show_log_every_n_steps_warning = False
 
     def __iadd__(self, other: tp.Any) -> SufficientMetric:
         return self.__add__(other)
 
-    def __add__(self, other: tp.Any) -> SufficientMetric:
+
+    def reduce_fn(self, tree, count) -> tp.Callable[[tp.Any], tp.Any] | None:
+        def _reduce_leaf(x: tp.Any) -> tp.Any:
+            if isinstance(x, tuple) and len(x) == 2:
+                value, normaliser = x
+                if normaliser in (0, None):
+                    return float(value / count)
+                return float(value / normaliser)
+            return float(x)
+        return jtu.tree_map(_reduce_leaf, tree, is_leaf=_is_tuple_leaf)
+
+    def add(self, other: tp.Any) -> SufficientMetric:
         if other is None:
             return self
 
-        other_tree = jtu.tree_map(lambda x: x, other)
+        self._last_added = other
+        self._count += 1
 
-        if self._buffer is None:
-            self._buffer = jtu.tree_map(lambda x: x, other_tree)
+        if self._buffer_tree is None:
+            self._buffer_tree = other
         else:
-            self._buffer = jtu.tree_map(lambda a, b: a + b, self._buffer, other_tree)
-
-        self._last_added = other_tree
-        self.count+=1
+            self._buffer_tree = jtu.tree_map(
+                lambda a, b: a + b,
+                self._buffer_tree,
+                other,
+            )
         return self
+
+    def __add__(self, other: tp.Any) -> SufficientMetric:
+        return self.add(other)
 
     def step_metrics(self) -> dict[str, float]:
         if self._last_added is None:
             return {}
-        reduced_tree = self._apply_reduce(self._last_added)
-        return reduced_tree 
+        reduced = self.reduce_fn(self._last_added, count=1)
+        reduced = {f"{self.name}/{k}": v for k, v in reduced.items()}
+        return reduced 
 
-    def per_N_metrics(self, step: int, skip_check = False) -> dict[str, float]:
+    def per_N_metrics(self, step: int, *, skip_check: bool = False) -> dict[str, float]:
+        if self.per_N_metrics_buffer.get(step) is not None:
+            return self.Per_N_metrics_buffer[step]
+
+        if self._buffer_tree is None:
+            return {}
+
         if not skip_check:
             if self.log_every_n_steps <= 0:
+                if not self._show_log_every_n_steps_warning:
+                    self._show_log_every_n_steps_warning = True
+                    LOGGER.warning(
+                        f"Metric {self.name} has log_every_n_steps={self.log_every_n_steps}, skipping per_N logging."
+                    )
                 return {}
-            if step % self.log_every_n_steps != 0 or self._buffer is None or self._window_steps == 0:
+            if self._count == 0 or step % self.log_every_n_steps != 0:
+                LOGGER.debug(
+                    f"Skipping per_{self.log_every_n_steps}_steps logging for metric {self.name} at step {step}."
+                )
                 return {}
 
-        reduced_tree = self._apply_reduce(self._buffer)
-        averaged = {
-            f"{key}_per_N": value for key,
-            value in flattened.items()
+        reduced = self.reduce_fn(self._buffer_tree, count=self._count)
+        self.per_N_metrics_buffer[step] = {**reduced, "count": self._count}
+        self._buffer_tree = None
+        self._count = 0
+        reduced = {f"{self.name}_per_N/{k}": v for k, v in reduced.items()}
+        return reduced 
+
+    def summary(self) -> dict[str, tp.Any]:
+        return {
+            "name": self.name,
+            "count": self._count,
+            "per_N_cache": dict(self.per_N_metrics_buffer),
         }
-        self.per_N_metrics_buffer[step] = averaged
-        self._buffer = None
-        self._window_steps = 0
-        return averaged
 
-    def _apply_reduce(self, tree: tp.Any) -> tp.Any:
+    def _reduce_tree(self, tree: tp.Any, count = 1) -> tp.Any:
         if tree is None:
             return {}
 
-        def _reduce_leaf(x: tp.Any) -> tp.Any:
-            if isinstance(x, tuple) and len(x) == 2 and x[1] not in (0, None):
-                return x[0] / x[1]
-            if isinstance(x, tuple):
-                try:
-                    return x[0]
-                except Exception:  
-                    return x
-            return x
+        return self.reduce_fn(tree)
 
-        if self.reduce_fn is not None:
-            reduced = self.reduce_fn(tree)
-        else:
-            reduced = jtu.tree_map(_reduce_leaf, tree, is_leaf=_is_tuple_leaf)
 
-        return reduced
 
+
+__all__ = ["SufficientMetric"]

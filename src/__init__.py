@@ -11,14 +11,11 @@ from ._training import (
     make_module_opt,
     train_loop,
 )
-from ._wallclock import ProgramWallClock
 from .callbacks import (
     Callback,
     JaxProfiler,
-    LearningRateMonitor,
     ModelCheckpoint,
 )
-from .loggers import Logger, TensorBoardLogger, WandbLogger
 
 __all__ = [
     "HuggingFaceCompatibleModule",
@@ -33,11 +30,9 @@ __all__ = [
     "make_eval_step",
     "train_loop",
     "init_module",
-    "ProgramWallClock",
     "JaxProfiler",
     "Callback",
     "CallbackManager",
-    "LearningRateMonitor",
     "ModelCheckpoint",
     "Logger",
     "TensorBoardLogger",
