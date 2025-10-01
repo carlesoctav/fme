@@ -17,11 +17,11 @@ from optax import GradientTransformation, GradientTransformationExtraArgs
 from tqdm.auto import tqdm
 
 from ._filter import apply_transforms, iter_module
+from ._logger import Logger
 from ._metrics import SufficientMetric
-from ._utils import first_from, rank_zero, wallclock
+from ._utils import first_from, wallclock
 from .callbacks import Callback
 from .distributed import get_partition_spec
-from ._logger import Logger
 
 
 LOGGER = logging.getLogger(__name__)
@@ -71,7 +71,6 @@ class _EvalStepCallable(Protocol[_ModuleInput, _OptimizerInput]):
 class Optimizer(eqx.Module):
     opt_state: PyTree[Array]
     wrt: PyTree[_AxisSpec] = eqx.field(static=True)
-    step: jax.Array
     tx: GradientTransformationExtraArgs = eqx.field(static=True)
 
     def __init__(
@@ -80,7 +79,6 @@ class Optimizer(eqx.Module):
         self.tx = grad_tx
         self.wrt = wrt
         self.opt_state = self.tx.init(eqx.filter(model, self.wrt))
-        self.step = jnp.array(0, dtype=jnp.int32)
 
     def __call__(
         self, grads: PyTree[Array], model: eqx.Module
@@ -89,9 +87,8 @@ class Optimizer(eqx.Module):
             grads, self.opt_state, eqx.filter(model, self.wrt)
         )
         new_model = eqx.apply_updates(model, updates)
-        new_step = self.step + jnp.array(1, dtype=self.step.dtype)
         new_self = eqx.tree_at(
-            lambda o: [o.opt_state, o.step], self, [opt_state, new_step]
+            lambda o: [o.opt_state], self, [opt_state]
         )
         return new_model, new_self
 
@@ -373,11 +370,11 @@ class Eval:
     ) -> SufficientMetric:
         logger = first_from(self.logger, logger, error_msg="logger required")
 
-        step_idx = 0
+        eval_step = 0
         eval_metric = (
             self.eval_metric
             if self.eval_metric
-            else SufficientMetric(name=self.name, log_every_n_steps=None)
+            else SufficientMetric(name=self.name, log_every_n_step=None)
         )
 
         try:
@@ -393,7 +390,7 @@ class Eval:
 
         try:
             for batch in iterator:
-                step_idx += 1
+                eval_step += 1
 
                 key, eval_key = (
                     jax.random.split(key, 2) if key is not None else (key, None)
@@ -410,11 +407,11 @@ class Eval:
 
                 eval_metric += aux
 
-            logs = eval_metric.per_N_metrics(step_idx, skip_check=True)
+            logs = eval_metric.per_N_metrics(eval_step, skip_check=True)
             logger.log(logs, global_step_idx)
 
             progress_bar.close()
-            return eval_metric
+            return eval_metric, logs
         except Exception as e:
             raise e
 
@@ -464,6 +461,7 @@ def eval_loop(
 ) -> dict[str, SufficientMetric]:
     callbacks = list(callbacks or [])
     eval_metrics: dict[str, SufficientMetric] = {}
+    eval_logs: dict[str, float] = {}
 
     for callback in callbacks:
         method = getattr(callback, "on_validation_start", None)
@@ -471,7 +469,7 @@ def eval_loop(
             method(module, optimizer, logger, train_step)
 
     for eval_obj in evals:
-        eval_metric = eval_obj.run(
+        eval_metric, logs = eval_obj.run(
             module,
             optimizer,
             key=key,
@@ -480,6 +478,7 @@ def eval_loop(
             global_step_idx=train_step,
         )
         eval_metrics[eval_obj.name] = eval_metric
+        eval_logs = {**eval_logs, **logs} 
 
     for callback in callbacks:
         method = getattr(callback, "on_validation_end", None)
@@ -487,7 +486,7 @@ def eval_loop(
             method(
                 module,
                 optimizer,
-                eval_metrics,
+                eval_logs,
                 logger,
                 train_step,
             )
@@ -514,7 +513,7 @@ def train_loop(
     evals = list(evals or [])
 
     train_metric = (
-        SufficientMetric(name="train", log_every_n_steps=None)
+        SufficientMetric(name="train", log_every_n_step=None)
         if train_metric is None
         else train_metric
     )
@@ -565,17 +564,17 @@ def train_loop(
             aux = aux or {}
             train_metric += aux
 
-            logger.log(train_metric.step_metrics(), step=train_step)
+            step_metrics = train_metric.step_metrics()
+            per_N_metrics = train_metric.per_N_metrics(step = train_step)
 
-            logger.log(
-                train_metric.per_N_metrics(step=train_step),
-                step=train_step,
-            )
+            logs = {**step_metrics, **per_N_metrics}
+
+            logger.log(logs, step=train_step)
 
             for cb in callbacks:
                 method = getattr(cb, "on_training_step", None)
                 if method is not None:
-                    method(module, optimizer, batch, train_metric, logger, train_step)
+                    method(module, optimizer, batch, logs, logger, train_step)
 
             should_eval = (
                 eval_interval is not None
@@ -607,6 +606,6 @@ def train_loop(
     for cb in callbacks:
         method = getattr(cb, "on_training_end", None)
         if method is not None:
-            method(module, optimizer, train_metric, logger, train_step)
+            method(module, optimizer, logs, logger, train_step)
 
     return module, optimizer, train_metric, eval_metrics if evals else {}

@@ -15,12 +15,11 @@ def _is_tuple_leaf(x: tp.Any) -> bool:
 class SufficientMetric:
     def __init__(
         self,
-        *,
         name: str,
-        log_every_n_steps: int | None = None,
+        log_every_n_step: int | None = None,
     ) -> None:
         self.name = name
-        self.log_every_n_steps = log_every_n_steps or 0
+        self.log_every_n_step = log_every_n_step or 0
         self._buffer_tree: tp.Any = None
         self._last_added: tp.Any = None
         self.per_N_metrics_buffer: dict[int, dict[str, float]] = {}
@@ -76,16 +75,16 @@ class SufficientMetric:
             return {}
 
         if not skip_check:
-            if self.log_every_n_steps <= 0:
+            if self.log_every_n_step <= 0:
                 if not self._show_log_every_n_steps_warning:
                     self._show_log_every_n_steps_warning = True
                     LOGGER.warning(
-                        f"Metric {self.name} has log_every_n_steps={self.log_every_n_steps}, skipping per_N logging."
+                        f"Metric {self.name} has log_every_n_steps={self.log_every_n_step}, skipping per_N logging."
                     )
                 return {}
-            if self._count == 0 or step % self.log_every_n_steps != 0:
+            if self._count == 0 or step % self.log_every_n_step != 0:
                 LOGGER.debug(
-                    f"Skipping per_{self.log_every_n_steps}_steps logging for metric {self.name} at step {step}."
+                    f"Skipping per_{self.log_every_n_step}_steps logging for metric {self.name} at step {step}."
                 )
                 return {}
 

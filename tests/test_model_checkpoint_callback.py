@@ -153,27 +153,27 @@ def test_model_checkpoint_saves_and_restores(tmp_path) -> None:
     assert isinstance(callback.manager.options.kwargs["preservation_policy"], _DummyPolicy)
     assert callback.manager.metadata == {"run": "demo"}
 
-    callback.on_training_step_end(
+    callback.on_training_step(
         module=module,
         optimizer=optimizer,
         step=1,
         aux={"loss": 1.0},
     )
-    callback.on_training_step_end(
+    callback.on_training_step(
         module=module,
         optimizer=optimizer,
         step=2,
         aux={"loss": 0.9},
         logs={"loss": 0.9, "loss_per_N": 0.9},
     )
-    callback.on_validation_step_end(
+    callback.on_validation_step(
         module=module,
         optimizer=optimizer,
         batch=None,
         aux={"val_loss": 0.5},
         step_idx=2,
     )
-    callback.on_validation_step_end(
+    callback.on_validation_step(
         module=module,
         optimizer=optimizer,
         batch=None,
@@ -190,7 +190,7 @@ def test_model_checkpoint_saves_and_restores(tmp_path) -> None:
 
     restore_callback = mc.ModelCheckpoint(
         directory=tmp_path,
-        save_on_end=False,
+        save_on_training_end=False,
     )
     restored_module, restored_opt, step, metrics = restore_callback.restore(
         step=2,
@@ -219,7 +219,7 @@ def test_model_checkpoint_train_mode(tmp_path) -> None:
 
     for step in range(1, 5):
         metrics = {"train_loss": 1.0 / step}
-        callback.on_training_step_end(
+        callback.on_training_step(
             module=module,
             optimizer=optimizer,
             step=step,

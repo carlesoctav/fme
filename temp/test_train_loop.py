@@ -1,16 +1,17 @@
-import time
 
 import equinox as eqx
 import grain
 import jax
 import jax.numpy as jnp
 import jax.random as jr
-import optax
-
-from src import Optimizer, make_train_step, nn
+import jax.tree_util as jtu
 import numpy as np
+import optax
 import trackio
-from src import train_loop, Eval
+
+from src import Eval, make_train_step, nn, Optimizer, SufficientMetric, train_loop
+from src.callbacks import LearningRateMonitor, ModelCheckpoint
+
 
 BATCH_SIZE = 100
 HIDDEN_DIM = 64
@@ -24,7 +25,6 @@ REPEAT_EPOCHS = 100
 class XORDataset(grain.sources.RandomAccessDataSource):
     def __init__(self, num_samples: int):
         self.num_samples = num_samples
-        key = jr.PRNGKey(1234)
         self.data = np.random.randint(0, 2, size=(num_samples, 2))
         self.label = (self.data.sum(axis=1, keepdims=True) == 1)
 
@@ -60,12 +60,29 @@ class SuperLinear(eqx.Module):
         h = jax.nn.tanh(self.linear1(x))
         return self.linear2(h)
 
+
+def get_mask(path, leaf):
+    if isinstance(leaf, jax.ShapeDtypeStruct):
+        pathstr = jtu.keystr(path)
+        print(f"DEBUGPRINT[353]: test_train_loop.py:68: pathstr={pathstr}")
+        if pathstr == ".linear1.weight.value":
+            return True 
+        else:
+            return False 
+    return leaf
+    
+
 def main():
     key = jr.PRNGKey(10)
     key, model_key = jr.split(key)
+    abstract_model = eqx.filter_eval_shape(SuperLinear, [2, HIDDEN_DIM, 1] , model_key)
     model = SuperLinear([2, HIDDEN_DIM, 1], model_key)
+    mask = jtu.tree_map_with_path(get_mask, abstract_model)
+    print(f"DEBUGPRINT[352]: test_train_loop.py:78: mask={mask}")
 
-    grad_tx = optax.sgd(LEARNING_RATE)
+    schedule = optax.exponential_decay(1e-2, 100, 0.01)
+    grad_tx = optax.adamw(schedule, mask = mask)
+    print(f"DEBUGPRINT[354]: test_train_loop.py:86: grad_tx={grad_tx}")
     optimizer = Optimizer(grad_tx, model)
 
     train_step_fn = make_train_step(loss_function)
@@ -77,6 +94,11 @@ def main():
     eval = Eval(name = "xor_eval", dataset = eval_ds, loss_function = loss_function)
 
     logger = trackio.init(project="test_project", name="test_run") 
+    logger.name
+    learning_rate_monitor = LearningRateMonitor(log_every_n_step = 10, schedule_fn = schedule)
+    train_metric = SufficientMetric(name = "train", log_every_n_step = 10)
+
+    modelcheckpoint = ModelCheckpoint(f"./checkpoints/{logger.name}", save_interval_steps = 10) 
 
     train_loop(
         model,
@@ -84,9 +106,13 @@ def main():
         train_step_fn,
         iter_ds,
         logger,
+        train_metric,
         evals = [eval],
         eval_interval = 10,
+        callbacks= [learning_rate_monitor, modelcheckpoint],
     )
+
+    logger.finish()
 
 if __name__ == "__main__":
     main()
