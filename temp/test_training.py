@@ -1,222 +1,105 @@
-import os
-os.environ.setdefault("JAX_PLATFORMS", "cpu")
+import time
 
-import numpy as np
-import jax
 import equinox as eqx
+import grain
+import jax
+import jax.numpy as jnp
+import jax.random as jr
 import optax
-from jax import P
-from jax.sharding import Mesh
 
-from transformers.models.bert.configuration_bert import BertConfig
+from src import Optimizer, make_train_step, nn
+import numpy as np
 
-from src.models.bert.modeling_bert import BertModel
-from src._training import make_module_opts
-from src.distributed import (
-    column_parallel,
-    row_parallel,
-    fully_shard,
-    simulate_CPU_devices,
-)
-
-# Ensure we simulate an 8-CPU environment for sharding/mesh
-simulate_CPU_devices(8)
+BATCH_SIZE = 64
+HIDDEN_DIM = 64
+NUM_WARMUP = 1
+NUM_STEPS = 100
+LEARNING_RATE = 1e-2
+NUM_SAMPLES = 1000
+REPEAT_EPOCHS = 100
 
 
-def _make_mesh(*axes: str) -> Mesh:
-    # Build a mesh that works regardless of device count:
-    # put all devices on the first axis, and 1 on the rest.
-    devs = np.array(jax.devices())
-    n = devs.size if devs.size > 0 else 1
-    if not axes:
-        axes = ("tp",)
-    shape = (n,) + (1,) * (len(axes) - 1)
-    arr = devs.reshape(shape)
-    return Mesh(arr, axes)
+class XORDataset(grain.sources.RandomAccessDataSource):
+    def __init__(self, num_samples: int):
+        self.num_samples = num_samples
+        key = jr.PRNGKey(1234)
+        self.data = np.random.randint(0, 2, size=(num_samples, 2))
+        self.label = (self.data.sum(axis=1, keepdims=True) == 1)
+
+    def __len__(self) -> int:
+        return self.num_samples
+
+    def __getitem__(self, idx: int):
+        idx = idx % self.num_samples
+        return self.data[idx], self.label[idx]
 
 
-def _bert_tp_plan(mesh: Mesh, axis_name: str):
-    """
-    Tensor-parallel plan using PartitionSpec-based IO constraints.
-    Mirrors a torchtitan-style plan with col/row parallel and explicit P specs.
-    """
-    return {
-        # Embedding: row-parallel over vocab; replicate inputs, shard outputs on last dim
-        "embeddings.word_embeddings": lambda m: row_parallel(
-            m,
-            axis_name=axis_name,
-            mesh=mesh,
-            inputs_layout=P(),
-            outputs_layout=P(None, axis_name),
-        ),
-
-        # Self-attention projections: column-parallel; replicate inputs, shard outputs on last dim
-        "encoder.layer.*.self.query": lambda m: column_parallel(
-            m,
-            axis_name=axis_name,
-            mesh=mesh,
-            inputs_layout=P(),
-            outputs_layout=P(None, axis_name),
-        ),
-        "encoder.layer.*.self.key": lambda m: column_parallel(
-            m,
-            axis_name=axis_name,
-            mesh=mesh,
-            inputs_layout=P(),
-            outputs_layout=P(None, axis_name),
-        ),
-        "encoder.layer.*.self.value": lambda m: column_parallel(
-            m,
-            axis_name=axis_name,
-            mesh=mesh,
-            inputs_layout=P(),
-            outputs_layout=P(None, axis_name),
-        ),
-
-        # Output projection: row-parallel; replicate inputs, shard outputs on last dim
-        "encoder.layer.*.output.dense": lambda m: row_parallel(
-            m,
-            axis_name=axis_name,
-            mesh=mesh,
-            inputs_layout=P(),
-            outputs_layout=P(None, axis_name),
-        ),
-    }
+def loss_function(model, optimizer, batch, key):
+    x, y = batch
+    batch_size = x.shape[0]
+    logits = model(x)
+    loss = optax.losses.sigmoid_binary_cross_entropy(logits, y).sum()
+    probs = jax.nn.sigmoid(logits)
+    acc = jnp.sum((probs > 0.5) == (y > 0.5))
+    aux = {"loss": (loss, batch_size), "acc": (acc, batch_size)}
+    return loss, aux
 
 
-def _bert_fsdp_plan(mesh: Mesh, axis_name: str):
-    # Apply fully sharded parameter policy as a broad fallback
-    return {
-        "*": lambda m: fully_shard(m, mesh=mesh, axis_name=axis_name)
-    }
+class SuperLinear(eqx.Module):
+    linear1: nn.Linear
+    linear2: nn.Linear
+
+    def __init__(self, params: list[int], key):
+        k1, k2 = jr.split(key, 2)
+        self.linear1 = nn.Linear(params[0], params[1], key=k1)
+        self.linear2 = nn.Linear(params[1], params[2], key=k2)
+
+    def __call__(self, x):
+        h = jax.nn.tanh(self.linear1(x))
+        return self.linear2(h)
 
 
-def test_single_module_tp_then_fsdp():
-    cfg = BertConfig(
-        vocab_size = 30522,
-        hidden_size = 64,
-        num_hidden_layers = 1,
-        num_attention_heads = 8,
-        intermediate_size = 256,
-        max_position_embeddings = 96,
-        type_vocab_size = 2,
-        layer_norm_eps = 1e-12,
-        hidden_dropout_prob = 0.0,
-        attention_probs_dropout_prob = 0.0,
-    )  # default config
-    key = jax.random.PRNGKey(0)
-    abs_model = eqx.filter_eval_shape(BertModel, cfg, key=key)
-    print(f"DEBUGPRINT[294]: test_training.py:108: abs_model={abs_model}")
-
-    # Mesh with both tp and fsdp axes (both size 1 so it works anywhere)
-    # Prefer a 2x4 mesh over 8 host CPUs if available; fallback to 1x1
-    devs = np.array(jax.devices())
-    try:
-        mesh = jax.make_mesh((2, 4), ("tp", "fsdp"), devices=devs)
-    except Exception:
-        mesh = _make_mesh("tp", "fsdp")
-
-    tp_plan = _bert_tp_plan(mesh, axis_name="tp")
-    fsdp_plan = _bert_fsdp_plan(mesh, axis_name="fsdp")
-
-    grad_tx = optax.adam(1e-3)
-    new_model, opt = make_module_opts(
-        abs_model,
-        grad_tx,
-        mesh,
-        wrt=eqx.is_inexact_array,
-        parallelism_plans=[tp_plan, fsdp_plan],
-        key=key,
-    )
-
-    print(f"DEBUGPRINT[299]: test_training.py:123: opt={opt}")
-    print(f"DEBUGPRINT[298]: test_training.py:123: setup_module_opts={make_module_opts}")
-
-    print(f"DEBUGPRINT[293]: test_training.py:111: new_model={new_model}")
-    # Basic structural checks on annotated pspecs
-    q_w = new_model.encoder.layer[0].attention.self.query.weight
-    o_w = new_model.encoder.layer[0].output.dense.weight
+def to_device(batch):
+    x, y = batch
+    x = jnp.asarray(x, dtype=jnp.float32)
+    y = jnp.asarray(y, dtype=jnp.float32)
+    return x, y
 
 
-    print(f"DEBUGPRINT[296]: test_training.py:139: q_w.sharding.pspec={q_w.value.sharding.spec}")
+def main():
+    key = jr.PRNGKey(10)
+    key, model_key = jr.split(key)
+    model = SuperLinear([2, HIDDEN_DIM, 1], model_key)
 
-    # Expect TP axis annotated on query weight (dim 0 for Linear)
-    assert isinstance(q_w.pspec, tuple)
-    assert any(
-        (e == "tp") or (isinstance(e, tuple) and "tp" in e)
-        for e in q_w.pspec
-    )
+    grad_tx = optax.sgd(LEARNING_RATE)
+    optimizer = Optimizer(grad_tx, model)
 
-    # Expect TP axis annotated on output dense (row-parallel -> dim 1)
-    assert isinstance(o_w.pspec, tuple)
-    assert any(
-        (e == "tp") or (isinstance(e, tuple) and "tp" in e)
-        for e in o_w.pspec
-    )
+    train_step = make_train_step(loss_function)
 
+    map_ds = grain.MapDataset.source(XORDataset(NUM_SAMPLES)).repeat(REPEAT_EPOCHS)
+    iter_ds = map_ds.to_iter_dataset(grain.ReadOptions(num_threads = 0, prefetch_buffer_size = 0)).batch(BATCH_SIZE)
+    data_iter = iter(iter_ds)
 
-def test_two_modules_with_distinct_tp_fsdp_sequences():
-    cfg = BertConfig(
-        vocab_size = 30522,
-        hidden_size = 64,
-        num_hidden_layers = 1,
-        num_attention_heads = 8,
-        intermediate_size = 256,
-        max_position_embeddings = 96,
-        type_vocab_size = 2,
-        layer_norm_eps = 1e-12,
-        hidden_dropout_prob = 0.0,
-        attention_probs_dropout_prob = 0.0,
-    )  # default config
-    key = jax.random.PRNGKey(0)
-    mkey1, mkey2, tkey = jax.random.split(key, 3)
-    # Treat these as Generator and Discriminator for the scenario
-    generator = BertModel(cfg, key=mkey1)
-    discriminator = BertModel(cfg, key=mkey2)
+    warmup_batch = to_device(next(data_iter))
+    key, warmup_key = jr.split(key)
+    model, optimizer, _ = train_step(model, optimizer, warmup_batch, key=warmup_key)
 
-    # Mesh with four axes so each module can use its own axis names
-    devs = np.array(jax.devices())
-    try:
-        mesh = jax.make_mesh((2, 2, 2, 2), ("tp", "fsdp", "tp2", "fsdp2"), devices=devs)
-    except Exception:
-        mesh = _make_mesh("tp", "fsdp", "tp2", "fsdp2")
+    start = time.perf_counter()
+    last_aux = None
+    for _ in range(NUM_STEPS):
+        batch = next(data_iter)
+        key, step_key = jr.split(key)
+        model, optimizer, last_aux = train_step(model, optimizer, batch, key=step_key)
 
-    tp_a = _bert_tp_plan(mesh, axis_name="tp")
-    fsdp_a = _bert_fsdp_plan(mesh, axis_name="fsdp")
-    tp_b = _bert_tp_plan(mesh, axis_name="tp2")
-    fsdp_b = _bert_fsdp_plan(mesh, axis_name="fsdp2")
+    elapsed = time.perf_counter() - start
+    avg_step = elapsed / NUM_STEPS
 
-    grad_tx = optax.adam(1e-3)
+    loss = float(last_aux["loss"]) if last_aux is not None else float("nan")
+    acc = float(last_aux["acc"]) if last_aux is not None else float("nan")
 
-    g_key, d_key = jax.random.split(tkey)
-    new_a, opt_a = make_module_opts(
-        generator,
-        grad_tx,
-        mesh,
-        wrt=eqx.is_inexact_array,
-        parallelism_plans=[tp_a, fsdp_a],
-        key=g_key,
-    )
-    new_b, opt_b = make_module_opts(
-        discriminator,
-        grad_tx,
-        mesh,
-        wrt=eqx.is_inexact_array,
-        parallelism_plans=[tp_b, fsdp_b],
-        key=d_key,
-    )
-
-    qa = new_a.encoder.layer[0].attention.self.query.weight
-    qb = new_b.encoder.layer[0].attention.self.query.weight
-
-    # Module A should be annotated with 'tp' but not 'tp2'
-    assert any((e == "tp") or (isinstance(e, tuple) and "tp" in e) for e in qa.pspec)
-    assert not any((e == "tp2") or (isinstance(e, tuple) and "tp2" in e) for e in qa.pspec)
-
-    # Module B should be annotated with 'tp2' but not 'tp'
-    assert any((e == "tp2") or (isinstance(e, tuple) and "tp2" in e) for e in qb.pspec)
-    assert not any((e == "tp") or (isinstance(e, tuple) and "tp" in e) for e in qb.pspec)
+    print(f"Average step time (excluding first) over {NUM_STEPS} steps: {avg_step:.6f}s")
+    print(f"Final loss: {loss:.6f}, final acc: {acc:.6f}")
 
 
 if __name__ == "__main__":
-    test_single_module_tp_then_fsdp()
+    main()
