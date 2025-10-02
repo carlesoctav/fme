@@ -75,28 +75,36 @@ class ModernBertLocalAttention(AttentionModule):
 
         group_size = N // K
 
-
         window_size = getattr(self.attention_config, "window_size", None)
         if window_size is None:
             raise ValueError("Local attention requires window_size to be set on the attention config")
 
+        mask_target_shape = B + (T, N, S)
+        kv_mask_target_shape = B + (T, K, S)
+        window_mask = self.make_sliding_window_mask(
+            query_length=T,
+            key_length=S,
+            batch_shape=B,
+            num_heads=N,
+            window_size=window_size,
+        )
 
         if attention_mask is not None:
             attn_mask = jnp.asarray(attention_mask, dtype=jnp.bool_)
-
-            kv_mask_target_shape = B + (T, K, S)
-            mask_target_shape = B + (T, N, S)
             expected_query_shape = B + (T,)
             expected_dense_shape = B + (T, S)
 
             if attn_mask.shape == mask_target_shape:
                 mask = attn_mask
             elif group_size > 1 and attn_mask.shape == kv_mask_target_shape:
-                mask = jnp.repeat(attn_mask, group_size, axis=-2)
+                expanded = jnp.repeat(attn_mask, group_size, axis=-2)
+                mask = expanded
             elif attn_mask.shape == expected_dense_shape:
-                mask = jnp.broadcast_to(attn_mask[..., :, None, :], mask_target_shape)
+                expanded = jnp.broadcast_to(attn_mask[..., :, None, :], mask_target_shape)
+                mask = expanded
             elif attn_mask.shape == expected_query_shape:
-                mask = jnp.broadcast_to(attn_mask[..., :, None, None], mask_target_shape)
+                expanded = jnp.broadcast_to(attn_mask[..., :, None, None], mask_target_shape)
+                mask = expanded
             else:
                 raise ValueError(
                     "attention_mask shape "
@@ -104,13 +112,7 @@ class ModernBertLocalAttention(AttentionModule):
                     f"shapes {expected_query_shape} or {expected_dense_shape}"
                 )
         else:
-            mask = self.make_sliding_window_mask(
-                query_length=T,
-                key_length=S,
-                batch_shape=B,
-                num_heads=N,
-                window_size=window_size,
-            )
+            mask = window_mask
 
         return dot_product_attention(
             q,
@@ -302,36 +304,37 @@ class ModernBertAttention(eqx.Module):
         )
 
         use_global = (layer_id % max(config.global_attn_every_n_layers, 1)) == 0
+        rope_config = copy.deepcopy(config)
+
         if use_global:
-            local_window = None
-            rope_config = copy.deepcopy(config)
-            rope_config.rope_theta = config.global_rope_theta 
-
-            self.attention_module = make_attention_module(config=attention_config, dtype=dtype)
-
-            self.rotary_emb = ModernBertRotaryEmbedding(
-                rope_config,
-                dtype=dtype,
-                param_dtype=params_dtype,
+            rope_config.rope_theta = config.global_rope_theta
+            attn_cfg = dataclasses.replace(
+                attention_config,
+                use_local_attention=False,
+                window_size=None,
             )
-
+            self.attention_module = make_attention_module(config=attn_cfg, dtype=dtype)
         else:
             half_window = int(config.local_attention) // 2
-            rope_config = copy.deepcopy(config)
-            rope_config.rope_theta = config.local_rope_theta
             local_window = (half_window, half_window)
-
-            rope_config.rope_theta = config.local_rope_theta if config.local_rope_theta is not None else config.global_rope_theta
-
-            attn_conf = dataclasses.asdict(attention_config)
-            local_attention_config = ModernBertLocalAttentionConfig(attn_conf, window_size=local_window)
-            self.attention_module = ModernBertLocalAttention(attention_config=local_attention_config, dtype=dtype)
-
-            self.rotary_emb = ModernBertRotaryEmbedding(
-                rope_config,
-                dtype=dtype,
-                param_dtype=params_dtype,
+            rope_theta = (
+                config.local_rope_theta
+                if getattr(config, "local_rope_theta", None) is not None
+                else config.global_rope_theta
             )
+            rope_config.rope_theta = rope_theta
+            attn_cfg = dataclasses.replace(
+                attention_config,
+                use_local_attention=True,
+                window_size=local_window,
+            )
+            self.attention_module = ModernBertLocalAttention(attention_config=attn_cfg)
+
+        self.rotary_emb = ModernBertRotaryEmbedding(
+            rope_config,
+            dtype=dtype,
+            param_dtype=params_dtype,
+        )
 
     def __call__(
         self,
@@ -365,9 +368,9 @@ class ModernBertAttention(eqx.Module):
         else:
             position_ids = jnp.asarray(position_ids, dtype=jnp.int32)
 
-        q = self.rotary_embed(q, position_ids=position_ids)
+        q = self.rotary_emb(q, position_ids=position_ids)
 
-        k = self.rotary_embed(k, position_ids=position_ids)
+        k = self.rotary_emb(k, position_ids=position_ids)
 
         attn_output = self.attention_module(
             q,
