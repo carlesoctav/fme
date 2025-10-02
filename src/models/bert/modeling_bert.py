@@ -1,4 +1,4 @@
-from __future__ import annotations
+rom __future__ import annotations
 
 from typing import Any
 
@@ -111,8 +111,8 @@ class BertSelfAttention(eqx.Module):
     def __init__(
         self,
         config: BertConfig,
-        *,
         attention_config: AttentionConfig | None = None,
+        *,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
         key: PRNGKeyArray,
@@ -258,8 +258,8 @@ class BertAttention(eqx.Module):
     def __init__(
         self,
         config: BertConfig,
-        *,
         attention_config: AttentionConfig | None = None,
+        *,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
         key: PRNGKeyArray,
@@ -386,8 +386,8 @@ class BertLayer(eqx.Module):
     def __init__(
         self,
         config: BertConfig,
-        *,
         attention_config: AttentionConfig | None = None,
+        *,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
         rngs: PRNGKeyArray,
@@ -439,8 +439,8 @@ class BertEncoder(eqx.Module):
     def __init__(
         self,
         config: BertConfig,
-        *,
         attention_config: AttentionConfig | None = None,
+        *,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
         key: PRNGKeyArray,
@@ -539,8 +539,8 @@ class BertModel(BertModelWeightPlanMixin, eqx.Module, HuggingFaceCompatibleModul
     def __init__(
         self,
         config: BertConfig,
-        *,
         attention_config: AttentionConfig | None = None,
+        *,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
         store_config=True,

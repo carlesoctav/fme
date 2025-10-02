@@ -1,4 +1,4 @@
-import equinox as eqx
+mport equinox as eqx
 import jax
 import jax.numpy as jnp
 from transformers.models.bert.configuration_bert import BertConfig
