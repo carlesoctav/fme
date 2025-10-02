@@ -176,7 +176,7 @@ class SDPA(AttentionModule):
                 )
 
         elif segment_ids is not None:
-            mask = make_attention_mask_from_segment(
+            mask = self.make_attention_mask_from_segment(
                 segment_ids=segment_ids,
                 nheads=N,
                 is_causal=self.config.is_causal,
@@ -197,6 +197,31 @@ class SDPA(AttentionModule):
             dropout=dropout,
             key=key,
         )
+
+    def make_attention_mask_from_segment(
+        self,
+        *,
+        segment_ids: Int[Array, "*B T"],
+        nheads: int,
+        is_causal: bool,
+    ) -> Bool[Array, "*B T N T"]:
+        if segment_ids.ndim < 1:
+            raise ValueError("segment_ids must have at least one dimension for the sequence axis")
+
+        segment_ids = jnp.asarray(segment_ids)
+        valid = segment_ids != 0
+
+        same_segment = segment_ids[..., :, None] == segment_ids[..., None, :]
+        mask = same_segment & valid[..., :, None] & valid[..., None, :]
+        if is_causal:
+            mask = jnp.tril(mask)
+
+        batch_shape = segment_ids.shape[:-1]
+        seq_len = segment_ids.shape[-1]
+        mask = jnp.expand_dims(mask, axis=-2)
+        mask = jnp.broadcast_to(mask, (*batch_shape, seq_len, nheads, seq_len))
+        return mask.astype(jnp.bool_)
+
 
 def make_attention_module(
     config: AttentionConfig | None = None,

@@ -9,7 +9,7 @@ from transformers import PretrainedConfig
 from .._utils import first_from
 
 
-RotaryInitFn = Callable[[Any, int | None, jnp.dtype], Tuple[Array, Array]]
+RotaryInitFn = Callable[[Any, jnp.dtype], Tuple[Array, Array]]
 
 def _base_angles(dim: int, base: float, dtype: jnp.dtype) -> Array:
     half_dim = dim // 2
@@ -25,7 +25,6 @@ def r_from_inv(inv_freq: Array, seq_len: int, dtype: jnp.dtype) -> Array:
 
 def default_rope(
     config: PretrainedConfig,
-    seq_len: int | None = None,
     dtype: jnp.dtype = jnp.float32,
 ) -> Tuple[Array, float]:
     """
@@ -47,7 +46,7 @@ def default_rope(
     )
 
     r_theta = r_from_inv(inv_freq, seq_len, dtype)
-    return r_theta, jnp.assrray(1.0)
+    return r_theta, jnp.asarray(1.0, dtype=dtype)
 
 
 ROPE_INIT_FUNCTIONS: Dict[str, RotaryInitFn] = {
@@ -60,4 +59,3 @@ def make_rope_init_fn(rope_type: str) -> RotaryInitFn:
         return ROPE_INIT_FUNCTIONS[rope_type]
     except KeyError as err:
         raise KeyError(f"Unsupported RoPE type '{rope_type}'. Available: {sorted(ROPE_INIT_FUNCTIONS)}") from err
-

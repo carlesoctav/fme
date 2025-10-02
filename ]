@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import copy
-import dataclasses
-import warnings
 from collections.abc import Callable
 from typing import Any
 
@@ -22,16 +20,47 @@ from ..._utils import first_from
 from ...nn import (
     AttentionConfig,
     AttentionModule,
-    dot_product_attention,
     make_attention_module,
     make_rope_init_fn,
 )
+import warnings
 
 
 class ModernBertLocalAttentionConfig(AttentionConfig):
     window_size: tuple[int, int] = field(static=True)
 
 
+def make_sliding_window_mask(
+    query_length: int,
+    key_length: int,
+    batch_shape: tuple[int, ...],
+    num_heads: int,
+    window_size: tuple[int, int] | int,
+) -> Bool[Array, "*B T N S"]:
+    """Return a boolean mask that keeps attention within a sliding window."""
+
+    if isinstance(window_size, int):
+        if window_size < 0:
+            raise ValueError("window_size must be non-negative")
+        left = right = int(window_size)
+    else:
+        if len(window_size) != 2:
+            raise ValueError("window_size must have exactly two elements")
+        left, right = window_size
+        if left < 0 or right < 0:
+            raise ValueError("window_size entries must be non-negative")
+        left, right = int(left), int(right)
+
+    q_positions = jnp.arange(query_length)[:, None]
+    k_positions = jnp.arange(key_length)[None, :]
+    offset = q_positions - k_positions
+
+    within_window = (offset >= -left) & (offset <= right) # (T, S)
+    within_window = jnp.broadcast_to(within_window, batch_shape + (query_length, key_length)) # (*B, T, S)
+    within_window = jnp.expand_dims(within_window, axis=-2) # (*B, T, 1, S)
+    within_window = jnp.broadcast_to(within_window, batch_shape + (query_length, num_heads, key_length)) # (*B, T, N, S) 
+
+    return within_window
 
 class ModernBertLocalAttention(AttentionModule):
     attention_config: AttentionConfig = field(static=True)
@@ -59,6 +88,7 @@ class ModernBertLocalAttention(AttentionModule):
         if segment_ids is not None:
             raise NotImplementedError("Sequence packing with local attention is not implemented.")
 
+
         if k.shape[:-3] != B or v.shape[:-3] != B:
             raise ValueError("Query, key, and value must share batch dimensions")
 
@@ -79,6 +109,7 @@ class ModernBertLocalAttention(AttentionModule):
         window_size = getattr(self.attention_config, "window_size", None)
         if window_size is None:
             raise ValueError("Local attention requires window_size to be set on the attention config")
+
 
 
         if attention_mask is not None:
@@ -104,7 +135,7 @@ class ModernBertLocalAttention(AttentionModule):
                     f"shapes {expected_query_shape} or {expected_dense_shape}"
                 )
         else:
-            mask = self.make_sliding_window_mask(
+            mask = make_sliding_window_mask(
                 query_length=T,
                 key_length=S,
                 batch_shape=B,
@@ -121,39 +152,6 @@ class ModernBertLocalAttention(AttentionModule):
             key=key,
         )
 
-    def make_sliding_window_mask(
-        self,
-        query_length: int,
-        key_length: int,
-        batch_shape: tuple[int, ...],
-        num_heads: int,
-        window_size: tuple[int, int] | int,
-    ) -> Bool[Array, "*B T N S"]:
-        """Return a boolean mask that keeps attention within a sliding window."""
-
-        if isinstance(window_size, int):
-            if window_size < 0:
-                raise ValueError("window_size must be non-negative")
-            left = right = int(window_size)
-        else:
-            if len(window_size) != 2:
-                raise ValueError("window_size must have exactly two elements")
-            left, right = window_size
-            if left < 0 or right < 0:
-                raise ValueError("window_size entries must be non-negative")
-            left, right = int(left), int(right)
-
-        q_positions = jnp.arange(query_length)[:, None]
-        k_positions = jnp.arange(key_length)[None, :]
-        offset = q_positions - k_positions
-
-        within_window = (offset >= -left) & (offset <= right) # (T, S)
-        within_window = jnp.broadcast_to(within_window, batch_shape + (query_length, key_length)) # (*B, T, S)
-        within_window = jnp.expand_dims(within_window, axis=-2) # (*B, T, 1, S)
-        within_window = jnp.broadcast_to(within_window, batch_shape + (query_length, num_heads, key_length)) # (*B, T, N, S) 
-
-        return within_window
-
 
 class ModernBertRotaryEmbedding(eqx.Module):
     rtheta: Array
@@ -167,8 +165,7 @@ class ModernBertRotaryEmbedding(eqx.Module):
         config: ModernBertConfig,
         *,
         dtype: jnp.dtype = jnp.float32,
-        param_dtype: jnp.dtype = jnp.float32,
-        key: PRNGKeyArray = None,
+        param_dtype: jnp.dtype = jnp.float32
     ):
 
         self.rope_type = "default"
@@ -257,9 +254,9 @@ class ModernBertAttention(eqx.Module):
     def __init__(
         self,
         config: ModernBertConfig,
+        *,
         attention_config: AttentionConfig | None = None,
         layer_id: int = 0,
-        *,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
         key: PRNGKeyArray,
@@ -296,8 +293,9 @@ class ModernBertAttention(eqx.Module):
         self.attn_drop = nn.Dropout(p=config.attention_dropout, dtype=dtype, params_dtype=params_dtype)
         self.out_drop = nn.Dropout(p=config.attention_dropout, dtype=dtype, params_dtype=params_dtype)
 
-        attention_config = first_from(
+        base_config = first_from(
             attention_config,
+            AttentionConfig(type="eager", is_causal=False),
             error_msg="ModernBertAttention requires an attention_config",
         )
 
@@ -306,32 +304,32 @@ class ModernBertAttention(eqx.Module):
             local_window = None
             rope_config = copy.deepcopy(config)
             rope_config.rope_theta = config.global_rope_theta 
-
-            self.attention_module = make_attention_module(config=attention_config, dtype=dtype)
-
-            self.rotary_emb = ModernBertRotaryEmbedding(
-                rope_config,
-                dtype=dtype,
-                param_dtype=params_dtype,
-            )
-
         else:
             half_window = int(config.local_attention) // 2
             rope_config = copy.deepcopy(config)
-            rope_config.rope_theta = config.local_rope_theta
+            rope_config.rope_theta = rope_theta
             local_window = (half_window, half_window)
 
-            rope_config.rope_theta = config.local_rope_theta if config.local_rope_theta is not None else config.global_rope_theta
-
-            attn_conf = dataclasses.asdict(attention_config)
-            local_attention_config = ModernBertLocalAttentionConfig(attn_conf, window_size=local_window)
-            self.attention_module = ModernBertLocalAttention(attention_config=local_attention_config, dtype=dtype)
-
-            self.rotary_emb = ModernBertRotaryEmbedding(
-                rope_config,
-                dtype=dtype,
-                param_dtype=params_dtype,
+            rope_theta = (
+                config.local_rope_theta
+                if getattr(config, "local_rope_theta", None) is not None
+                else config.global_rope_theta
             )
+            rope_config.rope_theta = rope_theta
+
+        attn_cfg = AttentionConfig(
+            type=base_config.type,
+            is_causal=False,
+            use_local_attention=local_window is not None,
+            window_size=local_window,
+        )
+        self.attention_module = make_attention_module(config=attn_cfg, dtype=dtype)
+
+        self.rotary_emb = ModernBertRotaryEmbedding(
+            config,
+            dtype=dtype,
+            param_dtype=params_dtype,
+        )
 
     def __call__(
         self,
@@ -400,16 +398,17 @@ class ModernBertMLP(eqx.Module):
         key: PRNGKeyArray,
     ):
         wi_key, wo_key = jax.random.split(key, 2)
+        intermediate = int(config.intermediate_size)
         self.Wi = nn.Linear(
             config.hidden_size,
-            2 * int(config.intermediate_size),
+            2 * intermediate,
             use_bias=config.mlp_bias,
             dtype=dtype,
             params_dtype=params_dtype,
             key=wi_key,
         )
         self.Wo = nn.Linear(
-            int(config.intermediate_size),
+            intermediate,
             config.hidden_size,
             use_bias=config.mlp_bias,
             dtype=dtype,
@@ -442,9 +441,9 @@ class ModernBertEncoderLayer(eqx.Module):
     def __init__(
         self,
         config: ModernBertConfig,
+        *,
         attention_config: AttentionConfig,
         layer_id: int,
-        *,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
         key: PRNGKeyArray,
@@ -487,10 +486,10 @@ class ModernBertEncoderLayer(eqx.Module):
     def __call__(
         self,
         hidden_states: Float[Array, "*B T D"],
+        *,
         attention_mask: Int[Array, "*B T"] | Float[Array, "*B T"] | Bool[Array, "*B T"] | None = None,
         segment_ids: Int[Array, "*B T"] | None = None,
         position_ids: Int[Array, "*B T"] | None = None,
-        *,
         key: PRNGKeyArray | None = None,
     ) -> Float[Array, "*B T D"]:
         attn_key, mlp_key = (
@@ -523,8 +522,8 @@ class ModernBertEncoder(eqx.Module):
     def __init__(
         self,
         config: ModernBertConfig,
-        attention_config: AttentionConfig,
         *,
+        attention_config: AttentionConfig,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
         key: PRNGKeyArray,
@@ -546,10 +545,10 @@ class ModernBertEncoder(eqx.Module):
     def __call__(
         self,
         hidden_states: Float[Array, "*B T D"],
+        *,
         attention_mask: Int[Array, "*B T"] | Float[Array, "*B T"] | Bool[Array, "*B T"] | None = None,
         segment_ids: Int[Array, "*B T"] | None = None,
         position_ids: Int[Array, "*B T"] | None = None,
-        *,
         key: PRNGKeyArray | None = None,
     ) -> Float[Array, "*B T D"]:
         if key is not None:
@@ -603,8 +602,8 @@ class ModernBertEmbeddings(eqx.Module):
     def __call__(
         self,
         input_ids: Int[Array, "*B T"] | None = None,
-        inputs_embeds: Float[Array, "*B T D"] | None = None,
         *,
+        inputs_embeds: Float[Array, "*B T D"] | None = None,
         key: PRNGKeyArray | None = None,
     ) -> Float[Array, "*B T D"]:
         if inputs_embeds is not None:
@@ -674,15 +673,6 @@ class ModernBertModelWeightPlanMixin:
                 )
             return updated
 
-        if isinstance(module, ModernBertRotaryEmbedding):
-            rtheta, attention_scaling = module.rope_init_fn(cfg, dtype=module.dtype)
-            updated = eqx.tree_at(
-                lambda m:[m.rtheta, m.attention_scaling],
-                module,
-                [rtheta, attention_scaling],
-            )
-            return updated
-
         return module
 
 
@@ -700,8 +690,8 @@ class ModernBertModel(
     def __init__(
         self,
         config: ModernBertConfig,
-        attention_config: AttentionConfig | None = None,
         *,
+        attention_config: AttentionConfig | None = None,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
         store_config: bool = True,
@@ -745,11 +735,11 @@ class ModernBertModel(
     def __call__(
         self,
         input_ids: Int[Array, "*B T"] | None = None,
+        *,
         attention_mask: Int[Array, "*B T"] | Float[Array, "*B T"] | Bool[Array, "*B T"] | None = None,
         segment_ids: Int[Array, "*B T"] | None = None,
         position_ids: Int[Array, "*B T"] | None = None,
         inputs_embeds: Float[Array, "*B T D"] | None = None,
-        *,
         key: PRNGKeyArray | None = None,
     ) -> Float[Array, "*B T D"]:
         embed_key, encoder_key = (
@@ -829,8 +819,8 @@ class ModernBertForMaskedLM(
     def __init__(
         self,
         config: ModernBertConfig,
-        attention_config: AttentionConfig | None = None,
         *,
+        attention_config: AttentionConfig | None = None,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
         store_config: bool = True,
@@ -867,11 +857,11 @@ class ModernBertForMaskedLM(
     def __call__(
         self,
         input_ids: Int[Array, "*B T"] | None = None,
+        *,
         attention_mask: Int[Array, "*B T"] | Float[Array, "*B T"] | Bool[Array, "*B T"] | None = None,
         segment_ids: Int[Array, "*B T"] | None = None,
         position_ids: Int[Array, "*B T"] | None = None,
         inputs_embeds: Float[Array, "*B T D"] | None = None,
-        *,
         key: PRNGKeyArray | None = None,
     ) -> Float[Array, "*B T V"]:
         model_key, head_key = (
@@ -890,6 +880,335 @@ class ModernBertForMaskedLM(
         return logits
 
 
+class ModernBertForSequenceClassification(
+    eqx.Module,
+    ModernBertModelWeightPlanMixin,
+    HuggingFaceCompatibleModule[transformers.ModernBertForSequenceClassification],
+):
+    model: ModernBertModel
+    head: ModernBertPredictionHead
+    classifier: nn.Linear
+    dropout: nn.Dropout
+    num_labels: int = field(static=True)
+    config: ModernBertConfig | None = field(static=True, default=None)
+
+    def __init__(
+        self,
+        config: ModernBertConfig,
+        *,
+        attention_config: AttentionConfig | None = None,
+        dtype: jnp.dtype = jnp.float32,
+        params_dtype: jnp.dtype = jnp.float32,
+        store_config: bool = True,
+        key: PRNGKeyArray,
+    ):
+        model_key, head_key, classifier_key = jax.random.split(key, 3)
+        self.num_labels = int(getattr(config, "num_labels", 2))
+        self.model = ModernBertModel(
+            config,
+            attention_config=attention_config,
+            dtype=dtype,
+            params_dtype=params_dtype,
+            store_config=False,
+            key=model_key,
+        )
+        self.head = ModernBertPredictionHead(
+            config,
+            dtype=dtype,
+            params_dtype=params_dtype,
+            key=head_key,
+        )
+        self.classifier = nn.Linear(
+            config.hidden_size,
+            self.num_labels,
+            use_bias=config.classifier_bias,
+            dtype=dtype,
+            params_dtype=params_dtype,
+            key=classifier_key,
+        )
+        self.dropout = nn.Dropout(p=config.classifier_dropout, dtype=dtype, params_dtype=params_dtype)
+        if store_config:
+            self.config = config
+        else:
+            self.config = None
+
+    def _pool(self, hidden_states: Array, attention_mask: Array | None) -> Array:
+        if getattr(self.config, "classifier_pooling", "cls") == "mean":
+            if attention_mask is None:
+                return jnp.mean(hidden_states, axis=-2)
+            mask = jnp.asarray(attention_mask, dtype=hidden_states.dtype)[..., None]
+            summed = jnp.sum(hidden_states * mask, axis=-2)
+            denom = jnp.clip(mask.sum(axis=-2), a_min=1.0)
+            return summed / denom
+        return hidden_states[..., 0, :]
+
+    def __call__(
+        self,
+        input_ids: Int[Array, "*B T"] | None = None,
+        *,
+        attention_mask: Int[Array, "*B T"] | Float[Array, "*B T"] | Bool[Array, "*B T"] | None = None,
+        segment_ids: Int[Array, "*B T"] | None = None,
+        position_ids: Int[Array, "*B T"] | None = None,
+        inputs_embeds: Float[Array, "*B T D"] | None = None,
+        key: PRNGKeyArray | None = None,
+    ) -> Float[Array, "*B L"]:
+        model_key, head_key, drop_key = (
+            jax.random.split(key, 3) if key is not None else (None, None, None)
+        )
+        hidden_states = self.model(
+            input_ids,
+            attention_mask=attention_mask,
+            segment_ids=segment_ids,
+            position_ids=position_ids,
+            inputs_embeds=inputs_embeds,
+            key=model_key,
+        )
+        hidden_states = self.head(hidden_states, key=head_key)
+        pooled = self._pool(hidden_states, attention_mask)
+        pooled = self.dropout(pooled, key=drop_key)
+        logits = self.classifier(pooled)
+        return logits
+
+
+class ModernBertForTokenClassification(
+    eqx.Module,
+    ModernBertModelWeightPlanMixin,
+    HuggingFaceCompatibleModule[transformers.ModernBertForTokenClassification],
+):
+    model: ModernBertModel
+    head: ModernBertPredictionHead
+    classifier: nn.Linear
+    dropout: nn.Dropout
+    num_labels: int = field(static=True)
+    config: ModernBertConfig | None = field(static=True, default=None)
+
+    def __init__(
+        self,
+        config: ModernBertConfig,
+        *,
+        attention_config: AttentionConfig | None = None,
+        dtype: jnp.dtype = jnp.float32,
+        params_dtype: jnp.dtype = jnp.float32,
+        store_config: bool = True,
+        key: PRNGKeyArray,
+    ):
+        model_key, head_key, classifier_key = jax.random.split(key, 3)
+        self.num_labels = int(getattr(config, "num_labels", 2))
+        self.model = ModernBertModel(
+            config,
+            attention_config=attention_config,
+            dtype=dtype,
+            params_dtype=params_dtype,
+            store_config=False,
+            key=model_key,
+        )
+        self.head = ModernBertPredictionHead(
+            config,
+            dtype=dtype,
+            params_dtype=params_dtype,
+            key=head_key,
+        )
+        self.classifier = nn.Linear(
+            config.hidden_size,
+            self.num_labels,
+            use_bias=config.classifier_bias,
+            dtype=dtype,
+            params_dtype=params_dtype,
+            key=classifier_key,
+        )
+        self.dropout = nn.Dropout(p=config.classifier_dropout, dtype=dtype, params_dtype=params_dtype)
+        if store_config:
+            self.config = config
+        else:
+            self.config = None
+
+    def __call__(
+        self,
+        input_ids: Int[Array, "*B T"] | None = None,
+        *,
+        attention_mask: Int[Array, "*B T"] | Float[Array, "*B T"] | Bool[Array, "*B T"] | None = None,
+        segment_ids: Int[Array, "*B T"] | None = None,
+        position_ids: Int[Array, "*B T"] | None = None,
+        inputs_embeds: Float[Array, "*B T D"] | None = None,
+        key: PRNGKeyArray | None = None,
+    ) -> Float[Array, "*B T L"]:
+        model_key, head_key, drop_key = (
+            jax.random.split(key, 3) if key is not None else (None, None, None)
+        )
+        hidden_states = self.model(
+            input_ids,
+            attention_mask=attention_mask,
+            segment_ids=segment_ids,
+            position_ids=position_ids,
+            inputs_embeds=inputs_embeds,
+            key=model_key,
+        )
+        hidden_states = self.head(hidden_states, key=head_key)
+        hidden_states = self.dropout(hidden_states, key=drop_key)
+        logits = self.classifier(hidden_states)
+        return logits
+
+
+class ModernBertForQuestionAnswering(
+    eqx.Module,
+    ModernBertModelWeightPlanMixin,
+    HuggingFaceCompatibleModule[transformers.ModernBertForQuestionAnswering],
+):
+    model: ModernBertModel
+    head: ModernBertPredictionHead
+    classifier: nn.Linear
+    config: ModernBertConfig | None = field(static=True, default=None)
+
+    def __init__(
+        self,
+        config: ModernBertConfig,
+        *,
+        attention_config: AttentionConfig | None = None,
+        dtype: jnp.dtype = jnp.float32,
+        params_dtype: jnp.dtype = jnp.float32,
+        store_config: bool = True,
+        key: PRNGKeyArray,
+    ):
+        model_key, head_key, classifier_key = jax.random.split(key, 3)
+        self.model = ModernBertModel(
+            config,
+            attention_config=attention_config,
+            dtype=dtype,
+            params_dtype=params_dtype,
+            store_config=False,
+            key=model_key,
+        )
+        self.head = ModernBertPredictionHead(
+            config,
+            dtype=dtype,
+            params_dtype=params_dtype,
+            key=head_key,
+        )
+        self.classifier = nn.Linear(
+            config.hidden_size,
+            2,
+            use_bias=config.classifier_bias,
+            dtype=dtype,
+            params_dtype=params_dtype,
+            key=classifier_key,
+        )
+        if store_config:
+            self.config = config
+        else:
+            self.config = None
+
+    def __call__(
+        self,
+        input_ids: Int[Array, "*B T"] | None = None,
+        *,
+        attention_mask: Int[Array, "*B T"] | Float[Array, "*B T"] | Bool[Array, "*B T"] | None = None,
+        segment_ids: Int[Array, "*B T"] | None = None,
+        position_ids: Int[Array, "*B T"] | None = None,
+        inputs_embeds: Float[Array, "*B T D"] | None = None,
+        key: PRNGKeyArray | None = None,
+    ) -> Float[Array, "*B T 2"]:
+        model_key, head_key = (
+            jax.random.split(key, 2) if key is not None else (None, None)
+        )
+        hidden_states = self.model(
+            input_ids,
+            attention_mask=attention_mask,
+            segment_ids=segment_ids,
+            position_ids=position_ids,
+            inputs_embeds=inputs_embeds,
+            key=model_key,
+        )
+        hidden_states = self.head(hidden_states, key=head_key)
+        logits = self.classifier(hidden_states)
+        return logits
+
+
+class ModernBertForMultipleChoice(
+    eqx.Module,
+    ModernBertModelWeightPlanMixin,
+    HuggingFaceCompatibleModule[transformers.ModernBertForMultipleChoice],
+):
+    model: ModernBertModel
+    head: ModernBertPredictionHead
+    classifier: nn.Linear
+    dropout: nn.Dropout
+    config: ModernBertConfig | None = field(static=True, default=None)
+
+    def __init__(
+        self,
+        config: ModernBertConfig,
+        *,
+        attention_config: AttentionConfig | None = None,
+        dtype: jnp.dtype = jnp.float32,
+        params_dtype: jnp.dtype = jnp.float32,
+        store_config: bool = True,
+        key: PRNGKeyArray,
+    ):
+        model_key, head_key, classifier_key = jax.random.split(key, 3)
+        self.model = ModernBertModel(
+            config,
+            attention_config=attention_config,
+            dtype=dtype,
+            params_dtype=params_dtype,
+            store_config=False,
+            key=model_key,
+        )
+        self.head = ModernBertPredictionHead(
+            config,
+            dtype=dtype,
+            params_dtype=params_dtype,
+            key=head_key,
+        )
+        self.classifier = nn.Linear(
+            config.hidden_size,
+            1,
+            use_bias=config.classifier_bias,
+            dtype=dtype,
+            params_dtype=params_dtype,
+            key=classifier_key,
+        )
+        self.dropout = nn.Dropout(p=config.classifier_dropout, dtype=dtype, params_dtype=params_dtype)
+        if store_config:
+            self.config = config
+        else:
+            self.config = None
+
+    def __call__(
+        self,
+        input_ids: Int[Array, "*B C T"],
+        *,
+        attention_mask: Int[Array, "*B C T"] | Float[Array, "*B C T"] | Bool[Array, "*B C T"] | None = None,
+        segment_ids: Int[Array, "*B C T"] | None = None,
+        position_ids: Int[Array, "*B C T"] | None = None,
+        inputs_embeds: Float[Array, "*B C T D"] | None = None,
+        key: PRNGKeyArray | None = None,
+    ) -> Float[Array, "*B C"]:
+        num_choices = input_ids.shape[-2]
+        flat_input_ids = input_ids.reshape((-1,) + input_ids.shape[-2:])
+
+        flat_attention = None if attention_mask is None else attention_mask.reshape((-1,) + attention_mask.shape[-2:])
+        flat_segments = None if segment_ids is None else segment_ids.reshape((-1,) + segment_ids.shape[-2:])
+        flat_positions = None if position_ids is None else position_ids.reshape((-1,) + position_ids.shape[-2:])
+        flat_embeds = None if inputs_embeds is None else inputs_embeds.reshape((-1,) + inputs_embeds.shape[-2:])
+
+        model_key, head_key, drop_key = (
+            jax.random.split(key, 3) if key is not None else (None, None, None)
+        )
+        hidden_states = self.model(
+            flat_input_ids,
+            attention_mask=flat_attention,
+            segment_ids=flat_segments,
+            position_ids=flat_positions,
+            inputs_embeds=flat_embeds,
+            key=model_key,
+        )
+        hidden_states = self.head(hidden_states, key=head_key)
+        pooled = hidden_states[..., 0, :]
+        pooled = self.dropout(pooled, key=drop_key)
+        logits = self.classifier(pooled)
+        logits = logits.reshape(input_ids.shape[:-2] + (num_choices,))
+        return logits
+
 
 __all__ = [
     "ModernBertRotaryEmbedding",
@@ -900,4 +1219,8 @@ __all__ = [
     "ModernBertModel",
     "ModernBertPredictionHead",
     "ModernBertForMaskedLM",
+    "ModernBertForSequenceClassification",
+    "ModernBertForTokenClassification",
+    "ModernBertForQuestionAnswering",
+    "ModernBertForMultipleChoice",
 ]
