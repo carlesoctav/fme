@@ -3,16 +3,17 @@ from __future__ import annotations
 import contextlib
 import functools
 import typing as tp
-import time
 
 import jax
-from typing import TypeVar, TYPE_CHECKING
 
-if TYPE_CHECKING:
+
+if tp.TYPE_CHECKING:
     from .loggers import Logger
 
 
-A = TypeVar("A")
+A = tp.TypeVar("A")
+K = tp.TypeVar("K")
+V = tp.TypeVar("V")
 
 
 # @contextlib.contextmanager
@@ -31,7 +32,7 @@ A = TypeVar("A")
 
 def wallclock(
     name: str,
-    logger: "Logger" | None = None,
+    logger: Logger | None = None,
     step: int | None = None,
 ):
     return contextlib.nullcontext()
@@ -56,5 +57,41 @@ def rank_zero(fn: tp.Callable[..., A]) -> tp.Callable[..., A | None]:
 
     return _wrapped
 
+
+
+class GeneralInterface(tp.MutableMapping[K, V], tp.Generic[K, V]):
+    """
+    Dict-like object keeping track of a class-wide mapping, as well as a local one. Allows to have library-wide
+    modifications though the class mapping, as well as local modifications in a single file with the local mapping.
+    """
+
+    _global_mapping = {}
+
+    def __init__(self):
+        self._local_mapping = {}
+
+    def __getitem__(self, key: K) -> V:
+        if key in self._local_mapping:
+            return self._local_mapping[key]
+        return self._global_mapping[key]
+
+    def __setitem__(self, key, value):
+        self._local_mapping.update({key: value})
+
+    def __delitem__(self, key):
+        del self._local_mapping[key]
+
+    def __iter__(self):
+        return iter({**self._global_mapping, **self._local_mapping})
+
+    def __len__(self):
+        return len(self._global_mapping.keys() | self._local_mapping.keys())
+
+    @classmethod
+    def register(cls, key: str, value: tp.Callable):
+        cls._global_mapping.update({key: value})
+
+    def valid_keys(self) -> list[str]:
+        return list(self.keys())
 
 __all__ = ["first_from", "rank_zero"]

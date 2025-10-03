@@ -1,0 +1,62 @@
+1. i think i want to remove attention_mask from the input of highlevl module like BertModel, etc ...,we'll dynamically construct this attention_mask at runtime
+
+see ~/personal/transformers/models/qwen3/modeling_qwen3.py
+
+but we need to change a lot of stuff
+
+
+first we need a function to build this attention_mask
+
+in transfomers, it was on masking_utils.py
+i think i need to create something similar like this on ./_masking_utils.py
+
+the general structure is soemthing like this
+
+we'll ve high level function to create this mask
+like def create_causal_mask, create_sliding_window_mask
+
+under the hood, it'll compose some _MaskFn function 
+where mask_fn is function mask that take (batch_idx, h_idx, q_idx, kv_idx,) (flex attention signature)
+we compose this function and also do a vmap so it can return a 4D mask (B,T, H, K)
+
+but the output of this create_causal_mask and create_sliding_window_mask is different for each attention implementation
+like we rturn a Array for sdpa and eager attention implementaiton, whjile w return a BlockMask for flex attention
+because of this we need like AttetionMaskInterface -> to basicly select attention implementation while being flexible enough to implement local version of this)
+see ./personal/transformers/src/en/attention_interface.md
+
+
+for now dont thing to much about this, we'll've one attention implementation for now the eager one.
+and then we this mask was created __call__ of highlevel module (again see 
+see ~/personal/transformers/models/qwen3/modeling_qwen3.py), 
+
+
+i also want to refactor our attention implementation of attention
+
+
+we'll do the same as the transformers -> create attentioninterface
+where the user can choose (by config) the attention implementation of the model
+
+
+for now kiss, just do the sdpa where we'll use jax.nn.dot_product_attention
+but instead of just calling function like transformers
+i want you to wrap the fucntion under eqx.Module (store attn_fn, and some "attn_implentation", "attn_type -> full, causal, etc ...)
+(and let's called it AttentionModule)
+the reason i want this is so i can use the prepare_model_input,  etc from the src/distributed
+
+another thing is about the context_paralllelism, i want to think about this.
+
+the idea is to actually wrap the attention_function under shard_map, with correct sharding (sharding the seq axis into cp axis)
+and run the attention_function under this mesh and shard_map (per device view)
+
+i guess we'll do the same api design here as tp and params
+
+def context_parallel(module, axis_name, mesh) -> we'll returning the new module with new function (shard_mapped under mesh) (and mybe has some additinoal logic to do ring-attention)
+some function like splash_attention from jax alrady implement ring-like attention, and i feel like for this one we dont need to do anything beside maybe reordering some seq
+
+and also, only certain attention is make sense to implement ring attention like causal or full attention i guess
+bwe can check by the metadata of this attentionmodule
+
+also do a check this context_parallel can only be done on attentionmodule,
+
+
+see temp/ring_attn.py about "adding" async gather (ring attention), but remember please use the jax.nn.dot_product_attention implementation

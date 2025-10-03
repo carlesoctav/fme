@@ -1,7 +1,6 @@
 from ._attention import (
     AttentionConfig,
     AttentionModule,
-    LocalAttention,
     make_attention_module,
     dot_product_attention,
     SDPA,

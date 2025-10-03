@@ -1,4 +1,4 @@
-rom __future__ import annotations
+from __future__ import annotations
 
 from typing import Any
 
@@ -102,7 +102,8 @@ class BertSelfAttention(eqx.Module):
     query: nn.Linear
     value: nn.Linear
     key: nn.Linear
-    dropout: nn.Dropout
+    dropout_rate: float
+    inference: bool 
     sdpa: AttentionModule
     num_attention_heads: int = field(static=True)
     attention_head_size: int = field(static=True)
@@ -111,7 +112,6 @@ class BertSelfAttention(eqx.Module):
     def __init__(
         self,
         config: BertConfig,
-        attention_config: AttentionConfig | None = None,
         *,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
@@ -132,6 +132,8 @@ class BertSelfAttention(eqx.Module):
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob, dtype=dtype, params_dtype=params_dtype)
+        self.dropout_rate = config.attention_probs_dropout_prob
+        self.inference = False
 
         self.query = nn.Linear(
             config.hidden_size,
@@ -155,13 +157,9 @@ class BertSelfAttention(eqx.Module):
             key=v_key,
         )
 
-        attention_config = first_from(
-            attention_config,
-            error_msg="BertSelfAttention requires an attention_config",
-        )
 
         self.sdpa = make_attention_module(
-            config=attention_config,
+            config=config,
             dtype=dtype,
         )
 
@@ -193,13 +191,12 @@ class BertSelfAttention(eqx.Module):
 
 
         attn_heads = self.sdpa(
-            q_heads,
-            k_heads,
-            v_heads,
-            dropout=self.dropout,
-            attention_mask=attention_mask,
-            segment_ids=segment_ids,
-            key=dropout_key,
+            query = q_heads,
+            key = k_heads,
+            value = v_heads,
+            mask=attention_mask,
+            dropout_rate=self.dropout_rate,
+            inference=self.inference,
         )
 
         attn = attn_heads.reshape(*attn_heads.shape[:-2], self.all_head_size)
@@ -258,7 +255,6 @@ class BertAttention(eqx.Module):
     def __init__(
         self,
         config: BertConfig,
-        attention_config: AttentionConfig | None = None,
         *,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
@@ -267,7 +263,6 @@ class BertAttention(eqx.Module):
         self_key, output_key = jax.random.split(key, 2)
         self.self = BertSelfAttention(
             config,
-            attention_config=attention_config,
             dtype=dtype,
             params_dtype=params_dtype,
             key=self_key,
@@ -386,7 +381,6 @@ class BertLayer(eqx.Module):
     def __init__(
         self,
         config: BertConfig,
-        attention_config: AttentionConfig | None = None,
         *,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
@@ -396,7 +390,6 @@ class BertLayer(eqx.Module):
 
         self.attention = BertAttention(
             config,
-            attention_config=attention_config,
             dtype=dtype,
             params_dtype=params_dtype,
             key=attention_key,
@@ -439,7 +432,6 @@ class BertEncoder(eqx.Module):
     def __init__(
         self,
         config: BertConfig,
-        attention_config: AttentionConfig | None = None,
         *,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
@@ -451,7 +443,6 @@ class BertEncoder(eqx.Module):
             self.layer.append(
                 BertLayer(
                     config,
-                    attention_config=attention_config,
                     dtype=dtype,
                     params_dtype=params_dtype,
                     rngs=encoder_keys[i],
@@ -532,14 +523,12 @@ class BertModel(BertModelWeightPlanMixin, eqx.Module, HuggingFaceCompatibleModul
     embeddings: BertEmbeddings
     encoder: BertEncoder
     config: BertConfig | None = field(static=True)
-    attention_config: AttentionConfig = field(
         static=True, default=AttentionConfig(type="eager", is_causal=False)
     )
 
     def __init__(
         self,
         config: BertConfig,
-        attention_config: AttentionConfig | None = None,
         *,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
@@ -547,17 +536,11 @@ class BertModel(BertModelWeightPlanMixin, eqx.Module, HuggingFaceCompatibleModul
         key: PRNGKeyArray,
     ):
         embedding_key, encoder_key = jax.random.split(key, 2)
-        attention_config = first_from(
-            attention_config,
-            self.attention_config,
-            error_msg="BertModel requires an attention_config",
-        )
         self.embeddings = BertEmbeddings(
             config, dtype=dtype, params_dtype=params_dtype, key=embedding_key
         )
         self.encoder = BertEncoder(
             config,
-            attention_config=attention_config,
             dtype=dtype,
             params_dtype=params_dtype,
             key=encoder_key,
@@ -565,7 +548,6 @@ class BertModel(BertModelWeightPlanMixin, eqx.Module, HuggingFaceCompatibleModul
 
         if store_config:
             self.config = config
-            self.attention_config = attention_config
         else:
             self.config = None
 
