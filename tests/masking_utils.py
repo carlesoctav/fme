@@ -20,7 +20,6 @@ def test_make_causal_mask_without_segments(base_inputs):
     mask = make_causal_mask(
         mask_impl="sdpa",
         input_embeds=input_embeds,
-        position_ids=position_ids,
         attention_mask=None,
         segment_ids=None,
     )

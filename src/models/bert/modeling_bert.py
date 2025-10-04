@@ -14,15 +14,15 @@ from transformers.models.bert.configuration_bert import BertConfig
 from ... import nn
 from ..._darray import DArray
 from ..._huggingface import HuggingFaceCompatibleModule
-from ..._utils import first_from
+from ..._masking_utils import make_full_mask
 from ...nn import (
-    AttentionConfig,
     AttentionModule,
     make_attention_module,
 )
 
 
 Pytree = Any
+
 
 class BertEmbeddings(eqx.Module):
     word_embeddings: nn.Embedding
@@ -73,7 +73,9 @@ class BertEmbeddings(eqx.Module):
             params_dtype=params_dtype,
             key=layer_norm_key,
         )
-        self.dropout = nn.Dropout(p=config.hidden_dropout_prob, dtype=dtype, params_dtype=params_dtype)
+        self.dropout = nn.Dropout(
+            p=config.hidden_dropout_prob, dtype=dtype, params_dtype=params_dtype
+        )
 
     def __call__(
         self,
@@ -82,8 +84,8 @@ class BertEmbeddings(eqx.Module):
         token_type_ids: Int[Array, " ..."],
         *,
         key: PRNGKeyArray | None = None,
-    ) -> Float[Array, " ... hidden_size"]:
-        _, d_key = jax.random.split(key, 2) if key is not None else (None, None) 
+    ) -> Float[Array, " ... H"]:
+        _, d_key = jax.random.split(key, 2) if key is not None else (None, None)
 
         inputs_embeddings = self.word_embeddings(input_ids)
         position_embeddings = self.position_embeddings(position_ids)
@@ -103,7 +105,7 @@ class BertSelfAttention(eqx.Module):
     value: nn.Linear
     key: nn.Linear
     dropout_rate: float
-    inference: bool 
+    inference: bool
     sdpa: AttentionModule
     num_attention_heads: int = field(static=True)
     attention_head_size: int = field(static=True)
@@ -127,11 +129,12 @@ class BertSelfAttention(eqx.Module):
 
         self.num_attention_heads = config.num_attention_heads
 
-
         self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
-        self.dropout = nn.Dropout(config.attention_probs_dropout_prob, dtype=dtype, params_dtype=params_dtype)
+        self.dropout = nn.Dropout(
+            config.attention_probs_dropout_prob, dtype=dtype, params_dtype=params_dtype
+        )
         self.dropout_rate = config.attention_probs_dropout_prob
         self.inference = False
 
@@ -157,26 +160,24 @@ class BertSelfAttention(eqx.Module):
             key=v_key,
         )
 
-
         self.sdpa = make_attention_module(
             config=config,
             dtype=dtype,
         )
 
-
     def __call__(
         self,
-        hidden_states: Float[Array, " ... seq_len hidden_size"],
-        attention_mask: Int[Array, " ... seq_len"] | None = None,
-        segment_ids: Int[Array, " ... seq_len"] | None = None,
+        hidden_states: Float[Array, " ... T H"],
+        attention_mask: Int[Array, " ... T"] | None = None,
         *,
         key: PRNGKeyArray | None = None,
-    ) -> Float[Array, " ... seq_len hidden_size"]: 
-
+    ) -> Float[Array, " ... T H"]:
         _, dropout_key = jax.random.split(key, 2) if key is not None else (None, None)
 
-        if hidden_states.ndim ==1:
-            raise ValueError("hidden_states must have (..., seq_len, hidden_size) shape")
+        if hidden_states.ndim == 1:
+            raise ValueError(
+                "hidden_states must have (..., seq_len, hidden_size) shape"
+            )
 
         q = self.query(hidden_states)
         k = self.key(hidden_states)
@@ -189,11 +190,10 @@ class BertSelfAttention(eqx.Module):
         k_heads = _to_heads(k, self.num_attention_heads)
         v_heads = _to_heads(v, self.num_attention_heads)
 
-
         attn_heads = self.sdpa(
-            query = q_heads,
-            key = k_heads,
-            value = v_heads,
+            query=q_heads,
+            key=k_heads,
+            value=v_heads,
             mask=attention_mask,
             dropout_rate=self.dropout_rate,
             inference=self.inference,
@@ -216,7 +216,7 @@ class BertSelfOutput(eqx.Module):
         params_dtype: jnp.dtype = jnp.float32,
         key: PRNGKeyArray,
     ):
-        dense_key, layer_key = jax.random.split(key, 2) 
+        dense_key, layer_key = jax.random.split(key, 2)
         self.dense = nn.Linear(
             config.hidden_size,
             config.hidden_size,
@@ -231,12 +231,14 @@ class BertSelfOutput(eqx.Module):
             params_dtype=params_dtype,
             key=layer_key,
         )
-        self.dropout = nn.Dropout(config.hidden_dropout_prob, dtype=dtype, params_dtype=params_dtype)
+        self.dropout = nn.Dropout(
+            config.hidden_dropout_prob, dtype=dtype, params_dtype=params_dtype
+        )
 
     def __call__(
         self,
-        hidden_states: Float[Array, "seq_len hidden_size"],
-        input_tensor: Float[Array, "seq_len hidden_size"],
+        hidden_states: Float[Array, "T H"],
+        input_tensor: Float[Array, "T H"],
         *,
         key: PRNGKeyArray | None = None,
     ):
@@ -274,9 +276,8 @@ class BertAttention(eqx.Module):
 
     def __call__(
         self,
-        hidden_states: Float[Array, "seq_len hidden_size"],
-        attention_mask: Int[Array, " seq_len"] | None = None,
-        segment_ids: Int[Array, " seq_len"] | None = None,
+        hidden_states: Float[Array, "T H"],
+        attention_mask: Int[Array, " T"] | None = None,
         /,
         *,
         key: PRNGKeyArray | None = None,
@@ -287,9 +288,8 @@ class BertAttention(eqx.Module):
         self_output = self.self(
             hidden_states,
             attention_mask,
-            segment_ids,
             key=self_key,
-        ) 
+        )
         attention_output = self.output(self_output, hidden_states, key=output_key)
         return attention_output
 
@@ -317,10 +317,10 @@ class BertIntermediate(eqx.Module):
 
     def __call__(
         self,
-        hidden_states: Float[Array, "seq_len hidden_size"],
+        hidden_states: Float[Array, "T H"],
         *,
         key: PRNGKeyArray | None = None,
-    ) -> Float[Array, "seq_len intermediate_size"]:
+    ) -> Float[Array, "T intermediate_size"]:
         hidden_states = self.dense(hidden_states)
         hidden_states = jax.nn.gelu(hidden_states)
 
@@ -355,15 +355,17 @@ class BertOutput(eqx.Module):
             params_dtype=params_dtype,
             key=layer_norm_key,
         )
-        self.dropout = nn.Dropout(config.hidden_dropout_prob, dtype=dtype, params_dtype=params_dtype)
+        self.dropout = nn.Dropout(
+            config.hidden_dropout_prob, dtype=dtype, params_dtype=params_dtype
+        )
 
     def __call__(
         self,
-        hidden_states: Float[Array, "seq_len intermediate_size"],
-        input_tensor: Float[Array, "seq_len hidden_size"],
+        hidden_states: Float[Array, "T intermediate_size"],
+        input_tensor: Float[Array, "T H"],
         *,
         key: PRNGKeyArray | None = None,
-    ) -> Float[Array, "seq_len hidden_size"]:
+    ) -> Float[Array, "T H"]:
         _, d_key = jax.random.split(key, 2) if key is not None else (None, None)
         hidden_states = self.dense(hidden_states)
 
@@ -403,9 +405,8 @@ class BertLayer(eqx.Module):
 
     def __call__(
         self,
-        hidden_states: Float[Array, "seq_len hidden_size"],
-        attention_mask: Int[Array, " seq_len"] | None = None,
-        segment_ids: Int[Array, " seq_len"] | None = None,
+        hidden_states: Float[Array, "T H"],
+        attention_mask: Int[Array, " T"] | None = None,
         *,
         key: PRNGKeyArray | None = None,
     ):
@@ -416,7 +417,6 @@ class BertLayer(eqx.Module):
         attention_output = self.attention(
             hidden_states,
             attention_mask,
-            segment_ids,
             key=atention_key,
         )
         intermediate_output = self.intermediate(attention_output, key=intermediate_key)
@@ -451,19 +451,21 @@ class BertEncoder(eqx.Module):
 
     def __call__(
         self,
-        hidden_states: Float[Array, "seq_len hidden_size"],
-        attention_mask: Int[Array, " seq_len"] | None = None,
-        segment_ids: Int[Array, " seq_len"] | None = None,
+        hidden_states: Float[Array, "T H"],
+        attention_mask: Int[Array, " T"] | None = None,
         *,
         key: PRNGKeyArray | None = None,
-    ) -> Float[Array, "seq_len hidden_size"]:
-        layer_key = jax.random.split(key, len(self.layer)) if key is not None else [None] * len(self.layer)
+    ) -> Float[Array, "T H"]:
+        layer_key = (
+            jax.random.split(key, len(self.layer))
+            if key is not None
+            else [None] * len(self.layer)
+        )
         for i, layer_module in enumerate(self.layer):
             hidden_states = layer_module(
                 hidden_states,
                 attention_mask,
-                segment_ids,
-                key=layer_key[i], 
+                key=layer_key[i],
             )
         return hidden_states
 
@@ -490,9 +492,17 @@ class BertModelWeightPlanMixin:
                 b_shape = (module.out_features,)
                 new_bias = zeros_init(bkey, b_shape, dtype=w_dtype)
             new_mod = module
-            new_mod = eqx.tree_at(lambda m: m.weight, new_mod, DArray(value=new_w, pspec=module.weight.pspec))
+            new_mod = eqx.tree_at(
+                lambda m: m.weight,
+                new_mod,
+                DArray(value=new_w, pspec=module.weight.pspec),
+            )
             if module.use_bias and module.bias is not None:
-                new_mod = eqx.tree_at(lambda m: m.bias, new_mod, DArray(value=new_bias, pspec=module.bias.pspec))
+                new_mod = eqx.tree_at(
+                    lambda m: m.bias,
+                    new_mod,
+                    DArray(value=new_bias, pspec=module.bias.pspec),
+                )
             return new_mod
 
         if isinstance(module, nn.Embedding):
@@ -500,8 +510,14 @@ class BertModelWeightPlanMixin:
             w_dtype = module.params_dtype
             new_w = normal(std)(key, w_shape, dtype=w_dtype)
             if pad_idx is not None and 0 <= int(pad_idx) < module.num_embeddings:
-                new_w = new_w.at[int(pad_idx)].set(jnp.zeros((module.embedding_dim,), dtype=w_dtype))
-            return eqx.tree_at(lambda m: m.weight, module, DArray(value=new_w, pspec=module.weight.pspec))
+                new_w = new_w.at[int(pad_idx)].set(
+                    jnp.zeros((module.embedding_dim,), dtype=w_dtype)
+                )
+            return eqx.tree_at(
+                lambda m: m.weight,
+                module,
+                DArray(value=new_w, pspec=module.weight.pspec),
+            )
 
         if isinstance(module, nn.LayerNorm):
             split_keys = jax.random.split(key, 2)
@@ -509,22 +525,34 @@ class BertModelWeightPlanMixin:
             w_shape = module.normalized_shape
             w_dtype = module.params_dtype
             new_w = ones_init(w_key, w_shape, dtype=w_dtype)
-            new_mod = eqx.tree_at(lambda m: m.weight, module, DArray(value=new_w, pspec=module.weight.pspec if module.weight is not None else None))
+            new_mod = eqx.tree_at(
+                lambda m: m.weight,
+                module,
+                DArray(
+                    value=new_w,
+                    pspec=module.weight.pspec if module.weight is not None else None,
+                ),
+            )
             if module.bias is not None:
                 new_b = zeros_init(b_key, w_shape, dtype=w_dtype)
-                new_mod = eqx.tree_at(lambda m: m.bias, new_mod, DArray(value=new_b, pspec=module.bias.pspec))
+                new_mod = eqx.tree_at(
+                    lambda m: m.bias,
+                    new_mod,
+                    DArray(value=new_b, pspec=module.bias.pspec),
+                )
             return new_mod
 
         return module
 
 
-
-class BertModel(BertModelWeightPlanMixin, eqx.Module, HuggingFaceCompatibleModule[transformers.BertModel]):
+class BertModel(
+    BertModelWeightPlanMixin,
+    eqx.Module,
+    HuggingFaceCompatibleModule[transformers.BertModel],
+):
     embeddings: BertEmbeddings
     encoder: BertEncoder
     config: BertConfig | None = field(static=True)
-        static=True, default=AttentionConfig(type="eager", is_causal=False)
-    )
 
     def __init__(
         self,
@@ -567,10 +595,17 @@ class BertModel(BertModelWeightPlanMixin, eqx.Module, HuggingFaceCompatibleModul
         hidden_states = self.embeddings(
             input_ids, position_ids, token_type_ids, key=embed_key
         )
-        hidden_states = self.encoder(
+
+        attention_mask = make_full_mask(
+            self.config._attn_implementation,
             hidden_states,
             attention_mask,
             segment_ids,
+        )
+
+        hidden_states = self.encoder(
+            hidden_states,
+            attention_mask,
             key=encoder_key,
         )
 
@@ -607,10 +642,10 @@ class BertPredictionHeadTransform(eqx.Module):
 
     def __call__(
         self,
-        hidden_states: Float[Array, "seq_len hidden_size"],
+        hidden_states: Float[Array, "T H"],
         *,
         key: PRNGKeyArray | None = None,
-    ) -> Float[Array, "seq_len hidden_size"]:
+    ) -> Float[Array, "T H"]:
         hidden_states = self.dense(hidden_states)
         hidden_states = jax.nn.gelu(hidden_states)
         hidden_states = self.LayerNorm(hidden_states)
@@ -636,11 +671,11 @@ class BertLMPredictionHead(eqx.Module):
 
     def __call__(
         self,
-        hidden_states: Float[Array, "seq_len hidden_size"],
-        embedding_weight: Float[Array, "vocab_size hidden_size"],
+        hidden_states: Float[Array, "T H"],
+        embedding_weight: Float[Array, "vocab_size H"],
         *,
         key: PRNGKeyArray | None = None,
-    ) -> Float[Array, "seq_len vocab_size"]:
+    ) -> Float[Array, "T vocab_size"]:
         hs = self.transform(hidden_states, key=key)
         logits = jnp.einsum("...d, vd->...v", hs, embedding_weight)
         logits = logits + self.bias
@@ -664,15 +699,19 @@ class BertOnlyMLMHead(eqx.Module):
 
     def __call__(
         self,
-        sequence_output: Float[Array, "seq_len hidden_size"],
-        embedding_weight: Float[Array, "vocab_size hidden_size"],
+        sequence_output: Float[Array, "T H"],
+        embedding_weight: Float[Array, "vocab_size H"],
         *,
         key: PRNGKeyArray | None = None,
-    ) -> Float[Array, "seq_len vocab_size"]:
+    ) -> Float[Array, "T vocab_size"]:
         return self.predictions(sequence_output, embedding_weight, key=key)
 
 
-class BertForMaskedLM(eqx.Module, BertModelWeightPlanMixin, HuggingFaceCompatibleModule[transformers.BertForMaskedLM]):
+class BertForMaskedLM(
+    eqx.Module,
+    BertModelWeightPlanMixin,
+    HuggingFaceCompatibleModule[transformers.BertForMaskedLM],
+):
     bert: BertModel
     cls: BertOnlyMLMHead
     config: BertConfig | None = eqx.field(static=True)
@@ -688,7 +727,11 @@ class BertForMaskedLM(eqx.Module, BertModelWeightPlanMixin, HuggingFaceCompatibl
     ):
         bert_key, cls_key = jax.random.split(key, 2)
         self.bert = BertModel(
-            config, dtype=dtype, params_dtype=params_dtype, store_config=False, key=bert_key
+            config,
+            dtype=dtype,
+            params_dtype=params_dtype,
+            store_config=False,
+            key=bert_key,
         )
         self.cls = BertOnlyMLMHead(
             config, dtype=dtype, params_dtype=params_dtype, key=cls_key
@@ -701,12 +744,12 @@ class BertForMaskedLM(eqx.Module, BertModelWeightPlanMixin, HuggingFaceCompatibl
 
     def __call__(
         self,
-        input_ids: Int[Array, " ... seq_len"],
-        position_ids: Int[Array, "... seq_len"],
-        token_type_ids: Int[Array, "... seq_len"],
+        input_ids: Int[Array, " ... T"],
+        position_ids: Int[Array, "... T"],
+        token_type_ids: Int[Array, "... T"],
         *,
-        attention_mask: Int[Array, "... seq_len"] | None = None,
-        segment_ids: Int[Array, "... seq_len"] | None = None,
+        attention_mask: Int[Array, "... T"] | None = None,
+        segment_ids: Int[Array, "... T"] | None = None,
         key: PRNGKeyArray | None = None,
     ):
         bert_key, cls_key = (
@@ -728,7 +771,7 @@ class BertForMaskedLM(eqx.Module, BertModelWeightPlanMixin, HuggingFaceCompatibl
         return logits
 
     @classmethod
-    def normalize_hf_key_for_eqx(cls, key: str) -> str | None: 
+    def normalize_hf_key_for_eqx(cls, key: str) -> str | None:
         if key.startswith("cls.predictions.decoder.weight"):
             return None
         return key

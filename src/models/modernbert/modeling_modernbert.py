@@ -20,9 +20,8 @@ from ..._darray import DArray
 from ..._huggingface import HuggingFaceCompatibleModule
 from ..._utils import first_from
 from ...nn import (
-    AttentionConfig,
     AttentionModule,
-    dot_product_attention,
+    eager_dot_product_attention,
     make_attention_module,
     make_rope_init_fn,
 )
@@ -30,7 +29,6 @@ from ...nn import (
 
 class ModernBertLocalAttentionConfig(AttentionConfig):
     window_size: tuple[int, int] = field(static=True)
-
 
 
 class ModernBertLocalAttention(AttentionModule):
@@ -42,28 +40,31 @@ class ModernBertLocalAttention(AttentionModule):
 
     def __call__(
         self,
-        q: Float[Array, "*B T N H"],
-        k: Float[Array, "*B S K H"],
-        v: Float[Array, "*B S K H"],
+        q: Float[Array, "B T N H"],
+        k: Float[Array, "B S K H"],
+        v: Float[Array, "B S K H"],
         dropout: Callable[[Array, PRNGKeyArray | None], Array],
-        attention_mask: Int[Array, "*B T N S"] | Bool[Array, "*B T"] | None = None,
-        segment_ids: Int[Array, "*B T"] | None = None,
+        attention_mask: Int[Array, "B T N S"] | Bool[Array, "B T"] | None = None,
+        segment_ids: Int[Array, "B T"] | None = None,
         *,
         key: PRNGKeyArray | None = None,
-    ) -> Float[Array, "*B T N H"]:
-
+    ) -> Float[Array, "B T N H"]:
         *B, T, N, _ = q.shape
         *_, S, K, _ = k.shape
         B = tuple(B)
 
         if segment_ids is not None:
-            raise NotImplementedError("Sequence packing with local attention is not implemented.")
+            raise NotImplementedError(
+                "Sequence packing with local attention is not implemented."
+            )
 
         if k.shape[:-3] != B or v.shape[:-3] != B:
             raise ValueError("Query, key, and value must share batch dimensions")
 
         if v.shape[-3] != S or v.shape[-2] != K:
-            raise ValueError("Key and value must share their sequence and head dimensions")
+            raise ValueError(
+                "Key and value must share their sequence and head dimensions"
+            )
 
         if k.shape[-1] != q.shape[-1] or v.shape[-1] != q.shape[-1]:
             raise ValueError("Query, key, and value must share the same head dimension")
@@ -77,7 +78,9 @@ class ModernBertLocalAttention(AttentionModule):
 
         window_size = getattr(self.attention_config, "window_size", None)
         if window_size is None:
-            raise ValueError("Local attention requires window_size to be set on the attention config")
+            raise ValueError(
+                "Local attention requires window_size to be set on the attention config"
+            )
 
         mask_target_shape = B + (T, N, S)
         kv_mask_target_shape = B + (T, K, S)
@@ -100,10 +103,14 @@ class ModernBertLocalAttention(AttentionModule):
                 expanded = jnp.repeat(attn_mask, group_size, axis=-2)
                 mask = expanded
             elif attn_mask.shape == expected_dense_shape:
-                expanded = jnp.broadcast_to(attn_mask[..., :, None, :], mask_target_shape)
+                expanded = jnp.broadcast_to(
+                    attn_mask[..., :, None, :], mask_target_shape
+                )
                 mask = expanded
             elif attn_mask.shape == expected_query_shape:
-                expanded = jnp.broadcast_to(attn_mask[..., :, None, None], mask_target_shape)
+                expanded = jnp.broadcast_to(
+                    attn_mask[..., :, None, None], mask_target_shape
+                )
                 mask = expanded
             else:
                 raise ValueError(
@@ -114,7 +121,7 @@ class ModernBertLocalAttention(AttentionModule):
         else:
             mask = window_mask
 
-        return dot_product_attention(
+        return eager_dot_product_attention(
             q,
             k,
             v,
@@ -130,7 +137,7 @@ class ModernBertLocalAttention(AttentionModule):
         batch_shape: tuple[int, ...],
         num_heads: int,
         window_size: tuple[int, int] | int,
-    ) -> Bool[Array, "*B T N S"]:
+    ) -> Bool[Array, "B T N S"]:
         """Return a boolean mask that keeps attention within a sliding window."""
 
         if isinstance(window_size, int):
@@ -149,10 +156,14 @@ class ModernBertLocalAttention(AttentionModule):
         k_positions = jnp.arange(key_length)[None, :]
         offset = q_positions - k_positions
 
-        within_window = (offset >= -left) & (offset <= right) # (T, S)
-        within_window = jnp.broadcast_to(within_window, batch_shape + (query_length, key_length)) # (*B, T, S)
-        within_window = jnp.expand_dims(within_window, axis=-2) # (*B, T, 1, S)
-        within_window = jnp.broadcast_to(within_window, batch_shape + (query_length, num_heads, key_length)) # (*B, T, N, S) 
+        within_window = (offset >= -left) & (offset <= right)  # (T, S)
+        within_window = jnp.broadcast_to(
+            within_window, batch_shape + (query_length, key_length)
+        )  # (*B, T, S)
+        within_window = jnp.expand_dims(within_window, axis=-2)  # (*B, T, 1, S)
+        within_window = jnp.broadcast_to(
+            within_window, batch_shape + (query_length, num_heads, key_length)
+        )  # (*B, T, N, S)
 
         return within_window
 
@@ -172,10 +183,11 @@ class ModernBertRotaryEmbedding(eqx.Module):
         param_dtype: jnp.dtype = jnp.float32,
         key: PRNGKeyArray = None,
     ):
-
         self.rope_type = "default"
         if isinstance(getattr(config, "rope_scaling", None), dict):
-            self.rope_type = config.rope_scaling.get("rope_type", config.rope_scaling.get("type", "default"))
+            self.rope_type = config.rope_scaling.get(
+                "rope_type", config.rope_scaling.get("type", "default")
+            )
 
         self.dtype = dtype
         self.rope_init_fn = make_rope_init_fn(self.rope_type)
@@ -183,46 +195,56 @@ class ModernBertRotaryEmbedding(eqx.Module):
 
         self.param_dtype = param_dtype
         self.dtype = dtype
-        self.rtheta, self.attention_scaling = self.rope_init_fn(config, dtype=self.dtype)
-
+        self.rtheta, self.attention_scaling = self.rope_init_fn(
+            config, dtype=self.dtype
+        )
 
     def __call__(
         self,
-        hidden_states: Float[Array, "*B T N H"],
-        position_ids: Int[Array, "*B T"] | None = None,
-        segment_ids: Int[Array, "*B T"] | None = None,
-    ) -> Float[Array, "*B T N H"]:
-
+        hidden_states: Float[Array, "B T N H"],
+        position_ids: Int[Array, "B T"] | None = None,
+        segment_ids: Int[Array, "B T"] | None = None,
+    ) -> Float[Array, "B T N H"]:
         *B, T, N, H = hidden_states.shape
         B = tuple(B)
 
         if segment_ids is not None:
             raise NotImplementedError("Sequence packing with RoPE is not implemented.")
 
-
         expected_pos_shape = B + (T,)
 
         if position_ids is None:
             position_ids = jnp.arange(T, dtype=jnp.int32)
-            position_ids = position_ids[None, :] #(1, T)
-            position_ids = jnp.broadcast_to(position_ids, expected_pos_shape) #(*B, T)
+            position_ids = position_ids[None, :]  # (1, T)
+            position_ids = jnp.broadcast_to(position_ids, expected_pos_shape)  # (*B, T)
         else:
             if position_ids.shape != expected_pos_shape:
-                raise ValueError(f"position_ids must have shape {expected_pos_shape}, but got {position_ids.shape}")
-            
+                raise ValueError(
+                    f"position_ids must have shape {expected_pos_shape}, but got {position_ids.shape}"
+                )
 
         # rtheta (max_seq, halfdim)
-        rtheta = jnp.take(self.rtheta, position_ids, axis = 0) #(*B, T, halfdim) 
-        rtheta = rtheta[..., None, :]   #(*B, T, 1, halfdim)
+        rtheta = jnp.take(self.rtheta, position_ids, axis=0)  # (*B, T, halfdim)
+        rtheta = rtheta[..., None, :]  # (*B, T, 1, halfdim)
 
-        tensor_pairs = hidden_states.reshape((B, T, N, H//2, 2)) #(*B, T, N, halfdim, 2)
-        tensor_complex = tensor_pairs[..., 0] + 1j * tensor_pairs[..., 1] #(*B, T, N, halfdim) but complex
-        rotated = tensor_complex * rtheta # (*B, T, N, halfdim)  (*B, T, 1, halfdim) -> (*B, T, N, halfdim) 
+        tensor_pairs = hidden_states.reshape(
+            (B, T, N, H // 2, 2)
+        )  # (*B, T, N, halfdim, 2)
+        tensor_complex = (
+            tensor_pairs[..., 0] + 1j * tensor_pairs[..., 1]
+        )  # (*B, T, N, halfdim) but complex
+        rotated = (
+            tensor_complex * rtheta
+        )  # (*B, T, N, halfdim)  (*B, T, 1, halfdim) -> (*B, T, N, halfdim)
         ## (a+ ib) (c + id) = (ac - bd) + i(ad + bc) here c = cos(t*angle), d = sin(t*angle)
 
-        rotated = jnp.stack([jnp.real(rotated), jnp.imag(rotated)], axis=-1) #(*B, T, N, halfdim, 2)
-        rotated = rotated.reshape(hidden_states.shape) * self.attention_scaling #(*B, T, N, H)
-        return rotated 
+        rotated = jnp.stack(
+            [jnp.real(rotated), jnp.imag(rotated)], axis=-1
+        )  # (*B, T, N, halfdim, 2)
+        rotated = (
+            rotated.reshape(hidden_states.shape) * self.attention_scaling
+        )  # (*B, T, N, H)
+        return rotated
 
 
 def _get_activation(name: str) -> Callable[[Array], Array]:
@@ -295,8 +317,12 @@ class ModernBertAttention(eqx.Module):
             key=out_key,
         )
 
-        self.attn_drop = nn.Dropout(p=config.attention_dropout, dtype=dtype, params_dtype=params_dtype)
-        self.out_drop = nn.Dropout(p=config.attention_dropout, dtype=dtype, params_dtype=params_dtype)
+        self.attn_drop = nn.Dropout(
+            p=config.attention_dropout, dtype=dtype, params_dtype=params_dtype
+        )
+        self.out_drop = nn.Dropout(
+            p=config.attention_dropout, dtype=dtype, params_dtype=params_dtype
+        )
 
         attention_config = first_from(
             attention_config,
@@ -338,13 +364,16 @@ class ModernBertAttention(eqx.Module):
 
     def __call__(
         self,
-        hidden_states: Float[Array, "*B T D"],
-        attention_mask: Int[Array, "*B T"] | Float[Array, "*B T"] | Bool[Array, "*B T"] | None = None,
-        segment_ids: Int[Array, "*B T"] | None = None,
-        position_ids: Int[Array, "*B T"] | None = None,
+        hidden_states: Float[Array, "B T H"],
+        attention_mask: Int[Array, "B T"]
+        | Float[Array, "B T"]
+        | Bool[Array, "B T"]
+        | None = None,
+        segment_ids: Int[Array, "B T"] | None = None,
+        position_ids: Int[Array, "B T"] | None = None,
         *,
         key: PRNGKeyArray | None = None,
-    ) -> Float[Array, "*B T D"]:
+    ) -> Float[Array, "B T H"]:
         if hidden_states.ndim < 2:
             raise ValueError("hidden_states must be (..., seq_len, hidden_size)")
 
@@ -356,7 +385,9 @@ class ModernBertAttention(eqx.Module):
         seq_len = hidden_states.shape[-2]
 
         qkv = self.Wqkv(hidden_states)
-        qkv = qkv.reshape(*batch_shape, seq_len, 3, self.num_attention_heads, self.attention_head_size)
+        qkv = qkv.reshape(
+            *batch_shape, seq_len, 3, self.num_attention_heads, self.attention_head_size
+        )
         q, k, v = jnp.split(qkv, 3, axis=-3)
         q = jnp.squeeze(q, axis=-3)
         k = jnp.squeeze(k, axis=-3)
@@ -420,14 +451,16 @@ class ModernBertMLP(eqx.Module):
             key=wo_key,
         )
         self.act = _get_activation(config.hidden_activation)
-        self.drop = nn.Dropout(p=config.mlp_dropout, dtype=dtype, params_dtype=params_dtype)
+        self.drop = nn.Dropout(
+            p=config.mlp_dropout, dtype=dtype, params_dtype=params_dtype
+        )
 
     def __call__(
         self,
-        hidden_states: Float[Array, "*B T D"],
+        hidden_states: Float[Array, "B T H"],
         *,
         key: PRNGKeyArray | None = None,
-    ) -> Float[Array, "*B T D"]:
+    ) -> Float[Array, "B T H"]:
         wi_out = self.Wi(hidden_states)
         input_part, gate = jnp.split(wi_out, 2, axis=-1)
         activated = self.act(input_part)
@@ -489,13 +522,16 @@ class ModernBertEncoderLayer(eqx.Module):
 
     def __call__(
         self,
-        hidden_states: Float[Array, "*B T D"],
-        attention_mask: Int[Array, "*B T"] | Float[Array, "*B T"] | Bool[Array, "*B T"] | None = None,
-        segment_ids: Int[Array, "*B T"] | None = None,
-        position_ids: Int[Array, "*B T"] | None = None,
+        hidden_states: Float[Array, "B T H"],
+        attention_mask: Int[Array, "B T"]
+        | Float[Array, "B T"]
+        | Bool[Array, "B T"]
+        | None = None,
+        segment_ids: Int[Array, "B T"] | None = None,
+        position_ids: Int[Array, "B T"] | None = None,
         *,
         key: PRNGKeyArray | None = None,
-    ) -> Float[Array, "*B T D"]:
+    ) -> Float[Array, "B T H"]:
         attn_key, mlp_key = (
             jax.random.split(key, 2) if key is not None else (None, None)
         )
@@ -548,13 +584,16 @@ class ModernBertEncoder(eqx.Module):
 
     def __call__(
         self,
-        hidden_states: Float[Array, "*B T D"],
-        attention_mask: Int[Array, "*B T"] | Float[Array, "*B T"] | Bool[Array, "*B T"] | None = None,
-        segment_ids: Int[Array, "*B T"] | None = None,
-        position_ids: Int[Array, "*B T"] | None = None,
+        hidden_states: Float[Array, "B T H"],
+        attention_mask: Int[Array, "B T"]
+        | Float[Array, "B T"]
+        | Bool[Array, "B T"]
+        | None = None,
+        segment_ids: Int[Array, "B T"] | None = None,
+        position_ids: Int[Array, "B T"] | None = None,
         *,
         key: PRNGKeyArray | None = None,
-    ) -> Float[Array, "*B T D"]:
+    ) -> Float[Array, "B T H"]:
         if key is not None:
             layer_keys = jax.random.split(key, len(self.layers))
         else:
@@ -601,15 +640,17 @@ class ModernBertEmbeddings(eqx.Module):
             params_dtype=params_dtype,
             key=norm_key,
         )
-        self.drop = nn.Dropout(p=config.embedding_dropout, dtype=dtype, params_dtype=params_dtype)
+        self.drop = nn.Dropout(
+            p=config.embedding_dropout, dtype=dtype, params_dtype=params_dtype
+        )
 
     def __call__(
         self,
-        input_ids: Int[Array, "*B T"] | None = None,
-        inputs_embeds: Float[Array, "*B T D"] | None = None,
+        input_ids: Int[Array, "B T"] | None = None,
+        inputs_embeds: Float[Array, "B T H"] | None = None,
         *,
         key: PRNGKeyArray | None = None,
-    ) -> Float[Array, "*B T D"]:
+    ) -> Float[Array, "B T H"]:
         if inputs_embeds is not None:
             hidden_states = inputs_embeds
         elif input_ids is not None:
@@ -651,7 +692,11 @@ class ModernBertModelWeightPlanMixin:
             return new_module
 
         if isinstance(module, nn.Embedding):
-            new_w = normal(std)(key, (module.num_embeddings, module.embedding_dim), dtype=module.params_dtype)
+            new_w = normal(std)(
+                key,
+                (module.num_embeddings, module.embedding_dim),
+                dtype=module.params_dtype,
+            )
             return eqx.tree_at(
                 lambda m: m.weight,
                 module,
@@ -666,7 +711,10 @@ class ModernBertModelWeightPlanMixin:
             updated = eqx.tree_at(
                 lambda m: m.weight,
                 module,
-                DArray(value=new_w, pspec=module.weight.pspec if module.weight is not None else None),
+                DArray(
+                    value=new_w,
+                    pspec=module.weight.pspec if module.weight is not None else None,
+                ),
             )
             if module.bias is not None:
                 new_b = zeros_init(b_key, w_shape, dtype=w_dtype)
@@ -680,7 +728,7 @@ class ModernBertModelWeightPlanMixin:
         if isinstance(module, ModernBertRotaryEmbedding):
             rtheta, attention_scaling = module.rope_init_fn(cfg, dtype=module.dtype)
             updated = eqx.tree_at(
-                lambda m:[m.rtheta, m.attention_scaling],
+                lambda m: [m.rtheta, m.attention_scaling],
                 module,
                 [rtheta, attention_scaling],
             )
@@ -747,14 +795,17 @@ class ModernBertModel(
 
     def __call__(
         self,
-        input_ids: Int[Array, "*B T"] | None = None,
-        attention_mask: Int[Array, "*B T"] | Float[Array, "*B T"] | Bool[Array, "*B T"] | None = None,
-        segment_ids: Int[Array, "*B T"] | None = None,
-        position_ids: Int[Array, "*B T"] | None = None,
-        inputs_embeds: Float[Array, "*B T D"] | None = None,
+        input_ids: Int[Array, "B T"] | None = None,
+        attention_mask: Int[Array, "B T"]
+        | Float[Array, "B T"]
+        | Bool[Array, "B T"]
+        | None = None,
+        segment_ids: Int[Array, "B T"] | None = None,
+        position_ids: Int[Array, "B T"] | None = None,
+        inputs_embeds: Float[Array, "B T H"] | None = None,
         *,
         key: PRNGKeyArray | None = None,
-    ) -> Float[Array, "*B T D"]:
+    ) -> Float[Array, "B T H"]:
         embed_key, encoder_key = (
             jax.random.split(key, 2) if key is not None else (None, None)
         )
@@ -809,10 +860,10 @@ class ModernBertPredictionHead(eqx.Module):
 
     def __call__(
         self,
-        hidden_states: Float[Array, "*B T D"],
+        hidden_states: Float[Array, "B T H"],
         *,
         key: PRNGKeyArray | None = None,
-    ) -> Float[Array, "*B T D"]:
+    ) -> Float[Array, "B T H"]:
         out = self.dense(hidden_states)
         out = self.act(out)
         out = self.norm(out)
@@ -869,14 +920,17 @@ class ModernBertForMaskedLM(
 
     def __call__(
         self,
-        input_ids: Int[Array, "*B T"] | None = None,
-        attention_mask: Int[Array, "*B T"] | Float[Array, "*B T"] | Bool[Array, "*B T"] | None = None,
-        segment_ids: Int[Array, "*B T"] | None = None,
-        position_ids: Int[Array, "*B T"] | None = None,
-        inputs_embeds: Float[Array, "*B T D"] | None = None,
+        input_ids: Int[Array, "B T"] | None = None,
+        attention_mask: Int[Array, "B T"]
+        | Float[Array, "B T"]
+        | Bool[Array, "B T"]
+        | None = None,
+        segment_ids: Int[Array, "B T"] | None = None,
+        position_ids: Int[Array, "B T"] | None = None,
+        inputs_embeds: Float[Array, "B T H"] | None = None,
         *,
         key: PRNGKeyArray | None = None,
-    ) -> Float[Array, "*B T V"]:
+    ) -> Float[Array, "B T V"]:
         model_key, head_key = (
             jax.random.split(key, 2) if key is not None else (None, None)
         )
@@ -891,7 +945,6 @@ class ModernBertForMaskedLM(
         hidden_states = self.head(hidden_states, key=head_key)
         logits = self.decoder(hidden_states)
         return logits
-
 
 
 __all__ = [

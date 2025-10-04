@@ -46,6 +46,11 @@ def first_from(*args: A | None, error_msg: str) -> A:
     raise ValueError(error_msg)
 
 
+
+
+
+
+
 def rank_zero(fn: tp.Callable[..., A]) -> tp.Callable[..., A | None]:
     """Decorate ``fn`` so it executes only on JAX process rank 0."""
 
