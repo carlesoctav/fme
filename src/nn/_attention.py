@@ -2,6 +2,7 @@ from collections.abc import Callable
 from typing import Any, Literal
 
 import equinox as eqx
+from equinox import field
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, ArrayLike, Bool, Float, PRNGKeyArray
@@ -66,15 +67,10 @@ def eager_dot_product_attention(
     return attn
 
 
-
 class AttentionModule(eqx.Module):
     attn_fn: Callable
-    _attn_implementation: str = eqx.field(
-        static=True, default="eager"
-    )  # same as config._attn_implementation
-    implementation: str = eqx.field(
-        static=True, default="xla"
-    )  # this one is for tokamax
+    _attn_implementation: str = eqx.field(static=True, default="eager")
+    implementation: str = eqx.field(static=True, default="xla")
 
     def __call__(
         self,
@@ -94,7 +90,7 @@ class AttentionModule(eqx.Module):
         raise NotImplementedError
 
 
-class SDPA(AttentionModule):
+class JaxNNAttentionModule(AttentionModule):
     def __init__(
         self,
         config: PretrainedConfig | None = None,
@@ -179,7 +175,7 @@ def make_attention_module(
         config.implementation if hasattr(config, "implementation") else "xla"
     )
     if config._attn_implementation == "sdpa":
-        return SDPA(config=config, dtype=dtype, implementation=implementation)
+        return JaxNNAttentionModule(config=config, dtype=dtype, implementation=implementation)
     if config._attn_implementation == "eager":
         return EagerAttentionModule(
             config=config, dtype=dtype, implementation=implementation

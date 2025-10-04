@@ -132,9 +132,6 @@ class BertSelfAttention(eqx.Module):
         self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
-        self.dropout = nn.Dropout(
-            config.attention_probs_dropout_prob, dtype=dtype, params_dtype=params_dtype
-        )
         self.dropout_rate = config.attention_probs_dropout_prob
         self.inference = False
 
@@ -190,11 +187,24 @@ class BertSelfAttention(eqx.Module):
         k_heads = _to_heads(k, self.num_attention_heads)
         v_heads = _to_heads(v, self.num_attention_heads)
 
+        mask_4d = attention_mask
+        if attention_mask is not None and attention_mask.ndim == 3:
+            mask_4d = jnp.expand_dims(attention_mask, axis=-2)
+            mask_4d = jnp.broadcast_to(
+                mask_4d,
+                (
+                    *mask_4d.shape[:-3],
+                    mask_4d.shape[-3],
+                    self.num_attention_heads,
+                    mask_4d.shape[-1],
+                ),
+            )
+
         attn_heads = self.sdpa(
             query=q_heads,
             key=k_heads,
             value=v_heads,
-            mask=attention_mask,
+            mask=mask_4d,
             dropout_rate=self.dropout_rate,
             inference=self.inference,
         )

@@ -1,21 +1,33 @@
 from ._darray import DArray
 from ._filter import apply_transforms, iter_module
-from ._huggingface import HuggingFaceCompatibleModule
-from ._training import (
-    SufficientMetric,
-    Eval,
-    Optimizer,
-    init_module,
-    make_eval_step,
-    make_train_step,
-    make_module_opt,
-    train_loop,
-)
-from .callbacks import (
-    Callback,
-    JaxProfiler,
-    ModelCheckpoint,
-)
+
+try:
+    from ._huggingface import HuggingFaceCompatibleModule
+except ImportError:
+    HuggingFaceCompatibleModule = None
+
+try:
+    from ._training import (
+        SufficientMetric,
+        Eval,
+        Optimizer,
+        init_module,
+        make_eval_step,
+        make_train_step,
+        make_module_opt,
+        train_loop,
+    )
+except ImportError:
+    pass
+
+try:
+    from .callbacks import (
+        Callback,
+        JaxProfiler,
+        ModelCheckpoint,
+    )
+except ImportError:
+    pass
 
 __all__ = [
     "HuggingFaceCompatibleModule",

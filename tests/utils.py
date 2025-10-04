@@ -21,22 +21,34 @@ def update_module(module, getter: Callable[[Any], Any], new_value: Any):
 
 
 def update_linear(module, torch_linear):
-    module = update_module(module, lambda m: m.weight.value, _to_jax_array(torch_linear.weight))
-    has_bias = getattr(module, "use_bias", False) and getattr(module, "bias", None) is not None
+    module = update_module(
+        module, lambda m: m.weight.value, _to_jax_array(torch_linear.weight)
+    )
+    has_bias = (
+        getattr(module, "use_bias", False) and getattr(module, "bias", None) is not None
+    )
     if has_bias and torch_linear.bias is not None:
-        module = update_module(module, lambda m: m.bias.value, _to_jax_array(torch_linear.bias))
+        module = update_module(
+            module, lambda m: m.bias.value, _to_jax_array(torch_linear.bias)
+        )
     return module
 
 
 def update_embedding(module, torch_embedding):
-    return update_module(module, lambda m: m.weight.value, _to_jax_array(torch_embedding.weight))
+    return update_module(
+        module, lambda m: m.weight.value, _to_jax_array(torch_embedding.weight)
+    )
 
 
 def update_layernorm(module, torch_layernorm):
     if getattr(module, "weight", None) is not None:
-        module = update_module(module, lambda m: m.weight.value, _to_jax_array(torch_layernorm.weight))
+        module = update_module(
+            module, lambda m: m.weight.value, _to_jax_array(torch_layernorm.weight)
+        )
     if getattr(module, "bias", None) is not None and torch_layernorm.bias is not None:
-        module = update_module(module, lambda m: m.bias.value, _to_jax_array(torch_layernorm.bias))
+        module = update_module(
+            module, lambda m: m.bias.value, _to_jax_array(torch_layernorm.bias)
+        )
     return module
 
 
@@ -61,3 +73,24 @@ def has_shape_dtype_struct(tree) -> bool:
 
     jax.tree_util.tree_map(_inspect, tree)
     return found
+
+
+def t2np(t):
+    import torch
+
+    return t.detach().cpu().numpy()
+
+
+def set_attr(module, path, value):
+    parts = path.split(".")
+
+    def getter(m):
+        result = m
+        for part in parts:
+            if part.isdigit():
+                result = result[int(part)]
+            else:
+                result = getattr(result, part)
+        return result
+
+    return eqx.tree_at(getter, module, jnp.asarray(value))
