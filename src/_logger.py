@@ -1,16 +1,40 @@
 from typing import Protocol
 import trackio
 import jax
+from ._utils import rank_zero
 
 
 class Logger(Protocol):
     def log(self, *args, **kwargs):
         ...
 
-class DummyLogger(Logger):
-    def __init__(*args, **kwargs):
-        pass
+class TrackioLogger(Logger):
+    def __init__(
+        self,
+        project: str,
+        space_id: str | None = None,
+        space_storage: SpaceStorage | None = None,
+        dataset_id: str | None = None,
+        config: dict | None = None,
+        resume: str = "never",
+        settings: Any = None,
+        private: bool | None = None,
+        embed: bool = True,
+    ):
+        self.logger = rank_zero(
+            trackio.init
+        )(
+            project,
+            space_id,
+            space_storage,
+            dataset_id,
+            config,
+            resume,
+            settings,
+            private,
+            embed
+        )
 
-    def log(self, *args, **kwargs):
-        return 
-
+    @rank_zero
+    def log(self, logs, step, **kwargs):
+        self.logger(logs, step = step, **kwargs)

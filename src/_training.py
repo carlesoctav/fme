@@ -337,7 +337,6 @@ class Eval:
     eval_step: _EvalStepCallable[_ModuleInput, _OptimizerInput] | None = None
     loss_function: _LossFn | None = None
     eval_metric: SufficientMetric | None = None
-    logger: Logger | None = None
     jit: bool = True
     _compiled_eval_step: _EvalStepCallable[_ModuleInput, _OptimizerInput] | None = (
         field(default=None, init=False, repr=False)
@@ -365,12 +364,10 @@ class Eval:
         optimizer: _OptimizerInput,
         logger: Logger | None = None,
         enable_wallclock: bool = True,
-        global_step_idx: int | None = None,
+        train_step_idx: int | None = None,
         key: PRNGKeyArray | None = None,
     ) -> SufficientMetric:
-        logger = first_from(self.logger, logger, error_msg="logger required")
-
-        eval_step = 0
+        eval_step_idx = 0
         eval_metric = (
             self.eval_metric
             if self.eval_metric
@@ -390,7 +387,7 @@ class Eval:
 
         try:
             for batch in iterator:
-                eval_step += 1
+                eval_step_idx += 1
 
                 key, eval_key = (
                     jax.random.split(key, 2) if key is not None else (key, None)
@@ -407,8 +404,8 @@ class Eval:
 
                 eval_metric += aux
 
-            logs = eval_metric.per_N_metrics(eval_step, skip_check=True)
-            logger.log(logs, global_step_idx)
+            logs = eval_metric.per_N_metrics(eval_step_idx, skip_check=True)
+            logger.log(logs, train_step_idx)
 
             progress_bar.close()
             return eval_metric, logs
@@ -454,7 +451,7 @@ def eval_loop(
     evals: list[Eval],
     logger: Logger,
     callbacks: tp.Sequence[Callback] | None = None,
-    train_step: int | None = None,
+    train_step_idx: int | None = None,
     enable_wallclock: bool = False,
     *,
     key: PRNGKeyArray | None = None,
@@ -466,19 +463,20 @@ def eval_loop(
     for callback in callbacks:
         method = getattr(callback, "on_validation_start", None)
         if method is not None:
-            method(module, optimizer, logger, train_step)
+            method(module, optimizer, logger, train_step_idx)
 
     for eval_obj in evals:
-        eval_metric, logs = eval_obj.run(
-            module,
-            optimizer,
-            key=key,
-            logger=logger,
-            enable_wallclock=enable_wallclock,
-            global_step_idx=train_step,
-        )
-        eval_metrics[eval_obj.name] = eval_metric
-        eval_logs = {**eval_logs, **logs} 
+        with wallclock(f"eval_{eval_obj.name}", logger, train_step_idx, noop=not enable_wallclock):
+            eval_metric, logs = eval_obj.run(
+                module,
+                optimizer,
+                key=key,
+                logger=logger,
+                enable_wallclock=enable_wallclock,
+                train_step_idx=train_step_idx,
+            )
+            eval_metrics[eval_obj.name] = eval_metric
+            eval_logs = {**eval_logs, **logs} 
 
     for callback in callbacks:
         method = getattr(callback, "on_validation_end", None)
@@ -488,7 +486,7 @@ def eval_loop(
                 optimizer,
                 eval_logs,
                 logger,
-                train_step,
+                train_step_idx,
             )
 
     return eval_metrics
@@ -503,6 +501,7 @@ def train_loop(
     train_metric: SufficientMetric | None = None,
     num_train_steps: int | None = None,
     enable_wallclock: bool = True,
+    stop_train_wallclock_after_step: int = 1000, 
     callbacks: tp.Sequence[Callback] | None = None,
     evals: tp.Sequence[Eval] | None = None,
     eval_interval: int | None = None,
@@ -521,7 +520,7 @@ def train_loop(
     if logger is None:
         raise ValueError("logger is required")
 
-    train_step = 0
+    train_step_idx = 0
     eval_metrics: dict[str, SufficientMetric] = {}
 
     try:
@@ -543,18 +542,23 @@ def train_loop(
             method(module, optimizer, logger)
 
     try:
-        while num_train_steps is None or train_step < num_train_steps:
+        while num_train_steps is None or train_step_idx < num_train_steps:
             try:
                 batch = next(train_iterator)
             except StopIteration:
                 LOGGER.info("Train data loader exhausted, ending training loop.")
                 break
 
-            train_step += 1
+            train_step_idx += 1
 
             key, step_key = jax.random.split(key, 2) if key is not None else (key, None)
 
-            with wallclock("train.step.time", logger, train_step):
+            with wallclock(
+                "train_step",
+                logger,
+                train_step_idx,
+                noop = train_step_idx > stop_train_wallclock_after_step or not enable_wallclock
+            ):
                 module, optimizer, aux = train_step_fn(
                     module, optimizer, batch, key=step_key
                 )
@@ -565,21 +569,21 @@ def train_loop(
             train_metric += aux
 
             step_metrics = train_metric.step_metrics()
-            per_N_metrics = train_metric.per_N_metrics(step = train_step)
+            per_N_metrics = train_metric.per_N_metrics(step = train_step_idx)
 
             logs = {**step_metrics, **per_N_metrics}
 
-            logger.log(logs, step=train_step)
+            logger.log(logs, step=train_step_idx)
 
             for cb in callbacks:
                 method = getattr(cb, "on_training_step", None)
                 if method is not None:
-                    method(module, optimizer, batch, logs, logger, train_step)
+                    method(module, optimizer, batch, logs, logger, train_step_idx)
 
             should_eval = (
                 eval_interval is not None
                 and eval_interval > 0
-                and train_step % eval_interval == 0
+                and train_step_idx % eval_interval == 0
             )
 
             if should_eval:
@@ -592,7 +596,7 @@ def train_loop(
                     evals,
                     logger,
                     callbacks,
-                    train_step,
+                    train_step_idx,
                     enable_wallclock,
                     key=eval_key,
                 )
@@ -606,6 +610,6 @@ def train_loop(
     for cb in callbacks:
         method = getattr(cb, "on_training_end", None)
         if method is not None:
-            method(module, optimizer, logs, logger, train_step)
+            method(module, optimizer, logs, logger, train_step_idx)
 
     return module, optimizer, train_metric, eval_metrics if evals else {}

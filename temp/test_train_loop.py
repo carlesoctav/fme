@@ -11,6 +11,7 @@ import trackio
 
 from src import Eval, make_train_step, nn, Optimizer, SufficientMetric, train_loop
 from src.callbacks import LearningRateMonitor, ModelCheckpoint
+from ._logger import TrackioLogger
 
 
 BATCH_SIZE = 100
@@ -93,8 +94,7 @@ def main():
 
     eval = Eval(name = "xor_eval", dataset = eval_ds, loss_function = loss_function)
 
-    logger = trackio.init(project="test_project", name="test_run") 
-    logger.name
+    logger = TrackioLogger(project="test_project", name="test_run") 
     learning_rate_monitor = LearningRateMonitor(log_every_n_step = 10, schedule_fn = schedule)
     train_metric = SufficientMetric(name = "train", log_every_n_step = 10)
 
