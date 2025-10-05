@@ -6,7 +6,11 @@ import pytest
 import torch
 
 try:
-    from transformers import ModernBertConfig, ModernBertModel as TorchModernBertModel
+    from transformers import (
+        AutoTokenizer,
+        ModernBertConfig,
+        ModernBertModel as TorchModernBertModel,
+    )
 except Exception as e:
     pytest.skip(f"transformers not available: {e}", allow_module_level=True)
 
@@ -181,9 +185,51 @@ def test_modeling_modernbert_with_segment_ids():
     jx_model = ModernBertModel(cfg, key=key)
     jx_model = copy_modernbert_weights(jx_model, th_model)
 
-    with pytest.raises(NotImplementedError):
-        jx_out = jx_model(
-            input_ids_packed,
-            segment_ids=segment_ids,
-            key=key,
-        )
+    jx_out = jx_model(
+        input_ids_packed,
+        segment_ids=segment_ids,
+        key=key,
+    )
+
+    np.testing.assert_allclose(
+        jx_out[0, :seq_len_1, :], th_out_1.numpy()[0], atol=1e-3, rtol=1e-3
+    )
+    np.testing.assert_allclose(
+        jx_out[0, seq_len_1:, :], th_out_2.numpy()[0], atol=1e-3, rtol=1e-3
+    )
+
+
+def test_modernbert_with_real_model():
+    model_name = "answerdotai/ModernBERT-base"
+    text1 = "hallo nama saya carles dan ini adalah text yang lebih panjang"
+    text2 = "hallo dunia"
+
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    th_model = TorchModernBertModel.from_pretrained(model_name)
+    th_model.eval()
+
+    encoded = tokenizer(
+        [text1, text2],
+        padding=True,
+        return_tensors="pt",
+    )
+    input_ids = encoded["input_ids"]
+    attention_mask = encoded["attention_mask"]
+
+    with torch.no_grad():
+        th_out = th_model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+        ).last_hidden_state
+
+    key = jax.random.key(42)
+    jx_model = ModernBertModel(th_model.config, key=key)
+    jx_model = copy_modernbert_weights(jx_model, th_model)
+
+    jx_out = jx_model(
+        jnp.asarray(input_ids.numpy()),
+        attention_mask=jnp.asarray(attention_mask.numpy(), dtype = np.bool),
+        key=key,
+    )
+
+    np.testing.assert_allclose(jx_out, th_out.numpy(), atol=1e-3, rtol=1e-3)

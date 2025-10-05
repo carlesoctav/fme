@@ -6,7 +6,7 @@ import pytest
 import torch
 
 try:
-    from transformers import BertConfig, BertModel as TorchBertModel
+    from transformers import AutoTokenizer, BertConfig, BertModel as TorchBertModel
 except Exception as e:
     pytest.skip(f"transformers not available: {e}", allow_module_level=True)
 
@@ -269,3 +269,49 @@ def test_modeling_bert_with_segment_ids():
     np.testing.assert_allclose(
         jx_out[0, seq_len_1:, :], th_out_2.numpy()[0], atol=1e-3, rtol=1e-3
     )
+
+
+def test_bert_with_real_model():
+    model_name = "google-bert/bert-base-uncased"
+    text1 = "hallo nama saya carles dan ini adalah text yang lebih panjang"
+    text2 = "hallo dunia"
+
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    th_model = TorchBertModel.from_pretrained(model_name)
+    th_model.eval()
+
+    encoded = tokenizer(
+        [text1, text2],
+        padding=True,
+        return_tensors="pt",
+    )
+    input_ids = encoded["input_ids"]
+    attention_mask = encoded["attention_mask"]
+    token_type_ids = encoded.get("token_type_ids", torch.zeros_like(input_ids))
+
+    batch_size, seq_len = input_ids.shape
+    position_ids = (
+        torch.arange(0, seq_len, dtype=torch.long).unsqueeze(0).expand(batch_size, -1)
+    )
+
+    with torch.no_grad():
+        th_out = th_model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+        ).last_hidden_state
+
+    key = jax.random.key(42)
+    jx_model = BertModel(th_model.config, key=key)
+    jx_model = copy_bert_weights(jx_model, th_model)
+
+    jx_out = jx_model(
+        jnp.asarray(input_ids.numpy()),
+        jnp.asarray(position_ids.numpy()),
+        jnp.asarray(token_type_ids.numpy()),
+        jnp.asarray(attention_mask.numpy()),
+        key=key,
+    )
+
+    np.testing.assert_allclose(jx_out, th_out.numpy(), atol=1e-3, rtol=1e-3)

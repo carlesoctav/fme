@@ -24,6 +24,7 @@ from ...nn import (
     make_rope_init_fn,
 )
 
+
 class ModernBertRotaryEmbedding(eqx.Module):
     rtheta: Array
     attention_scaling: Array
@@ -60,10 +61,6 @@ class ModernBertRotaryEmbedding(eqx.Module):
         segment_ids: Int[Array, "B T"] | None = None,
     ) -> Float[Array, "B T N H"]:
         B, T, N, H = hidden_states.shape
-
-        if segment_ids is not None:
-            raise NotImplementedError("Sequence packing with RoPE is not implemented.")
-
 
         # rtheta (max_seq, halfdim)
         rtheta = jnp.take(self.rtheta, position_ids, axis=0)  # (*B, T, halfdim)
@@ -223,7 +220,7 @@ class ModernBertAttention(eqx.Module):
             key=k,
             value=v,
             mask=attention_mask,
-            bias = None,
+            bias=None,
             dropout_rate=self.attn_dropout_rate,
             inference=False,
             dropout_key=attn_key,
@@ -594,7 +591,7 @@ class ModernBertModel(
     def __call__(
         self,
         input_ids: Int[Array, "B T"] | None = None,
-        attention_mask: Bool[Array, "B T"] | None = None, 
+        attention_mask: Bool[Array, "B T"] | Int[Array, "B T"] = None,
         segment_ids: Int[Array, "B T"] | None = None,
         position_ids: Int[Array, "B T"] | None = None,
         inputs_embeds: Float[Array, "B T H"] | None = None,
@@ -604,9 +601,6 @@ class ModernBertModel(
         embed_key, encoder_key = (
             jax.random.split(key, 2) if key is not None else (None, None)
         )
-
-        if segment_ids is not None:
-            raise NotImplementedError("Sequence packing with RoPE is not implemented.")
 
         hidden_states = self.embeddings(
             input_ids,
@@ -618,7 +612,7 @@ class ModernBertModel(
             mask_impl=self.config._attn_implementation,
             input_embeds=hidden_states,
             attention_mask=attention_mask,
-            segment_ids=None,
+            segment_ids=segment_ids,
         )
 
         # Sliding window mask for local attention layers
@@ -628,7 +622,7 @@ class ModernBertModel(
             input_embeds=hidden_states,
             window_size=half_window,
             attention_mask=attention_mask,
-            segment_ids=None,
+            segment_ids=segment_ids,
         )
 
         hidden_states = self.encoder(
@@ -734,13 +728,10 @@ class ModernBertForMaskedLM(
 
     def __call__(
         self,
-        input_ids: Int[Array, "B T"] | None = None,
-        attention_mask: Int[Array, "B T"]
-        | Float[Array, "B T"]
-        | Bool[Array, "B T"]
-        | None = None,
+        input_ids: Int[Array, "B T"],
+        position_ids: Int[Array, "B T"],
+        attention_mask: Bool[Array, "B T"] | None = None,
         segment_ids: Int[Array, "B T"] | None = None,
-        position_ids: Int[Array, "B T"] | None = None,
         inputs_embeds: Float[Array, "B T H"] | None = None,
         *,
         key: PRNGKeyArray | None = None,
