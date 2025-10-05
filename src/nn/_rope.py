@@ -40,8 +40,7 @@ def default_rope(
     dim = int(head_dim * partial_rotary_factor)
     inv_freq = _base_angles(dim, base, dtype)
     seq_len = first_from(
-        seq_len,
-        getattr( config, "max_position_embeddings", None ),
+        getattr( config, "max_position_embeddings"),
         error_msg="Either seq_len or config.max_position_embeddings must be set for RoPE initialization.",
     )
 

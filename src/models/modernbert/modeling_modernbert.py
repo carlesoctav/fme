@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import dataclasses
 import warnings
 from collections.abc import Callable
 from typing import Any
@@ -18,11 +17,9 @@ from transformers import ModernBertConfig
 from ... import nn
 from ..._darray import DArray
 from ..._huggingface import HuggingFaceCompatibleModule
-from ..._utils import first_from
+from ..._masking_utils import make_full_mask, slliding_window_full_mask
 from ...nn import (
-    AttentionConfig,
     AttentionModule,
-    eager_dot_product_attention,
     make_attention_module,
     make_rope_init_fn,
 )
@@ -50,9 +47,7 @@ class ModernBertRotaryEmbedding(eqx.Module):
 
         self.dtype = dtype
         self.rope_init_fn = make_rope_init_fn(self.rope_type)
-        self.config = config
 
-        self.param_dtype = param_dtype
         self.dtype = dtype
         self.rtheta, self.attention_scaling = self.rope_init_fn(
             config, dtype=self.dtype
@@ -64,23 +59,11 @@ class ModernBertRotaryEmbedding(eqx.Module):
         position_ids: Int[Array, "B T"] | None = None,
         segment_ids: Int[Array, "B T"] | None = None,
     ) -> Float[Array, "B T N H"]:
-        *B, T, N, H = hidden_states.shape
-        B = tuple(B)
+        B, T, N, H = hidden_states.shape
 
         if segment_ids is not None:
             raise NotImplementedError("Sequence packing with RoPE is not implemented.")
 
-        expected_pos_shape = B + (T,)
-
-        if position_ids is None:
-            position_ids = jnp.arange(T, dtype=jnp.int32)
-            position_ids = position_ids[None, :]  # (1, T)
-            position_ids = jnp.broadcast_to(position_ids, expected_pos_shape)  # (*B, T)
-        else:
-            if position_ids.shape != expected_pos_shape:
-                raise ValueError(
-                    f"position_ids must have shape {expected_pos_shape}, but got {position_ids.shape}"
-                )
 
         # rtheta (max_seq, halfdim)
         rtheta = jnp.take(self.rtheta, position_ids, axis=0)  # (*B, T, halfdim)
@@ -129,18 +112,17 @@ class Identity(eqx.Module):
 class ModernBertAttention(eqx.Module):
     Wqkv: nn.Linear
     Wo: nn.Linear
-    attn_drop: nn.Dropout
     out_drop: nn.Dropout
     rotary_emb: ModernBertRotaryEmbedding
     attention_module: AttentionModule
     num_attention_heads: int = field(static=True)
     attention_head_size: int = field(static=True)
     all_head_size: int = field(static=True)
+    attn_dropout_rate: float = field(static=True)
 
     def __init__(
         self,
         config: ModernBertConfig,
-        attention_config: AttentionConfig | None = None,
         layer_id: int = 0,
         *,
         dtype: jnp.dtype = jnp.float32,
@@ -175,45 +157,24 @@ class ModernBertAttention(eqx.Module):
             params_dtype=params_dtype,
             key=out_key,
         )
-
-        self.attn_drop = nn.Dropout(
-            p=config.attention_dropout, dtype=dtype, params_dtype=params_dtype
-        )
         self.out_drop = nn.Dropout(
             p=config.attention_dropout, dtype=dtype, params_dtype=params_dtype
         )
+        self.attn_dropout_rate = float(config.attention_dropout)
 
-        attention_config = first_from(
-            attention_config,
-            error_msg="ModernBertAttention requires an attention_config",
-        )
+        self.attention_module = make_attention_module(config=config, dtype=dtype)
 
         use_global = (layer_id % max(config.global_attn_every_n_layers, 1)) == 0
         rope_config = copy.deepcopy(config)
-
         if use_global:
             rope_config.rope_theta = config.global_rope_theta
-            attn_cfg = dataclasses.replace(
-                attention_config,
-                use_local_attention=False,
-                window_size=None,
-            )
-            self.attention_module = make_attention_module(config=attn_cfg, dtype=dtype)
         else:
-            half_window = int(config.local_attention) // 2
-            local_window = (half_window, half_window)
             rope_theta = (
                 config.local_rope_theta
                 if getattr(config, "local_rope_theta", None) is not None
                 else config.global_rope_theta
             )
             rope_config.rope_theta = rope_theta
-            attn_cfg = dataclasses.replace(
-                attention_config,
-                use_local_attention=True,
-                window_size=local_window,
-            )
-            self.attention_module = ModernBertLocalAttention(attention_config=attn_cfg)
 
         self.rotary_emb = ModernBertRotaryEmbedding(
             rope_config,
@@ -224,11 +185,7 @@ class ModernBertAttention(eqx.Module):
     def __call__(
         self,
         hidden_states: Float[Array, "B T H"],
-        attention_mask: Int[Array, "B T"]
-        | Float[Array, "B T"]
-        | Bool[Array, "B T"]
-        | None = None,
-        segment_ids: Int[Array, "B T"] | None = None,
+        attention_mask: Bool[Array, "B T T"] | Bool[Array, "B T N T"] | None = None,
         position_ids: Int[Array, "B T"] | None = None,
         *,
         key: PRNGKeyArray | None = None,
@@ -259,17 +216,17 @@ class ModernBertAttention(eqx.Module):
             position_ids = jnp.asarray(position_ids, dtype=jnp.int32)
 
         q = self.rotary_emb(q, position_ids=position_ids)
-
         k = self.rotary_emb(k, position_ids=position_ids)
 
         attn_output = self.attention_module(
-            q,
-            k,
-            v,
-            dropout=self.attn_drop,
-            attention_mask=attention_mask,
-            segment_ids=segment_ids,
-            key=attn_key,
+            query=q,
+            key=k,
+            value=v,
+            mask=attention_mask,
+            bias = None,
+            dropout_rate=self.attn_dropout_rate,
+            inference=False,
+            dropout_key=attn_key,
         )
 
         attn_output = attn_output.reshape(*batch_shape, seq_len, self.all_head_size)
@@ -333,11 +290,11 @@ class ModernBertEncoderLayer(eqx.Module):
     attention: ModernBertAttention
     mlp_norm: nn.LayerNorm
     mlp: ModernBertMLP
+    use_global: bool = field(static=True)
 
     def __init__(
         self,
         config: ModernBertConfig,
-        attention_config: AttentionConfig,
         layer_id: int,
         *,
         dtype: jnp.dtype = jnp.float32,
@@ -358,7 +315,6 @@ class ModernBertEncoderLayer(eqx.Module):
             )
         self.attention = ModernBertAttention(
             config,
-            attention_config=attention_config,
             layer_id=layer_id,
             dtype=dtype,
             params_dtype=params_dtype,
@@ -378,15 +334,13 @@ class ModernBertEncoderLayer(eqx.Module):
             params_dtype=params_dtype,
             key=mlp_key,
         )
+        self.use_global = (layer_id % max(config.global_attn_every_n_layers, 1)) == 0
 
     def __call__(
         self,
         hidden_states: Float[Array, "B T H"],
-        attention_mask: Int[Array, "B T"]
-        | Float[Array, "B T"]
-        | Bool[Array, "B T"]
-        | None = None,
-        segment_ids: Int[Array, "B T"] | None = None,
+        attention_mask: Bool[Array, "B T T"] | None = None,
+        sliding_window_mask: Bool[Array, "B T T"] | None = None,
         position_ids: Int[Array, "B T"] | None = None,
         *,
         key: PRNGKeyArray | None = None,
@@ -397,10 +351,11 @@ class ModernBertEncoderLayer(eqx.Module):
 
         residual = hidden_states
         normed = self.attn_norm(hidden_states)
+        # Select mask per layer type (global vs local)
+        layer_mask = attention_mask if self.use_global else sliding_window_mask
         attn_out = self.attention(
             normed,
-            attention_mask=attention_mask,
-            segment_ids=segment_ids,
+            attention_mask=layer_mask,
             position_ids=position_ids,
             key=attn_key,
         )
@@ -416,12 +371,10 @@ class ModernBertEncoderLayer(eqx.Module):
 
 class ModernBertEncoder(eqx.Module):
     layers: tuple[ModernBertEncoderLayer, ...]
-    attention_config: AttentionConfig = field(static=True)
 
     def __init__(
         self,
         config: ModernBertConfig,
-        attention_config: AttentionConfig,
         *,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
@@ -431,7 +384,6 @@ class ModernBertEncoder(eqx.Module):
         self.layers = tuple(
             ModernBertEncoderLayer(
                 config,
-                attention_config=attention_config,
                 layer_id=layer_id,
                 dtype=dtype,
                 params_dtype=params_dtype,
@@ -439,16 +391,12 @@ class ModernBertEncoder(eqx.Module):
             )
             for layer_id in range(config.num_hidden_layers)
         )
-        self.attention_config = attention_config
 
     def __call__(
         self,
         hidden_states: Float[Array, "B T H"],
-        attention_mask: Int[Array, "B T"]
-        | Float[Array, "B T"]
-        | Bool[Array, "B T"]
-        | None = None,
-        segment_ids: Int[Array, "B T"] | None = None,
+        attention_mask: Bool[Array, "B T T"] | None = None,
+        sliding_window_mask: Bool[Array, "B T T"] | None = None,
         position_ids: Int[Array, "B T"] | None = None,
         *,
         key: PRNGKeyArray | None = None,
@@ -463,7 +411,7 @@ class ModernBertEncoder(eqx.Module):
             output = layer(
                 output,
                 attention_mask=attention_mask,
-                segment_ids=segment_ids,
+                sliding_window_mask=sliding_window_mask,
                 position_ids=position_ids,
                 key=layer_key,
             )
@@ -605,12 +553,10 @@ class ModernBertModel(
     encoder: ModernBertEncoder
     final_norm: nn.LayerNorm
     config: ModernBertConfig | None = field(static=True, default=None)
-    attention_config: AttentionConfig = field(static=True)
 
     def __init__(
         self,
         config: ModernBertConfig,
-        attention_config: AttentionConfig | None = None,
         *,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
@@ -618,11 +564,6 @@ class ModernBertModel(
         key: PRNGKeyArray,
     ):
         embed_key, encoder_key, norm_key = jax.random.split(key, 3)
-        attn_cfg = first_from(
-            attention_config,
-            AttentionConfig(type="eager", is_causal=False),
-            error_msg="ModernBertModel requires an attention_config",
-        )
 
         self.embeddings = ModernBertEmbeddings(
             config,
@@ -632,7 +573,6 @@ class ModernBertModel(
         )
         self.encoder = ModernBertEncoder(
             config,
-            attention_config=attn_cfg,
             dtype=dtype,
             params_dtype=params_dtype,
             key=encoder_key,
@@ -650,15 +590,11 @@ class ModernBertModel(
             self.config = config
         else:
             self.config = None
-        self.attention_config = attn_cfg
 
     def __call__(
         self,
         input_ids: Int[Array, "B T"] | None = None,
-        attention_mask: Int[Array, "B T"]
-        | Float[Array, "B T"]
-        | Bool[Array, "B T"]
-        | None = None,
+        attention_mask: Bool[Array, "B T"] | None = None, 
         segment_ids: Int[Array, "B T"] | None = None,
         position_ids: Int[Array, "B T"] | None = None,
         inputs_embeds: Float[Array, "B T H"] | None = None,
@@ -669,15 +605,36 @@ class ModernBertModel(
             jax.random.split(key, 2) if key is not None else (None, None)
         )
 
+        if segment_ids is not None:
+            raise NotImplementedError("Sequence packing with RoPE is not implemented.")
+
         hidden_states = self.embeddings(
             input_ids,
             inputs_embeds=inputs_embeds,
             key=embed_key,
         )
+
+        full_mask = make_full_mask(
+            mask_impl=self.config._attn_implementation,
+            input_embeds=hidden_states,
+            attention_mask=attention_mask,
+            segment_ids=None,
+        )
+
+        # Sliding window mask for local attention layers
+        half_window = int(self.config.local_attention) // 2
+        sliding_mask = slliding_window_full_mask(
+            mask_impl=self.config._attn_implementation,
+            input_embeds=hidden_states,
+            window_size=half_window,
+            attention_mask=attention_mask,
+            segment_ids=None,
+        )
+
         hidden_states = self.encoder(
             hidden_states,
-            attention_mask=attention_mask,
-            segment_ids=segment_ids,
+            attention_mask=full_mask,
+            sliding_window_mask=sliding_mask,
             position_ids=position_ids,
             key=encoder_key,
         )
@@ -742,7 +699,6 @@ class ModernBertForMaskedLM(
     def __init__(
         self,
         config: ModernBertConfig,
-        attention_config: AttentionConfig | None = None,
         *,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
@@ -752,7 +708,6 @@ class ModernBertForMaskedLM(
         model_key, head_key, decoder_key = jax.random.split(key, 3)
         self.model = ModernBertModel(
             config,
-            attention_config=attention_config,
             dtype=dtype,
             params_dtype=params_dtype,
             store_config=False,

@@ -164,8 +164,8 @@ class BertSelfAttention(eqx.Module):
 
     def __call__(
         self,
-        hidden_states: Float[Array, " ... T H"],
-        attention_mask: Int[Array, " ... T"] | None = None,
+        hidden_states: Float[Array, " B T H"],
+        attention_mask: Int[Array, " B T"] | None = None,
         *,
         key: PRNGKeyArray | None = None,
     ) -> Float[Array, " ... T H"]:
@@ -187,24 +187,24 @@ class BertSelfAttention(eqx.Module):
         k_heads = _to_heads(k, self.num_attention_heads)
         v_heads = _to_heads(v, self.num_attention_heads)
 
-        mask_4d = attention_mask
-        if attention_mask is not None and attention_mask.ndim == 3:
-            mask_4d = jnp.expand_dims(attention_mask, axis=-2)
-            mask_4d = jnp.broadcast_to(
-                mask_4d,
-                (
-                    *mask_4d.shape[:-3],
-                    mask_4d.shape[-3],
-                    self.num_attention_heads,
-                    mask_4d.shape[-1],
-                ),
-            )
+        # mask_4d = attention_mask
+        # if attention_mask is not None and attention_mask.ndim == 3:
+        #     mask_4d = jnp.expand_dims(attention_mask, axis=-2)
+        #     mask_4d = jnp.broadcast_to(
+        #         mask_4d,
+        #         (
+        #             *mask_4d.shape[:-3],
+        #             mask_4d.shape[-3],
+        #             self.num_attention_heads,
+        #             mask_4d.shape[-1],
+        #         ),
+        #     )
 
         attn_heads = self.sdpa(
             query=q_heads,
             key=k_heads,
             value=v_heads,
-            mask=mask_4d,
+            mask=attention_mask,
             dropout_rate=self.dropout_rate,
             inference=self.inference,
         )

@@ -14,6 +14,7 @@ def eager_dot_product_attention(
     query: Float[Array, "B T N H"],
     key: Float[Array, "B S K H"],
     value: Float[Array, "B S K H"],
+    bias: Array | None = None,
     mask: Bool[Array, "B T N S"] | None = None,
     *,
     inference: bool = False,
@@ -48,7 +49,7 @@ def eager_dot_product_attention(
 
     if mask is not None:
         mask_bool = jnp.asarray(mask, dtype=jnp.bool_)
-        if mask_bool.shape != scores.shape:
+        if mask_bool.ndim != scores.ndim:
             raise ValueError(
                 f"Mask shape {mask_bool.shape} must match attention scores shape {scores.shape}"
             )
@@ -63,7 +64,7 @@ def eager_dot_product_attention(
         if dropout_mask is not None:
             weights = jnp.where(dropout_mask, weights, 0.0) / (1.0 - dropout_rate)
 
-    attn = jnp.einsum("b t n s, b s n h -> b t n h", weights, value)
+    attn = jnp.einsum("btns, bsnh -> btnh", weights, value)
     return attn
 
 
@@ -155,6 +156,15 @@ class EagerAttentionModule(AttentionModule):
         dropout_key: PRNGKeyArray | None = None,
         **kwargs,
     ) -> Array:
+        B, T, N, H = query.shape
+
+        if mask.ndim == 3: # (B, T, S)
+            mask = mask[..., None, :]
+        elif mask.ndim == 2: # (B, T,)
+            mask = mask[..., None, None]
+
+        assert mask.ndim == 4,  "Mask should be 4D" 
+
         return self.attn_fn(
             query,
             key,

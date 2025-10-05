@@ -64,10 +64,7 @@ def causal_mask_function(b, h, q, kv):
 
 def sliding_window_mask_overlay(window_size: int):
     def mask(b, h, q, kv):
-        if q - kv >= 0:
-            return q - kv <= window_size
-        else:
-            return kv - q <= window_size
+        return jnp.where(q - kv >= 0, q - kv <= window_size, kv - q <= window_size)
 
     return mask
 
@@ -237,7 +234,7 @@ def make_full_mask(
     return full_mask
 
 
-def sliding_window_mask(
+def slliding_window_full_mask(
     mask_impl: str,
     input_embeds: Float[Array, "B T H"],
     window_size: int,
@@ -266,7 +263,7 @@ def sliding_window_mask(
     B, T, H = input_embeds.shape
 
     mask_interface = ALL_MASK_ATTENTION_FUNCTIONS[mask_impl]
-    mask_factory_function = sliding_window_mask_overlay(window_size)
+    mask_factory_function = and_masks(sliding_window_mask_overlay(window_size), dummy_mask_function)
 
     padding_mask = None
     if segment_ids is not None:

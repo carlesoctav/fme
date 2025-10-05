@@ -2,7 +2,7 @@ from ._attention import (
     AttentionModule,
     make_attention_module,
     eager_dot_product_attention,
-    SDPA,
+    JaxNNAttentionModule,
 )
 from ._dropout import Dropout
 from ._embedding import Embedding
@@ -17,7 +17,7 @@ __all__ = [
     "Embedding",
     "LayerNorm",
     "AttentionModule",
-    "SDPA",
+    "JaxNNAttentionModule",
     "make_attention_module",
     "ROPE_INIT_FUNCTIONS",
     "make_rope_init_fn",
