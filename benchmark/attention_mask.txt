@@ -1,0 +1,131 @@
+ATTENTION MASK BENCHMARK RESULTS
+=================================
+
+This benchmark compares three implementations of causal attention mask generation:
+1. `make_causal_mask` - Current implementation using vmap
+2. `naive_tril` - Simple implementation using jnp.tril
+3. `naive_comparison` - Implementation using index comparison (q >= kv)
+
+Test Configurations:
+- Batch sizes: 2, 4, 8, 16
+- Sequence lengths: 128, 512, 1024, 2048
+- Hidden dimension: 768 (fixed)
+- Two scenarios: without padding, with padding (50% padding in half of batch)
+
+================================================================================
+RESULTS WITH JIT ENABLED
+================================================================================
+
+Summary:
+- All three implementations perform SIMILARLY when JIT is enabled
+- Performance ranges from ~0.02ms to ~1.5ms depending on batch/sequence size
+- No significant difference between methods (within measurement variance)
+
+Detailed Results:
+
+Without Padding:
+  Batch=2, SeqLen=128:   ~0.020-0.052ms (all methods equivalent)
+  Batch=4, SeqLen=512:   ~0.090-0.095ms (all methods equivalent)
+  Batch=8, SeqLen=1024:  ~0.168-0.186ms (all methods equivalent)
+  Batch=16, SeqLen=2048: ~1.476-1.559ms (all methods equivalent)
+
+With Padding:
+  Batch=2, SeqLen=128:   ~0.037-0.068ms (all methods equivalent)
+  Batch=4, SeqLen=512:   ~0.079-0.097ms (all methods equivalent)
+  Batch=8, SeqLen=1024:  ~0.264-0.359ms (all methods equivalent)
+  Batch=16, SeqLen=2048: ~1.273-1.527ms (all methods equivalent)
+
+Key Insight: JIT compilation optimizes away the vmap overhead in make_causal_mask,
+resulting in performance equivalent to naive implementations.
+
+================================================================================
+RESULTS WITHOUT JIT
+================================================================================
+
+Summary:
+- `naive_tril` is FASTEST for most cases (2-3x faster than make_causal_mask)
+- `make_causal_mask` has overhead from vmap calls without JIT optimization
+- Performance gap closes at larger sizes (16 batch, 2048 seq_len)
+
+Detailed Results:
+
+Without Padding:
+  Batch=2, SeqLen=128:
+    - make_causal_mask:  1.678ms (10x SLOWER than naive_tril)
+    - naive_tril:        0.167ms (FASTEST)
+    - naive_comparison:  0.879ms
+
+  Batch=4, SeqLen=512:
+    - make_causal_mask:  1.737ms (5x slower)
+    - naive_tril:        0.325ms (FASTEST)
+    - naive_comparison:  0.987ms
+
+  Batch=8, SeqLen=1024:
+    - make_causal_mask:  1.998ms (3x slower)
+    - naive_tril:        0.711ms (FASTEST)
+    - naive_comparison:  1.450ms
+
+  Batch=16, SeqLen=2048:
+    - make_causal_mask:  3.873ms
+    - naive_tril:        5.493ms (SLOWEST at large scale)
+    - naive_comparison:  3.526ms (FASTEST)
+
+With Padding:
+  Batch=2, SeqLen=128:
+    - make_causal_mask:      2.082ms (3x slower)
+    - naive_tril+padding:    0.703ms (FASTEST)
+    - naive_comp+padding:    1.117ms
+
+  Batch=4, SeqLen=512:
+    - make_causal_mask:      2.105ms (2x slower)
+    - naive_tril+padding:    0.957ms (FASTEST)
+    - naive_comp+padding:    1.365ms
+
+  Batch=8, SeqLen=1024:
+    - make_causal_mask:      2.561ms (1.5x slower)
+    - naive_tril+padding:    1.719ms (FASTEST)
+    - naive_comp+padding:    2.098ms
+
+  Batch=16, SeqLen=2048:
+    - make_causal_mask:      6.904ms (slightly slower)
+    - naive_tril+padding:    6.063ms (FASTEST by small margin)
+    - naive_comp+padding:    6.024ms (FASTEST)
+
+================================================================================
+CONCLUSIONS
+================================================================================
+
+1. **For Production Use (with JIT):**
+   - All implementations are EQUIVALENT in performance
+   - Use `make_causal_mask` for flexibility and correctness
+   - The vmap approach supports complex masks (segment_ids, sliding windows)
+   - No performance penalty when JIT-compiled
+
+2. **For Development/Debugging (without JIT):**
+   - Naive implementations are 2-10x faster at small sizes
+   - `naive_tril` is fastest for typical transformer sizes (B=2-8, T=128-1024)
+   - Gap narrows at larger sizes
+
+3. **Design Tradeoffs:**
+   - `make_causal_mask`: More flexible, composable, supports complex masking patterns
+   - Naive methods: Simpler code, faster without JIT, but limited flexibility
+   - The vmap overhead is ONLY visible without JIT compilation
+
+4. **Recommendation:**
+   - Keep `make_causal_mask` as primary implementation
+   - The flexibility for segment_ids, sliding windows, and document masks is valuable
+   - Performance is identical when JIT is enabled (normal usage)
+   - The 2-3x overhead without JIT is acceptable for the added flexibility
+
+================================================================================
+USAGE
+================================================================================
+
+Run benchmark with JIT enabled:
+    python benchmark/attention_mask.py --jit
+
+Run benchmark without JIT:
+    python benchmark/attention_mask.py
+
+Custom warmup/iterations:
+    python benchmark/attention_mask.py --jit --warmup 5 --iterations 20

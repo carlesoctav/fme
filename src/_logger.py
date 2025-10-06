@@ -1,4 +1,4 @@
-from typing import Protocol
+from typing import Protocol, Any
 import trackio
 import jax
 from ._utils import rank_zero
@@ -13,7 +13,7 @@ class TrackioLogger(Logger):
         self,
         project: str,
         space_id: str | None = None,
-        space_storage: SpaceStorage | None = None,
+        space_storage: Any = None,
         dataset_id: str | None = None,
         config: dict | None = None,
         resume: str = "never",

@@ -17,7 +17,6 @@ def eager_dot_product_attention(
     bias: Array | None = None,
     mask: Bool[Array, "B T N S"] | None = None,
     *,
-    inference: bool = False,
     dropout_rate: float = 0.0,
     dropout_mask: Bool[Array, "B T N S"] | None = None,
     dropout_key: PRNGKeyArray | None = None,
@@ -60,7 +59,7 @@ def eager_dot_product_attention(
         dtype = jnp.result_type(scores.dtype, jnp.float32)
     weights = jax.nn.softmax(scores.astype(dtype), axis=-1).astype(scores.dtype)
 
-    if dropout_rate > 0.0 and not inference:
+    if dropout_rate > 0.0:
         if dropout_mask is not None:
             weights = jnp.where(dropout_mask, weights, 0.0) / (1.0 - dropout_rate)
 
@@ -72,6 +71,7 @@ class AttentionModule(eqx.Module):
     attn_fn: Callable
     _attn_implementation: str = eqx.field(static=True, default="eager")
     implementation: str = eqx.field(static=True, default="xla")
+    inference: bool = False
 
     def __call__(
         self,
@@ -81,7 +81,6 @@ class AttentionModule(eqx.Module):
         bias: Array | None = None,
         mask: Array | None = None,
         *,
-        inference: bool = True,
         dropout_rate: float = 0.0,
         dropout_mask: Array | None = None,
         implementation: Literal["xla", "cudnn"] | None = None,
@@ -101,6 +100,7 @@ class JaxNNAttentionModule(AttentionModule):
         self.attn_fn = jax.nn.dot_product_attention
         self._attn_implementation = "sdpa"
         self.implementation = implementation
+        self.inference = False
 
     def __call__(
         self,
@@ -110,16 +110,24 @@ class JaxNNAttentionModule(AttentionModule):
         bias: Array | None = None,
         mask: Array | None = None,
         *,
-        inference: bool = False,
         dropout_rate: float = 0.0,
         dropout_mask: Array | None = None,
         dropout_key: PRNGKeyArray | None = None,
         **kwargs,
     ) -> Array:
+        if self.inference:
+            dropout_rate = 0.0
+        
         if dropout_rate > 0.0:
             raise NotImplementedError(
                 "dropout on sdpa which uses jax.nn.dot_product_attention is not implemented yet"
             )
+
+        if mask is not None:
+            if mask.ndim == 3:
+                mask = mask[:, None, :, :]
+            elif mask.ndim == 4:
+                mask = mask.transpose(0, 2, 1, 3)
 
         return self.attn_fn(
             query,
@@ -141,6 +149,7 @@ class EagerAttentionModule(AttentionModule):
         self.attn_fn = eager_dot_product_attention
         self._attn_implementation = "eager"
         self.implementation = implementation
+        self.inference = False
 
     def __call__(
         self,
@@ -150,7 +159,6 @@ class EagerAttentionModule(AttentionModule):
         bias: Array | None = None,
         mask: Array | None = None,
         *,
-        inference: bool = False,
         dropout_rate: float = 0.0,
         dropout_mask: Array | None = None,
         dropout_key: PRNGKeyArray | None = None,
@@ -158,19 +166,23 @@ class EagerAttentionModule(AttentionModule):
     ) -> Array:
         B, T, N, H = query.shape
 
-        if mask.ndim == 3: # (B, T, S)
+        if mask.ndim == 3:
             mask = mask[..., None, :]
-        elif mask.ndim == 2: # (B, T,)
-            mask = mask[..., None, None]
 
-        assert mask.ndim == 4,  "Mask should be 4D" 
+        assert mask.ndim == 4, "Mask should be 4D"
+
+        if self.inference:
+            dropout_rate = 0.0
+
+        if dropout_rate >0.0 and dropout_mask is None:
+            keep_prob = 1.0 - jax.lax.stop_gradient(jnp.asarray(dropout_rate))
+            dropout_mask = jax.random.bernoulli(dropout_key, keep_prob, (B, T, N, T))
 
         return self.attn_fn(
             query,
             key,
             value,
             mask=mask,
-            inference=inference,
             dropout_rate=dropout_rate,
             dropout_mask=dropout_mask,
             dropout_key=dropout_key,

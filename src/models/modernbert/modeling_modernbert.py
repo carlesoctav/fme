@@ -66,23 +66,27 @@ class ModernBertRotaryEmbedding(eqx.Module):
         rtheta = jnp.take(self.rtheta, position_ids, axis=0)  # (*B, T, halfdim)
         rtheta = rtheta[..., None, :]  # (*B, T, 1, halfdim)
 
-        tensor_pairs = hidden_states.reshape(
-            (B, T, N, H // 2, 2)
-        )  # (*B, T, N, halfdim, 2)
-        tensor_complex = (
-            tensor_pairs[..., 0] + 1j * tensor_pairs[..., 1]
-        )  # (*B, T, N, halfdim) but complex
+        # Split into two halves to match HuggingFace's rotate_half implementation
+        # HF pairs (q[i], q[i + H//2]) not (q[2i], q[2i+1])
+        half_dim = H // 2
+        x1 = hidden_states[..., :half_dim]  # (*B, T, N, halfdim)
+        x2 = hidden_states[..., half_dim:]  # (*B, T, N, halfdim)
+        
+        # Create complex representation: x1 + i*x2
+        tensor_complex = x1 + 1j * x2  # (*B, T, N, halfdim) but complex
+        
+        # Apply rotation
         rotated = (
             tensor_complex * rtheta
         )  # (*B, T, N, halfdim)  (*B, T, 1, halfdim) -> (*B, T, N, halfdim)
         ## (a+ ib) (c + id) = (ac - bd) + i(ad + bc) here c = cos(t*angle), d = sin(t*angle)
 
-        rotated = jnp.stack(
-            [jnp.real(rotated), jnp.imag(rotated)], axis=-1
-        )  # (*B, T, N, halfdim, 2)
-        rotated = (
-            rotated.reshape(hidden_states.shape) * self.attention_scaling
-        )  # (*B, T, N, H)
+        # Extract real and imaginary parts and concatenate
+        rotated_real = jnp.real(rotated)  # (*B, T, N, halfdim)
+        rotated_imag = jnp.imag(rotated)  # (*B, T, N, halfdim)
+        rotated = jnp.concatenate([rotated_real, rotated_imag], axis=-1)  # (*B, T, N, H)
+        
+        rotated = rotated * self.attention_scaling
         return rotated
 
 
@@ -161,7 +165,7 @@ class ModernBertAttention(eqx.Module):
 
         self.attention_module = make_attention_module(config=config, dtype=dtype)
 
-        use_global = (layer_id % max(config.global_attn_every_n_layers, 1)) == 0
+        use_global = (layer_id % config.global_attn_every_n_layers) == 0
         rope_config = copy.deepcopy(config)
         if use_global:
             rope_config.rope_theta = config.global_rope_theta
@@ -222,7 +226,6 @@ class ModernBertAttention(eqx.Module):
             mask=attention_mask,
             bias=None,
             dropout_rate=self.attn_dropout_rate,
-            inference=False,
             dropout_key=attn_key,
         )
 
@@ -607,6 +610,22 @@ class ModernBertModel(
             inputs_embeds=inputs_embeds,
             key=embed_key,
         )
+
+        # Create position_ids if not provided, respecting attention_mask
+        if position_ids is None:
+            if attention_mask is not None:
+                # Match HuggingFace: position_ids = attention_mask.cumsum(-1) - 1
+                # For padded positions (attention_mask == 0), set position_id to 0
+                attention_mask_int = jnp.asarray(attention_mask, dtype=jnp.int32)
+                position_ids = jnp.cumsum(attention_mask_int, axis=-1) - 1
+                position_ids = jnp.where(attention_mask_int == 0, 0, position_ids)
+            else:
+                # No attention mask: use simple range
+                batch_size, seq_len = hidden_states.shape[:2]
+                position_ids = jnp.broadcast_to(
+                    jnp.arange(seq_len, dtype=jnp.int32),
+                    (batch_size, seq_len)
+                )
 
         full_mask = make_full_mask(
             mask_impl=self.config._attn_implementation,

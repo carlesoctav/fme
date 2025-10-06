@@ -111,17 +111,12 @@ def make_bool_mask(
         )
 
     if padding_mask is not None:
-        # Expand padding_mask from (B, T) to (B, T, T) or (B, H, T, T)
-        # Each query position can attend to all valid key positions
-        if mask_output.ndim == 3:  # (B, T_q, T_kv)
-            # Expand to (B, 1, T_kv) and broadcast
-            expanded_padding_mask = jnp.expand_dims(padding_mask, axis=1)
-        else:  # (B, H, T_q, T_kv)
-            # Expand to (B, 1, 1, T_kv) and broadcast
-            expanded_padding_mask = jnp.expand_dims(
-                jnp.expand_dims(padding_mask, axis=1), axis=1
-            )
-        return mask_output & expanded_padding_mask
+        if mask_output.ndim == 3:
+            expanded_padding_mask = padding_mask[:, None, :]
+            return jnp.asarray(mask_output & expanded_padding_mask, dtype = jnp.bool)
+        else:
+            expanded_padding_mask = padding_mask[:, None, None, :]
+            return mask_output & expanded_padding_mask
     else:
         return mask_output
 
