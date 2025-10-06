@@ -21,20 +21,21 @@ class TrackioLogger(Logger):
         private: bool | None = None,
         embed: bool = True,
     ):
+        self.name = project
         self.logger = rank_zero(
             trackio.init
         )(
-            project,
-            space_id,
-            space_storage,
-            dataset_id,
-            config,
-            resume,
-            settings,
-            private,
-            embed
+            project=project,
+            space_id=space_id,
+            space_storage=space_storage,
+            dataset_id=dataset_id,
+            config=config,
+            resume=resume,
+            settings=settings,
+            private=private,
+            embed=embed
         )
 
     @rank_zero
     def log(self, logs, step, **kwargs):
-        self.logger(logs, step = step, **kwargs)
+        self.logger.log(logs, step = step, **kwargs)

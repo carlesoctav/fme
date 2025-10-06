@@ -240,7 +240,7 @@ def make_module_opt(
         pspec_tree = get_partition_spec(m)
         m_sharded = eqx.filter_shard(m, pspec_tree)
         opt = Optimizer(grad_tx, m_sharded, wrt=wrt)
-        opt = eqx.filter_shard(opt, pspec_tree)
+
 
         return m_sharded, opt
 
@@ -414,11 +414,11 @@ class Eval:
 
 
 def make_eval_step(
-    *,
     loss_function: _LossFn | None = None,
     eval_step: _EvalStepCallable[tp.Sequence[_M], tp.Sequence[Optimizer]]
     | _EvalStepCallable[_M, Optimizer]
     | None = None,
+    *,
     jit: bool = True,
 ) -> (
     _EvalStepCallable[_M, Optimizer]
@@ -466,17 +466,16 @@ def eval_loop(
             method(module, optimizer, logger, train_step_idx)
 
     for eval_obj in evals:
-        with wallclock(f"eval_{eval_obj.name}", logger, train_step_idx, noop=not enable_wallclock):
-            eval_metric, logs = eval_obj.run(
-                module,
-                optimizer,
-                key=key,
-                logger=logger,
-                enable_wallclock=enable_wallclock,
-                train_step_idx=train_step_idx,
-            )
-            eval_metrics[eval_obj.name] = eval_metric
-            eval_logs = {**eval_logs, **logs} 
+        eval_metric, logs = eval_obj.run(
+            module,
+            optimizer,
+            key=key,
+            logger=logger,
+            enable_wallclock=enable_wallclock,
+            train_step_idx=train_step_idx,
+        )
+        eval_metrics[eval_obj.name] = eval_metric
+        eval_logs = {**eval_logs, **logs} 
 
     for callback in callbacks:
         method = getattr(callback, "on_validation_end", None)
@@ -546,6 +545,7 @@ def train_loop(
             try:
                 batch = next(train_iterator)
             except StopIteration:
+                print("DEBUGPRINT[5]: _training.py:547 (after except StopIteration:)")
                 LOGGER.info("Train data loader exhausted, ending training loop.")
                 break
 

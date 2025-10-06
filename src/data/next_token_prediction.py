@@ -52,8 +52,8 @@ class TokenizeText(grain_transforms.Map):
 
     column: str
     tokenizer: PreTrainedTokenizerBase
-    max_length: int | None = None
     packing: bool
+    max_length: int | None = None
 
     def map(self, features: dict[str, tp.Any]) -> dict[str, Array]:
         if self.column not in features:

@@ -44,7 +44,7 @@ class Dropout(eqx.Module):
     ) -> Array:
 
 
-        if self.inference: 
+        if self.inference or self.p == 0.0: 
             return x 
 
         if not self.inference and key is None:

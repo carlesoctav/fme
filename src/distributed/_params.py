@@ -21,7 +21,7 @@ def get_partition_spec(module: eqx.Module):
         if hasattr(x, "shape"):
             return P()
         else:
-            None
+            return None
 
     def _f(leaf):
         if isinstance(leaf, DArray):

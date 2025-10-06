@@ -727,7 +727,7 @@ class BertForMaskedLM(
             config,
             dtype=dtype,
             params_dtype=params_dtype,
-            store_config=False,
+            store_config=True,
             key=bert_key,
         )
         self.cls = BertOnlyMLMHead(
@@ -764,6 +764,9 @@ class BertForMaskedLM(
 
         # decoder tied weights: use embedding matrix for projection
         w = self.bert.embeddings.word_embeddings.weight  # (vocab_size, hidden_size)
+        # Unwrap DArray if necessary
+        if hasattr(w, 'value'):
+            w = w.value
         logits = self.cls(sequence_output, w, key=cls_key)
         return logits
 

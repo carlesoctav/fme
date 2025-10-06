@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import typing as tp
 from collections.abc import Sequence
-from contextlib import nullcontext
 
 import logging
 import time
@@ -22,7 +21,6 @@ from ._dataset_transforms import (
     EnsureMapDataset,
 )
 from ._transforms import CollateToBatch
-from .._wallclock import ProgramWallClock
 
 
 Batch = tp.Any
@@ -92,24 +90,6 @@ class _DatasetIteratorWithInputSpec(DatasetIterator[_T]):
 
 
 class IterDatasetWithInputSpec(IterDataset[_T]):
-    @tp.overload
-    def __init__(
-        self,
-        parent: IterDataset[_S],
-        axis_names: str | tuple[str, ...],
-        pspec: None = None,
-        mesh: Mesh | None = None,
-    ) -> None: ...
-
-    @tp.overload
-    def __init__(
-        self,
-        parent: IterDataset[_S],
-        pspec: PartitionSpec,
-        axis_names: None = None,
-        mesh: Mesh | None = None,
-    ) -> None: ...
-
     def __init__(
         self,
         parent: IterDataset[_S],
@@ -232,8 +212,8 @@ def make_dataloader(
     num_epochs: int | None = None,
     *,
     dataset_weights: Sequence[float] | None = None,
-    dataloading_host_index: int = jax.process_index(),
-    dataloading_host_count: int = jax.process_count(),
+    dataloading_host_index: int | None = None,
+    dataloading_host_count: int | None = None,
     shuffle: bool = True,
     seed: int = 0,
     worker_count: int = 1,
@@ -241,9 +221,12 @@ def make_dataloader(
     drop_remainder: bool = True,
     batch_class: type[Batch] | None = None,
     use_thread_prefetch: bool = False,
-    wall_clock: ProgramWallClock | None = None,
 ) -> IterDatasetWithInputSpec:
 
+    if dataloading_host_index is None:
+        dataloading_host_index = jax.process_index()
+    if dataloading_host_count is None:
+        dataloading_host_count = jax.process_count()
 
     if dataloading_host_count <= 0:
         raise ValueError("dataloading_host_count must be positive")
@@ -253,8 +236,6 @@ def make_dataloader(
         )
 
     local_process_batch_size = global_batch_size // dataloading_host_count
-
-    measurement = wall_clock.measure("dataloader.prepare", mode="setup") if wall_clock else nullcontext()
 
     prepared: list[grain.MapDataset | grain.IterDataset] = []
     if isinstance(datasets, (str, bytes)) or not isinstance(datasets, Sequence):
@@ -308,17 +289,16 @@ def make_dataloader(
 
         prepared.append(ds)
 
-    with measurement:
-        return make_iterator_with_inputspec(
-            prepared,
-            pspec=pspec_out,
-            mesh=mesh,
-            global_batch_size=global_batch_size,
-            dataloading_host_count=dataloading_host_count,
-            dataset_weights=dataset_weights,
-            worker_count=worker_count,
-            worker_buffer_size=worker_buffer_size,
-            drop_remainder=drop_remainder,
-            batch_class=batch_class,
-            use_thread_prefetch=use_thread_prefetch,
-        )
+    return make_iterator_with_inputspec(
+        prepared,
+        pspec=pspec_out,
+        mesh=mesh,
+        global_batch_size=global_batch_size,
+        dataloading_host_count=dataloading_host_count,
+        dataset_weights=dataset_weights,
+        worker_count=worker_count,
+        worker_buffer_size=worker_buffer_size,
+        drop_remainder=drop_remainder,
+        batch_class=batch_class,
+        use_thread_prefetch=use_thread_prefetch,
+    )
