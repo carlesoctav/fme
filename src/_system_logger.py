@@ -1,51 +1,7 @@
 import logging
-import multiprocessing
 import os
-from typing import Any, Protocol
-
 import jax
-import trackio
-
-from ._utils import rank_zero
-
-
-class Logger(Protocol):
-    def log(self, *args, **kwargs):
-        ...
-
-class TrackioLogger(Logger):
-    def __init__(
-        self,
-        project: str,
-        space_id: str | None = None,
-        space_storage: Any = None,
-        dataset_id: str | None = None,
-        config: dict | None = None,
-        resume: str = "never",
-        settings: Any = None,
-        private: bool | None = None,
-        embed: bool = True,
-    ):
-        self.name = project
-        self.logger = rank_zero(
-            trackio.init
-        )(
-            project=project,
-            space_id=space_id,
-            space_storage=space_storage,
-            dataset_id=dataset_id,
-            config=config,
-            resume=resume,
-            settings=settings,
-            private=private,
-            embed=embed
-        )
-
-    @rank_zero
-    def log(self, logs, step, **kwargs):
-        self.logger.log(logs, step = step, **kwargs)
-
-
+import multiprocessing
 
 
 def get_multiprocess_index():
@@ -64,7 +20,8 @@ class CustomFormatter(logging.Formatter):
         original = super().format(record)
         return f"{prefix} {original}"
 
-def setup_logger(log_file="./train.log"):
+
+def setup_logger(log_file="distributed.log"):
     os.makedirs(os.path.dirname(log_file) or ".", exist_ok=True)
 
     logger = logging.getLogger("distributed_logger")

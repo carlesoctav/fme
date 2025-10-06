@@ -7,6 +7,8 @@ from pathlib import Path
 
 import orbax.checkpoint as ocp
 from orbax.checkpoint import checkpoint_managers as ocp_cm, CheckpointHandler
+import equinox as eqx
+from .._training import Optimizer
 
 
 _M = tp.TypeVar("_M")
@@ -107,20 +109,19 @@ class ModelCheckpoint:
     def save(
         self,
         module: tp.Any,
-        optimizer: tp.Any,
+        optimizer: Optimizer, 
         logs: Mapping[str, float] | None,
         step: int,
         force = False
     ) -> None:
 
         items: dict[str, tp.Any] = {
-            "module": ocp.args.PyTreeSave(module),
+            "module": ocp.args.PyTreeSave(eqx.filter(module, optimizer.wrt)),
             "metrics": ocp.args.JsonSave(logs)
         }
 
-
         if self.save_optimizer:
-            items["optimizer"] = ocp.args.PyTreeSave(optimizer)
+            items["optimizer"] = ocp.args.PyTreeSave(optimizer.opt_state)
 
         self._manager.save(step, args=ocp.args.Composite(**items), metrics=logs, force = force)
 

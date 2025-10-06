@@ -1,5 +1,3 @@
-import equinox as eqx
-import grain
 import jax
 import jax.numpy as jnp
 import jax.random as jr
@@ -13,11 +11,15 @@ from src._logger import TrackioLogger
 from src.callbacks import LearningRateMonitor, ModelCheckpoint
 from src.data._training import make_dataloader
 from src.data.masked_language_modeling import (
-    MLMBatch,
     masked_language_modeling_transforms,
 )
 from src.losses.cross_entropy import softmax_cross_entropy_with_integer_labels
 from src.models.bert import BertForMaskedLM
+from src._logger import setup_logger
+import logging
+
+setup_logger()
+logging.getLogger(__name__)
 
 
 DATASET_NAME = "carlesoctav/skripsi_UI_membership_30K"
@@ -80,6 +82,7 @@ def loss_function(model, optimizer, batch, key):
     aux = {
         "loss": (total_loss, num_valid_tokens),
         "acc": (accuracy, num_valid_tokens),
+        "total_token": num_valid_tokens
     }
     
     return total_loss, aux
@@ -154,14 +157,13 @@ def main():
         datasets=[dataset],
         operations=operations,
         global_batch_size=BATCH_SIZE,
-        axis_names=MESH_AXIS_NAMES,
+        pspec = PartitionSpec("dp"),
         mesh=mesh,
         num_epochs=None,
         shuffle=True,
         seed=SEED,
         worker_count=NUM_WORKERS,
         worker_buffer_size=WORKER_BUFFER_SIZE,
-        use_thread_prefetch = True,
         drop_remainder=True,
         batch_class=batch_class,
     )

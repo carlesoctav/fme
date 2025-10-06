@@ -1,22 +1,17 @@
 from __future__ import annotations
 
-import typing as tp
-from collections.abc import Sequence
-
 import logging
 import time
+import typing as tp
+from collections.abc import Sequence
 
 import grain
 import jax
 import jax.tree_util as jtu
 from grain import DatasetIterator, IterDataset, transforms as grain_transforms
-from grain._src.python.dataset.transformations.prefetch import ThreadPrefetchIterDataset
 from jax.sharding import Mesh, PartitionSpec
 
-from dataclasses import replace as dc_replace
-
 from ._dataset_transforms import (
-    ApplyFirstFitPacking,
     BaseDatasetTransform,
     EnsureMapDataset,
 )
@@ -93,15 +88,12 @@ class IterDatasetWithInputSpec(IterDataset[_T]):
     def __init__(
         self,
         parent: IterDataset[_S],
-        axis_names: str | tuple[str, ...] | None = None,
         pspec: PartitionSpec | None = None,
         mesh: Mesh | None = None,
     ):
         super().__init__(parent)
 
-        if (axis_names is None) == (pspec is None):
-            raise ValueError("Exactly one of `axis_name` or `pspec` must be provided.")
-        self._pspec = PartitionSpec(axis_names) if axis_names else pspec
+        self._pspec = pspec or PartitionSpec()
         self._mesh = mesh
 
     def __iter__(self) -> IterDatasetWithInputSpec:
@@ -112,115 +104,25 @@ class IterDatasetWithInputSpec(IterDataset[_T]):
                 mesh = self._mesh
         )
 
-def _maybe_check_size(
-    mesh: Mesh | None,
-    pspec: PartitionSpec | None,
-    axis_names: str | tuple[str, ...] | None,
-    global_batch_size: int,
-) -> PartitionSpec:
-    """
-    Checks that global_batch_size is divisible by the product of mesh axis sizes.
-    Returns a pspec or PartitionSpec(axis_names) 
-    """
-    if axis_names:
-        if isinstance(axis_names, str):
-            axis_names_tuple = (axis_names,)
-        else:
-            axis_names_tuple = tuple(axis_names)
-
-        pspec_out = PartitionSpec(axis_names_tuple)
-    elif pspec:
-        axis_names_tuple = pspec[0]
-        pspec_out = pspec
-    else:
-        raise ValueError("Either axis_names or pspec must be provided.")
-
-
-    if mesh is None:
-        return pspec_out
-
-    axis_size = 1
-    for axis in axis_names_tuple:
-        axis_size *= mesh.shape.get(axis)
-    if global_batch_size % axis_size != 0:
-        raise ValueError(
-            f"Global batch size {global_batch_size} must be divisible by the "
-            f"product of the sizes of the mesh axes {axis_names_tuple} ({axis_size})."
-        )
-    return pspec_out 
-
-def make_iterator_with_inputspec(
-    grain_datasets: grain.IterDataset | Sequence[grain.IterDataset],
-    pspec: PartitionSpec | None = None,
-    *,
-    mesh: Mesh,
-    global_batch_size: int,
-    dataloading_host_count: int,
-    dataset_weights: Sequence[float] | None = None,
-    worker_count: int = 1,
-    worker_buffer_size: int = 1,
-    drop_remainder: bool = True,
-    batch_class: type[Batch] | None = None,
-    reset_after_epoch: bool = False,
-    use_thread_prefetch: bool = False,
-) -> IterDatasetWithInputSpec:
-
-    if isinstance(grain_datasets, tp.Sequence):
-        if not all(isinstance(ds, grain.IterDataset) for ds in grain_datasets):
-            raise TypeError("All datasets must be instances of grain.IterDataset.")
-        mixed = grain.IterDataset.mix(grain_datasets,  weights = dataset_weights) 
-    else:
-        mixed = grain_datasets 
-
-    local_process_batch_size = global_batch_size // dataloading_host_count
-
-    mixed = mixed.batch(batch_size = local_process_batch_size, drop_remainder = drop_remainder) 
-
-    if batch_class:
-        mixed = mixed.map(CollateToBatch(batch_class=batch_class))
-
-
-    if use_thread_prefetch:
-        mixed = ThreadPrefetchIterDataset(
-            mixed,
-            prefetch_buffer_size=int(worker_buffer_size * worker_count),
-        )
-    elif worker_count > 0 and not use_thread_prefetch:
-        mp_options = grain.MultiprocessingOptions(
-            num_workers=worker_count,
-            per_worker_buffer_size=worker_buffer_size,
-        )
-        mixed = mixed.mp_prefetch(mp_options)
-
-
-
-    return IterDatasetWithInputSpec(
-        mixed,
-        pspec = pspec,
-        mesh = mesh
-    )
-
 def make_dataloader(
     datasets: Sequence[tp.Any],
-    operations: Sequence[
-        grain_transforms.Map | grain_transforms.RandomMap | BaseDatasetTransform
-    ],
+    operations: Sequence[ grain_transforms.Map | grain_transforms.RandomMap | BaseDatasetTransform ],
     global_batch_size: int,
-    axis_names: str | tuple[str, ...] | None = None,
-    pspec: PartitionSpec | None = None, 
+    pspec: PartitionSpec | None = None,
     mesh: Mesh | None = None,
     num_epochs: int | None = None,
-    *,
     dataset_weights: Sequence[float] | None = None,
     dataloading_host_index: int | None = None,
     dataloading_host_count: int | None = None,
+    is_not_sharded: bool = True,
+    read_num_threads: int = 0,
+    read_prefetch_buffer_size: int = 0,
     shuffle: bool = True,
     seed: int = 0,
-    worker_count: int = 1,
-    worker_buffer_size: int = 1,
+    worker_count: int = 0,
+    worker_buffer_size: int = 0,
     drop_remainder: bool = True,
     batch_class: type[Batch] | None = None,
-    use_thread_prefetch: bool = False,
 ) -> IterDatasetWithInputSpec:
 
     if dataloading_host_index is None:
@@ -235,16 +137,15 @@ def make_dataloader(
             "global_batch_size must be divisible by dataloading_host_count"
         )
 
-    local_process_batch_size = global_batch_size // dataloading_host_count
 
-    prepared: list[grain.MapDataset | grain.IterDataset] = []
+    prepared: list[grain.IterDataset] = []
     if isinstance(datasets, (str, bytes)) or not isinstance(datasets, Sequence):
         datasets = (datasets,)
     else:
         datasets = tuple(datasets)
 
-    pspec_out = _maybe_check_size(mesh ,pspec, axis_names, global_batch_size)
 
+    read_options = grain.ReadOptions(num_threads = read_num_threads, prefetch_buffer_size = read_prefetch_buffer_size)
     for dataset in datasets:
         if not operations:
             raise ValueError("No operations provided for dataset preparation")
@@ -261,44 +162,40 @@ def make_dataloader(
         if num_epochs is not None:
             ds = ds.repeat(num_epochs)
 
-        if dataloading_host_count > 1:
+        if dataloading_host_count > 1 and is_not_sharded:
             ds = ds[dataloading_host_index::dataloading_host_count]
+
+
+        ds = ds.to_iter_dataset(read_options)
 
         for op in rest_ops:
             #NOTES: pretty much all transformation just wrapping the dataset by another dataset class with new __iter__ and __next__ (the iterator part)
             # so by this we shouldnt differentiate between BaseDatasetTransform and grain transforms
             # need to think more about makeing single interface for all transformation
             if isinstance(op, BaseDatasetTransform):
-                if (
-                    isinstance(op, ApplyFirstFitPacking)
-                    and op.num_packing_bins is None
-                ):
-                    op = dc_replace(op, num_packing_bins=local_process_batch_size)
                 ds = op(ds)  
             elif isinstance(op, grain_transforms.RandomMap):
-                if isinstance(ds, grain.MapDataset):
-                    ds = ds.to_iter_dataset()
                 ds = ds.random_map(op)  
             elif isinstance(op, grain_transforms.Map):
                 ds = ds.map(op)  
             else:
                 raise TypeError(f"Unsupported operation type: {type(op)}")
 
-        if isinstance(ds, grain.MapDataset):
-            ds = ds.to_iter_dataset()
-
         prepared.append(ds)
 
-    return make_iterator_with_inputspec(
-        prepared,
-        pspec=pspec_out,
-        mesh=mesh,
-        global_batch_size=global_batch_size,
-        dataloading_host_count=dataloading_host_count,
-        dataset_weights=dataset_weights,
-        worker_count=worker_count,
-        worker_buffer_size=worker_buffer_size,
-        drop_remainder=drop_remainder,
-        batch_class=batch_class,
-        use_thread_prefetch=use_thread_prefetch,
-    )
+
+    mixed = grain.IterDataset.mix(prepared,  weights = dataset_weights) 
+    local_process_batch_size = global_batch_size // dataloading_host_count
+
+    mixed = mixed.batch(batch_size = local_process_batch_size, drop_remainder = drop_remainder) 
+
+    if batch_class:
+        mixed = mixed.map(CollateToBatch(batch_class=batch_class))
+
+    mp_options = grain.MultiprocessingOptions(num_workers=worker_count, per_worker_buffer_size=worker_buffer_size,)
+    mixed = mixed.mp_prefetch(mp_options)
+
+    if mesh:
+        return IterDatasetWithInputSpec(mixed, pspec = pspec, mesh = mesh)
+    return mixed
+

@@ -37,7 +37,7 @@ def wallclock(
     finally:
         diff = time.monotonic() - t0
         if not noop:
-            logger.log({f"{name}/time": diff}, step = step)
+            logger.log({f"time/{name}": diff}, step = step)
 
 def first_from(*args: A | None, error_msg: str) -> A:
     for arg in args:

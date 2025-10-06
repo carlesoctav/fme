@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import jax
 import jax.tree_util as jtu
 
 from ._callbacks import Callback
+from .._utils import rank_zero
 
 
 LOGGER = logging.getLogger(__name__)
@@ -31,60 +33,46 @@ class JaxProfiler(Callback):
     def __init__(
         self,
         *,
-        log_dir: str | Path = "log",
-        profile_log_dir: str = "tensorboard",
-        main_process_only: bool = False,
-        profile_every_n_minutes: float = 60,
+        log_dir: str | Path = "./log/jaxprofiler",
+        profile_every_n_minutes: float = 300,
         profile_first_step: int = 10,
-        profile_n_steps: int = 5,
-        profile_max_seconds: float | None = None,
-        time_fn: Callable[[], float] = time.time,
+        profile_n_steps: int = 4,
+        time_fn: Callable[[], float] = time.monotonic,
     ) -> None:
-        self.log_path = Path(log_dir) / profile_log_dir
+        self.log_path = Path(log_dir)
         self.log_path.mkdir(parents=True, exist_ok=True)
+
         self.profile_every_n_minutes = profile_every_n_minutes
         self.profile_first_step = profile_first_step
         self.profile_n_steps = max(1, profile_n_steps)
-        self.profile_max_seconds = profile_max_seconds
-        self.main_process_only = main_process_only
         self._time = time_fn
 
         self._active = False
         self._last_profile_time = self._time()
         self._trace_start_step: int | None = None
-        self._deadline: float | None = None
         LOGGER.debug("JaxProfiler initialized: %s", self.log_path)
 
-    def on_training_start(self, **_: Any) -> None:
-        self._active = False
-        self._trace_start_step = None
-        self._deadline = None
-        self._last_profile_time = self._time()
-
-    def on_training_step_end(
+    @rank_zero
+    def on_training_step(
         self,
-        *,
-        step_idx: int,
-        aux: Any | None = None,
-        reduce: Any | None = None,
-        **kwargs: Any,
+        module,
+        optimizer,
+        batch,
+        logs,
+        logger,
+        step_idx,
     ) -> None:
-        del kwargs
-
-        if self.main_process_only and jax.process_index() != 0:
-            return
-
         now = self._time()
 
         if self._active:
             should_stop = False
-            if self._trace_start_step is not None and step_idx >= self._trace_start_step + self.profile_n_steps:
+            if (
+                self._trace_start_step is not None
+                and (step_idx - self._trace_start_step) >= self.profile_n_steps
+            ):
                 should_stop = True
-            if self._deadline is not None and now >= self._deadline:
-                should_stop = True
-            payload = reduce if reduce is not None else aux
             if should_stop:
-                self._stop(payload)
+                self._stop(module, optimizer, logger)
             return
 
         should_start = False
@@ -98,24 +86,26 @@ class JaxProfiler(Callback):
         if should_start:
             self._start(step_idx)
 
-    def on_training_end(self, **kwargs: Any) -> None:  # type: ignore[override]
-        del kwargs
-        self._stop(None)
+    @rank_zero
+    def on_training_end(self, module, optimizer, logs, logger, step) -> None:
+        self._stop(module, optimizer)
 
-    def on_validation_start(self, **kwargs: Any) -> None:  # type: ignore[override]
-        del kwargs
-        if self.main_process_only and jax.process_index() != 0:
-            return
-        self._stop(None)
+    @rank_zero
+    def on_validation_start(self, module, optimizer, logger, step) -> None:
+        self._stop(module, optimizer)
 
     def _start(self, step: int) -> None:
         if self._active:
-            LOGGER.debug("Profiler already active; start request ignored (step=%s)", step)
+            LOGGER.debug(
+                "Profiler already active; start request ignored (step=%s)", step
+            )
             return
 
         trace_path = self.log_path / f"profile-step-{step}"
         trace_path.mkdir(parents=True, exist_ok=True)
-        LOGGER.info("Starting JAX profiler trace at step %s (path=%s)", step, trace_path)
+        LOGGER.info(
+            "Starting JAX profiler trace at step %s (path=%s)", step, trace_path
+        )
         try:
             jax.profiler.start_trace(str(trace_path))
         except Exception:
@@ -124,19 +114,14 @@ class JaxProfiler(Callback):
 
         self._active = True
         self._trace_start_step = step
-        self._deadline = (
-            self._time() + self.profile_max_seconds
-            if self.profile_max_seconds is not None
-            else None
-        )
 
-    def _stop(self, metrics: Any | None) -> None:
+    def _stop(self, module, optimizer) -> None:
         if not self._active:
             return
 
         LOGGER.info("Stopping JAX profiler trace")
-        if metrics is not None:
-            _block_until_ready(metrics)
+        _block_until_ready(module)
+        _block_until_ready(module)
         try:
             jax.profiler.stop_trace()
         except Exception:
