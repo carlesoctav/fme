@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import logging
 import typing as tp
 import warnings
 from collections.abc import Mapping
-from pathlib import Path
 
-import orbax.checkpoint as ocp
-from orbax.checkpoint import checkpoint_managers as ocp_cm, CheckpointHandler
 import equinox as eqx
+import orbax.checkpoint as ocp
+from etils import epath
+from orbax.checkpoint import checkpoint_managers as ocp_cm
+
 from .._training import Optimizer
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 _M = tp.TypeVar("_M")
@@ -21,7 +26,8 @@ class ModelCheckpoint:
 
     def __init__(
         self,
-        directory: str | Path,
+        directory: str | epath.Path,
+        run_name: str = "",
         save_interval_steps: int | None = None,
         preservation_policy: ocp_cm.PreservationPolicy | None = None,
         save_decision_policy: ocp_cm.SaveDecisionPolicy | None = None, 
@@ -29,6 +35,7 @@ class ModelCheckpoint:
         save_on_training_end: bool = True,
         save_optimizer: bool = True,
         save_hparams: bool = False,
+        save_data: bool = False,
     ) -> None:
 
         if save_on not in {"train", "eval"}:
@@ -40,18 +47,13 @@ class ModelCheckpoint:
             if save_interval_steps is not None and save_interval_steps <= 0:
                 raise ValueError("save_interval_steps must be positive when provided")
 
-        self.name = str(directory)
-        directory_str = str(directory)
-        
-        if directory_str.startswith("gs://"):
-            self._directory = Path(directory_str)
-        else:
-            self._directory = directory if isinstance(directory, Path) else Path(directory)
-            self._directory = self._directory.resolve()
-            self._directory.mkdir(parents = True, exist_ok = True)
+        self._directory = directory if isinstance(directory, epath.Path) else epath.Path(directory)
 
+        self._directory = self._directory / run_name if run_name else self._directory
 
-        self.save_interval_steps = save_interval_steps
+        self._directory.mkdir(parents = True, exist_ok = True)
+
+        self._save_interval_steps = save_interval_steps
         self._save_decision_policy = save_decision_policy
 
         self.save_on = save_on
@@ -59,11 +61,20 @@ class ModelCheckpoint:
 
         self.save_optimizer = save_optimizer
         self.save_hparams = save_hparams
+        self.save_data = save_data
 
         self._preservation_policy = preservation_policy
-        self._manager, self._item_names = self._build_manager()
+        self._manager = self._build_manager()
 
-    def on_training_step(self, module, optimizer, batch, logs, logger, step) -> None:
+    def on_training_step(
+        self,
+        module,
+        optimizer,
+        batch,
+        logs,
+        logger,
+        step
+    ) -> None:
         if self.save_on != "train":
             return
 
@@ -85,31 +96,17 @@ class ModelCheckpoint:
 
 
     def _build_manager(self) -> tuple[ocp.CheckpointManager, tuple[str, ...]]:
-
-        item_handlers: dict[str, CheckpointHandler] = {"module": ocp.PyTreeCheckpointHandler()}
-        item_handlers["metrics"] = ocp.JsonCheckpointHandler()
-
-        if self.save_optimizer and "optimizer" not in item_handlers:
-            item_handlers["optimizer"] = ocp.PyTreeCheckpointHandler()
-
-        item_names = list(item_handlers.keys())
-
-        policy = self._preservation_policy
-
         options = ocp.CheckpointManagerOptions(
             save_decision_policy=self._save_decision_policy,
-            preservation_policy=policy,
-            save_interval_steps=self.save_interval_steps,
+            preservation_policy=self._preservation_policy,
+            save_interval_steps=self._save_interval_steps,
         )
 
         manager = ocp.CheckpointManager(
-            directory=self._directory.as_posix(),
-            item_names=tuple(item_names),
-            item_handlers=item_handlers,
+            directory=self._directory,
             options=options,
-            metadata={"name": self.name}
         )
-        return manager, tuple(item_names)
+        return manager 
 
     def save(
         self,
@@ -128,7 +125,16 @@ class ModelCheckpoint:
         if self.save_optimizer:
             items["optimizer"] = ocp.args.PyTreeSave(optimizer.opt_state)
 
-        self._manager.save(step, args=ocp.args.Composite(**items), metrics=logs, force = force)
+        if self.save_data:
+            raise NotImplementedError("not yet implemented to store the iterator state")
+            # items["data"] = grain.checkpoint.CheckpointSave(self.iterator)
+
+        self._manager.save(
+            step,
+            args=ocp.args.Composite(**items),
+            metrics=logs,
+            force = force
+        )
 
     def finish(self) -> None:
         try:
