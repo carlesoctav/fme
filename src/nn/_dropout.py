@@ -27,6 +27,7 @@ class Dropout(eqx.Module):
         inference: bool = False,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
+        key: PRNGKeyArray | None = None,
     ):
         if not 0.0 <= p <= 1.0:
             raise ValueError(f"Dropout probability must be between 0 and 1, got {p}")

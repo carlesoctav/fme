@@ -58,7 +58,8 @@ class Linear(eqx.Module):
     def __call__(
         self,
         x: Float[Array, "... in_features"],
-        /,
+        *,
+        key: PRNGKeyArray | None = None,
     ):
         weight = getattr(self.weight, "value", self.weight)
         w, x_ = promote_dtype(weight, x, dtype=self.dtype)

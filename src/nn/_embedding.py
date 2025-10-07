@@ -47,7 +47,9 @@ class Embedding(eqx.Module):
 
     def __call__(
         self,
-        x: Int[Array, " ..."]
+        x: Int[Array, " ..."],
+        *,
+        key: PRNGKeyArray | None = None,
     ) -> Array:
         """Lookup embeddings for arbitrary leading axes of indices.
 

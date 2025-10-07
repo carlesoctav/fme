@@ -70,6 +70,8 @@ class LayerNorm(eqx.Module):
     def __call__(
         self,
         x: Float[Array, " *normalized_shape"],
+        *,
+        key: PRNGKeyArray | None = None,
     ) -> Array:
         """
         Applies LayerNorm over the last `len(normalized_shape)` dims.
