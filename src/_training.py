@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 import typing as tp
 from contextlib import nullcontext
 from dataclasses import dataclass, field
@@ -88,9 +89,7 @@ class Optimizer(eqx.Module):
             grads, self.opt_state, eqx.filter(model, self.wrt)
         )
         new_model = eqx.apply_updates(model, updates)
-        new_self = eqx.tree_at(
-            lambda o: [o.opt_state], self, [opt_state]
-        )
+        new_self = eqx.tree_at(lambda o: [o.opt_state], self, [opt_state])
         return new_model, new_self
 
 
@@ -238,7 +237,6 @@ def make_module_opt(
         pspec_tree = get_partition_spec(m)
         m_sharded = eqx.filter_shard(m, pspec_tree)
         opt = Optimizer(grad_tx, m_sharded, wrt=wrt)
-
 
         return m_sharded, opt
 
@@ -505,7 +503,7 @@ def train_loop(
     train_metric: SufficientMetric | None = None,
     num_train_steps: int | None = None,
     enable_wallclock: bool = True,
-    stop_train_wallclock_after_step: int = 1000, 
+    stop_train_wallclock_after_step: int = 1000,
     callbacks: tp.Sequence[Callback] | None = None,
     evals: tp.Sequence[Eval] | None = None,
     eval_interval: int | None = None,
@@ -562,7 +560,8 @@ def train_loop(
                 "train_step",
                 logger,
                 train_step_idx,
-                noop = train_step_idx > stop_train_wallclock_after_step or not enable_wallclock
+                noop=train_step_idx > stop_train_wallclock_after_step
+                or not enable_wallclock,
             ):
                 with jax.profiler.StepTraceAnnotation("train_step", step = train_step_idx):
                     module, optimizer, aux = train_step_fn(
@@ -575,7 +574,7 @@ def train_loop(
             train_metric += aux
 
             step_metrics = train_metric.step_metrics()
-            per_N_metrics = train_metric.per_N_metrics(step = train_step_idx)
+            per_N_metrics = train_metric.per_N_metrics(step=train_step_idx)
 
             logs = {**step_metrics, **per_N_metrics}
 
@@ -759,4 +758,4 @@ def benchmark_loop(
         raise
     finally:
         LOGGER.info("Benchmark loop ended")
-    return module, optimizer, stats
+    eturn module, optimizer, stats
