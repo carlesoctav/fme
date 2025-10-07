@@ -9,6 +9,7 @@ from typing import Protocol
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import jax.random as jr
 import jax.tree_util as jtu
 import numpy as np
 from jax.sharding import Mesh
@@ -24,7 +25,7 @@ from .callbacks import Callback
 from .distributed import get_partition_spec
 
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = logging.getLogger("distributed_logger")
 
 
 _M = tp.TypeVar("_M", bound=eqx.Module)
@@ -231,9 +232,6 @@ def make_module_opt(
         m: _M,
         rng: PRNGKeyArray,
     ) -> tuple[_M, Optimizer]:
-        if _module_has_abstract_params(m):
-            m = init_module(m, key=rng)
-
         for plan in plans:
             m = apply_transforms(m, plan)
 
@@ -243,6 +241,9 @@ def make_module_opt(
 
 
         return m_sharded, opt
+
+    if _module_has_abstract_params(module):
+        module = init_module(module, key=key)
 
     build = eqx.filter_jit(_build)
 
@@ -284,14 +285,17 @@ def make_train_step(
         *,
         key: PRNGKeyArray | None = None,
     ) -> tuple[_M, Optimizer, _Aux]:
-        def _minibatch_step(batch):
-            (_, step_aux), step_grad = grad_fn(module, optimizer, batch, key=key)
+        def _minibatch_step(batch, step_key):
+            (_, step_aux), step_grad = grad_fn(module, optimizer, batch, key=step_key)
             return step_grad, step_aux
 
         def _scan_step(carry, batch):
-            grad, aux = carry
-            step_carry = _minibatch_step(batch)
-            return jtu.tree_map(jnp.add, carry, step_carry), None
+            grad, aux, scan_key = carry
+            scan_key, step_key = jr.split(scan_key)
+            step_grad, step_aux = _minibatch_step(batch, step_key)
+            new_grad = jtu.tree_map(jnp.add, grad, step_grad)
+            new_aux = jtu.tree_map(jnp.add, aux, step_aux)
+            return (new_grad, new_aux, scan_key), None
 
         def _stack_batch(leaf):
             B = leaf.shape[0]
@@ -310,14 +314,14 @@ def make_train_step(
             new_module, new_opt = optimizer(grad, module)
             return new_module, new_opt, aux or {}
         else:
-            grad_shapes, aux_shape = jax.eval_shape(_minibatch_step, 0)
+            grad_shapes, aux_shape = jax.eval_shape(_minibatch_step, 0, key)
             grad = jax.tree.map(lambda x: jnp.zeros(x.shape, x.dtype), grad_shapes)
             aux = jax.tree.map(lambda x: jnp.zeros(x.shape, x.dtype), aux_shape)
 
             batch = jtu.tree_map(_stack_batch, batch)
 
-            (grad, aux), _ = jax.lax.scan(
-                _scan_step, (grad, aux), batch, length=gradient_accumulation_steps
+            (grad, aux, _), _ = jax.lax.scan(
+                _scan_step, (grad, aux, key), batch, length=gradient_accumulation_steps
             )
 
             grad = jax.tree_util.tree_map(
@@ -466,16 +470,17 @@ def eval_loop(
             method(module, optimizer, logger, train_step_idx)
 
     for eval_obj in evals:
-        eval_metric, logs = eval_obj.run(
-            module,
-            optimizer,
-            key=key,
-            logger=logger,
-            enable_wallclock=enable_wallclock,
-            train_step_idx=train_step_idx,
-        )
-        eval_metrics[eval_obj.name] = eval_metric
-        eval_logs = {**eval_logs, **logs} 
+        with wallclock(f"eval{eval_obj.name}", logger =logger):
+            eval_metric, logs = eval_obj.run(
+                module,
+                optimizer,
+                key=key,
+                logger=logger,
+                enable_wallclock=enable_wallclock,
+                train_step_idx=train_step_idx,
+            )
+            eval_metrics[eval_obj.name] = eval_metric
+            eval_logs = {**eval_logs, **logs} 
 
     for callback in callbacks:
         method = getattr(callback, "on_validation_end", None)
@@ -559,9 +564,10 @@ def train_loop(
                 train_step_idx,
                 noop = train_step_idx > stop_train_wallclock_after_step or not enable_wallclock
             ):
-                module, optimizer, aux = train_step_fn(
-                    module, optimizer, batch, key=step_key
-                )
+                with jax.profiler.StepTraceAnnotation("train_step", step = train_step_idx):
+                    module, optimizer, aux = train_step_fn(
+                        module, optimizer, batch, key=step_key
+                    )
 
             progress_bar.update()
 
@@ -613,3 +619,144 @@ def train_loop(
             method(module, optimizer, logs, logger, train_step_idx)
 
     return module, optimizer, train_metric, eval_metrics if evals else {}
+
+
+def benchmark_loop(
+    module: _ModuleInput,
+    optimizer: _OptimizerInput,
+    train_step_fn: _TrainStepCallable[_ModuleInput, _OptimizerInput],
+    train_loader: tp.Iterable[tp.Any],
+    logger: Logger,
+    num_steps: int = 100,
+    theoretical_flops_per_step: float | None = None,
+    trace_steps: tuple[int, int] | None = None,
+    trace_dir: str = "./benchmark_traces",
+    *,
+    key: PRNGKeyArray | None = None,
+) -> tuple[_ModuleInput, _OptimizerInput, dict[str, tp.Any]]:
+    import time
+    
+    if logger is None:
+        raise ValueError("logger is required")
+    step_idx = 0
+    train_step_times = []
+    next_batch_times = []
+    try:
+        train_iterator = iter(train_loader)
+    except TypeError as e:
+        raise RuntimeError("train_loader is not iterable") from e
+    progress_bar = tqdm(
+        total=num_steps,
+        desc="Benchmarking",
+        disable=jax.process_index() != 0,
+        leave=True,
+    )
+    try:
+        while step_idx < num_steps:
+            batch_start = time.perf_counter()
+            try:
+                batch = next(train_iterator)
+            except StopIteration:
+                LOGGER.info("Train data loader exhausted, ending benchmark loop.")
+                break
+            batch_end = time.perf_counter()
+            step_idx += 1
+            if (
+                trace_steps is not None
+                and step_idx == trace_steps[0]
+                and jax.process_index() == 0
+            ):
+                from pathlib import Path
+                trace_path = Path(trace_dir)
+                trace_path.mkdir(parents=True, exist_ok=True)
+                LOGGER.info(f"Starting JAX profiler trace at step {step_idx}")
+                jax.profiler.start_trace(str(trace_path))
+            key, step_key = jax.random.split(key, 2) if key is not None else (key, None)
+            step_start = time.monotonic()
+            with jax.profiler.StepTraceAnnotation("train_step", step = step_idx):
+                module, optimizer, aux = train_step_fn(
+                    module, optimizer, batch, key=step_key
+                )
+            jtu.tree_map(
+                lambda x: x.block_until_ready()
+                if hasattr(x, "block_until_ready")
+                else x,
+                module,
+            )
+            jtu.tree_map(
+                lambda x: x.block_until_ready()
+                if hasattr(x, "block_until_ready")
+                else x,
+                optimizer,
+            )
+            step_end = time.monotonic()
+
+            if (
+                trace_steps is not None
+                and step_idx == trace_steps[1]
+                and jax.process_index() == 0
+            ):
+                LOGGER.info(f"Stopping JAX profiler trace at step {step_idx}")
+                jax.profiler.stop_trace()
+            train_step_times.append(step_end - step_start)
+            next_batch_times.append(batch_end - batch_start)
+            progress_bar.update()
+        progress_bar.close()
+        train_step_times = np.array(train_step_times)
+        next_batch_times = np.array(next_batch_times)
+        if len(train_step_times) == 0:
+            LOGGER.warning("No timing data collected (all steps were skipped)")
+            return module, optimizer, {}
+        for i, t in enumerate(train_step_times, ):
+            logger.log({f"benchmark/train_step_time": t}, step=i)
+        for i, t in enumerate(next_batch_times):
+            logger.log({f"benchmark/next_batch_time": t}, step=i)
+        if theoretical_flops_per_step is not None:
+            for i, step_time in enumerate(train_step_times):
+                measured_flops_per_sec = (
+                    theoretical_flops_per_step / step_time if step_time > 0 else 0
+                )
+                logger.log({f"benchmark/flops_per_sec": measured_flops_per_sec}, step=i)
+                logger.log(
+                    {
+                        f"benchmark/mfu": measured_flops_per_sec
+                        / theoretical_flops_per_step
+                        if theoretical_flops_per_step > 0
+                        else 0
+                    },
+                    step=i,
+                )
+        for i, step_time in enumerate(train_step_times):
+            batches_per_sec = 1.0 / step_time if step_time > 0 else 0
+            logger.log({f"benchmark/batches_per_sec": batches_per_sec}, step=i)
+        if jax.process_index() == 0:
+            LOGGER.info("=" * 30)
+            LOGGER.info(" Benchmark Results ".center(30, "="))
+            LOGGER.info("=" * 30)
+            LOGGER.info(f"Train Step Time (avg): {train_step_times.mean():.4f}s")
+            LOGGER.info(f"Train Step Time (median): {np.median(train_step_times):.4f}s")
+            LOGGER.info(f"Train Step Time (std): {train_step_times.std():.4f}s")
+            LOGGER.info(f"Next Batch Time (avg): {next_batch_times.mean():.4f}s")
+            LOGGER.info(f"Batches/sec (avg): {1.0 / train_step_times.mean():.2f}")
+            if theoretical_flops_per_step is not None:
+                avg_flops = theoretical_flops_per_step / train_step_times.mean()
+                LOGGER.info(f"FLOPs/sec (avg): {avg_flops:.2e}")
+                LOGGER.info(f"MFU (avg): {avg_flops / theoretical_flops_per_step:.4f}")
+            LOGGER.info("=" * 30)
+        stats = {
+            "train_step_time_mean": float(train_step_times.mean()),
+            "train_step_time_median": float(np.median(train_step_times)),
+            "train_step_time_std": float(train_step_times.std()),
+            "next_batch_time_mean": float(next_batch_times.mean()),
+            "batches_per_sec": float(1.0 / train_step_times.mean()),
+        }
+        if theoretical_flops_per_step is not None:
+            avg_flops = theoretical_flops_per_step / train_step_times.mean()
+            stats["flops_per_sec"] = float(avg_flops)
+            stats["mfu"] = float(avg_flops / theoretical_flops_per_step)
+    except Exception:
+        LOGGER.error("Exception during benchmark loop", exc_info=True)
+        raise
+    finally:
+        LOGGER.info("Benchmark loop ended")
+    return module, optimizer, stats

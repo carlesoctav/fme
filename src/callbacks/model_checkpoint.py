@@ -41,9 +41,14 @@ class ModelCheckpoint:
                 raise ValueError("save_interval_steps must be positive when provided")
 
         self.name = str(directory)
-        self._directory = directory if isinstance(directory, Path) else Path(directory)
-        self._directory = self._directory.resolve()
-        self._directory.mkdir(parents = True, exist_ok = True)
+        directory_str = str(directory)
+        
+        if directory_str.startswith("gs://"):
+            self._directory = Path(directory_str)
+        else:
+            self._directory = directory if isinstance(directory, Path) else Path(directory)
+            self._directory = self._directory.resolve()
+            self._directory.mkdir(parents = True, exist_ok = True)
 
 
         self.save_interval_steps = save_interval_steps
@@ -116,7 +121,7 @@ class ModelCheckpoint:
     ) -> None:
 
         items: dict[str, tp.Any] = {
-            "module": ocp.args.PyTreeSave(eqx.filter(module, optimizer.wrt)),
+            "module": ocp.args.PyTreeSave(eqx.filter(module, eqx.is_array)),
             "metrics": ocp.args.JsonSave(logs)
         }
 

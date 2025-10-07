@@ -16,6 +16,7 @@ try:
         make_train_step,
         make_module_opt,
         train_loop,
+        benchmark_loop,
     )
 except ImportError:
     pass
@@ -41,6 +42,7 @@ __all__ = [
     "make_train_step",
     "make_eval_step",
     "train_loop",
+    "benchmark_loop",
     "init_module",
     "JaxProfiler",
     "Callback",

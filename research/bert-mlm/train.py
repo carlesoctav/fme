@@ -3,10 +3,11 @@ import jax.numpy as jnp
 import jax.random as jr
 import optax
 from datasets import load_dataset
-from jax.sharding import Mesh
+from jax.sharding import Mesh, PartitionSpec
 from transformers import AutoTokenizer, BertConfig
 
-from src import make_module_opt, make_train_step, SufficientMetric, train_loop
+from src._training import make_module_opt, make_train_step, train_loop
+from src._metrics import SufficientMetric
 from src._logger import TrackioLogger
 from src.callbacks import LearningRateMonitor, ModelCheckpoint
 from src.data._training import make_dataloader
@@ -17,9 +18,6 @@ from src.losses.cross_entropy import softmax_cross_entropy_with_integer_labels
 from src.models.bert import BertForMaskedLM
 from src._logger import setup_logger
 import logging
-
-setup_logger()
-logging.getLogger(__name__)
 
 
 DATASET_NAME = "carlesoctav/skripsi_UI_membership_30K"
@@ -89,6 +87,9 @@ def loss_function(model, optimizer, batch, key):
 
 
 def main():
+    setup_logger()
+    logger = TrackioLogger(project="bert-mlm-fineweb")
+    
     key = jr.PRNGKey(SEED)
     key, model_key = jr.split(key)
     
@@ -103,8 +104,8 @@ def main():
         intermediate_size=3072,
         max_position_embeddings=512,
         type_vocab_size=2,
-        hidden_dropout_prob=0.0,
-        attention_probs_dropout_prob=0.0,
+        hidden_dropout_prob=0.2,
+        attention_probs_dropout_prob=0.2,
         _attn_implementation="eager",
     )
     
@@ -157,7 +158,7 @@ def main():
         datasets=[dataset],
         operations=operations,
         global_batch_size=BATCH_SIZE,
-        pspec = PartitionSpec("dp"),
+        pspec=PartitionSpec("dp"),
         mesh=mesh,
         num_epochs=None,
         shuffle=True,
@@ -168,7 +169,6 @@ def main():
         batch_class=batch_class,
     )
     
-    logger = TrackioLogger(project="bert-mlm-fineweb")
     
     learning_rate_monitor = LearningRateMonitor(
         log_every_n_step=LOG_EVERY_N_STEPS,
@@ -177,7 +177,7 @@ def main():
     
     train_metric = SufficientMetric(name="train", log_every_n_step=LOG_EVERY_N_STEPS)
     
-    modelcheckpoint = ModelCheckpoint(
+    model_checkpoint = ModelCheckpoint(
         f"gs://carles-git-good/bert-mlm-fineweb",
         save_interval_steps=SAVE_INTERVAL_STEPS,
     )
@@ -189,8 +189,8 @@ def main():
         train_loader,
         logger,
         train_metric,
-        num_train_steps=NUM_STEPS,
-        callbacks=[learning_rate_monitor],  # removed modelcheckpoint temporarily
+        num_train_steps=None,
+        callbacks=[learning_rate_monitor, model_checkpoint],  # removed modelcheckpoint temporarily
         key=key,
     )
 

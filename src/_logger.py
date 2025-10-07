@@ -75,8 +75,9 @@ def setup_logger(log_file="./train.log"):
     stream_handler = logging.StreamHandler()
     stream_handler.setFormatter(formatter)
 
-    file_handler = logging.FileHandler(log_file)
+    file_handler = logging.FileHandler(log_file, mode='a')
     file_handler.setFormatter(formatter)
+    file_handler.setLevel(logging.DEBUG)
 
     logger.handlers.clear()
     logger.addHandler(stream_handler)

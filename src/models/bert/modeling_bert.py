@@ -194,6 +194,7 @@ class BertSelfAttention(eqx.Module):
             value=v_heads,
             mask=attention_mask,
             dropout_rate=self.dropout_rate,
+            dropout_key = dropout_key,
         )
 
         attn = attn_heads.reshape(*attn_heads.shape[:-2], self.all_head_size)
