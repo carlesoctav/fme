@@ -1,16 +1,14 @@
 import jax
 import jax.numpy as jnp
 import jax.random as jr
+import equinox as eqx
 import optax
-from io import open
 from datasets import load_dataset
 from jax.sharding import Mesh, PartitionSpec
 from transformers import AutoTokenizer, BertConfig
 
-from src._training import make_module_opt, make_train_step, train_loop
-from src._metrics import SufficientMetric
+from src._training import make_module_opt, make_train_step, benchmark_loop
 from src._logger import TrackioLogger
-from src.callbacks import LearningRateMonitor, ModelCheckpoint
 from src.data._training import make_dataloader
 from src.data.masked_language_modeling import (
     masked_language_modeling_transforms,
@@ -18,7 +16,6 @@ from src.data.masked_language_modeling import (
 from src.losses.cross_entropy import softmax_cross_entropy_with_integer_labels
 from src.models.bert import BertForMaskedLM
 from src._logger import setup_logger
-import time
 import logging
 
 
@@ -28,18 +25,15 @@ DATASET_SUBSET = None
 COLUMN_NAME = "id_title"
 MAX_LENGTH = 512
 BATCH_SIZE = 64
-NUM_STEPS = 10000
+NUM_STEPS = 100
 LEARNING_RATE = 5e-5
-WARMUP_STEPS = 1000
+WARMUP_STEPS = 10
 WEIGHT_DECAY = 0.01
 GRADIENT_ACCUMULATION_STEPS = 1
 SEED = 42
 NUM_WORKERS = 4
 WORKER_BUFFER_SIZE = 2
 MLM_PROBABILITY = 0.15
-LOG_EVERY_N_STEPS = 10
-EVAL_INTERVAL = 500
-SAVE_INTERVAL_STEPS = 100
 MESH_SHAPE = (4,)
 MESH_AXIS_NAMES = ("dp",)
 
@@ -89,9 +83,6 @@ def loss_function(model, optimizer, batch, key):
 
 
 def main():
-    setup_logger()
-    logger = TrackioLogger(project="bert-mlm-fineweb")
-    
     key = jr.PRNGKey(SEED)
     key, model_key = jr.split(key)
     
@@ -106,14 +97,15 @@ def main():
         intermediate_size=3072,
         max_position_embeddings=512,
         type_vocab_size=2,
-        hidden_dropout_prob=0.2,
-        attention_probs_dropout_prob=0.2,
+        hidden_dropout_prob=0,
+        attention_probs_dropout_prob=0,
         _attn_implementation="eager",
     )
     
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
     
-    model = BertForMaskedLM(config, key=model_key)
+    # model = BertForMaskedLM(config, key=model_key)
+    model =BertForMaskedLM(config, key = key)
     
     schedule = optax.warmup_cosine_decay_schedule(
         init_value=0.0,
@@ -128,25 +120,17 @@ def main():
         optax.adamw(learning_rate=schedule, weight_decay=WEIGHT_DECAY),
     )
     
-    start_time = time.monotonic()
     model, optimizer = make_module_opt(
         model,
         grad_tx,
         mesh=mesh,
         key=model_key,
     )
-    jax.block_until_ready(model)
-    jax.block_until_ready(optimizer)
-
-    diff = time.monotonic() - start_time
-    print(f"DEBUGPRINT[7]: train.py:140: diff={diff}")
     
     train_step_fn = make_train_step(
         loss_function=loss_function,
         gradient_accumulation_steps=GRADIENT_ACCUMULATION_STEPS,
     )
-
-
     
     dataset = load_dataset(
         DATASET_NAME,
@@ -179,40 +163,21 @@ def main():
         batch_class=batch_class,
     )
     
+    logger = TrackioLogger(project="benchmark", name="bert")
     
-    learning_rate_monitor = LearningRateMonitor(
-        log_every_n_step=LOG_EVERY_N_STEPS,
-        schedule_fn=schedule,
-    )
-
-    batch = next(iter(train_loader))
-    timing = time.monotonic()
-    compiled_text = train_step_fn.lower(model, optimizer, batch, key = jax.random.key(10)).as_text()
-
-    with open("./compiled_optimize.txt", mode = "w") as f:
-        f.write(compiled_text)
-    diff = time.monotonic() - timing
-    print(f"DEBUGPRINT[9]: train.py:190: diff for compile={diff}")
-    
-    train_metric = SufficientMetric(name="train", log_every_n_step=LOG_EVERY_N_STEPS)
-    
-    # model_checkpoint = ModelCheckpoint(
-    #     f"gs://carles-git-good/bert-mlm-fineweb",
-    #     save_interval_steps=SAVE_INTERVAL_STEPS,
-    # )
-    
-    train_loop(
+    module, optimizer, stats = benchmark_loop(
         model,
         optimizer,
         train_step_fn,
         train_loader,
         logger,
-        train_metric,
-        num_train_steps=None,
-        callbacks=[learning_rate_monitor],  # removed modelcheckpoint temporarily
+        num_steps=NUM_STEPS,
+        trace_steps=(1, 5),
         key=key,
     )
+    print(f"DEBUGPRINT[6]: benchmark.py:168: stats={stats}")
 
 
 if __name__ == "__main__":
+    setup_logger(log_file = "./benchmark.log")
     main()

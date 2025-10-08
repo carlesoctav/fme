@@ -1,0 +1,7 @@
+* Trackio project initialized: bert-mlm-benchmark
+* Trackio metrics logged to: /home/carlesoctav/.cache/huggingface/trackio
+* View dashboard by running in your terminal:
+[1m[38;5;208mtrackio show --project "bert-mlm-benchmark"[0m
+* or by running in Python: trackio.show(project="bert-mlm-benchmark")
+* Created new run: merry-cloud-10
+Benchmarking:   0%|          | 0/101 [00:00<?, ?it/s][0,0,1563415] 2025-10-08 03:52:44,438 [_training.py] INFO Running step 0 (compilation step)...

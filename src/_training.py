@@ -17,6 +17,7 @@ from jax.sharding import Mesh
 from jaxtyping import Array, PRNGKeyArray, PyTree
 from optax import GradientTransformation, GradientTransformationExtraArgs
 from tqdm.auto import tqdm
+import time
 
 from ._filter import apply_transforms, iter_module
 from ._logger import Logger
@@ -512,6 +513,7 @@ def train_loop(
 ) -> tuple[_ModuleInput, _OptimizerInput, dict[str, tp.Any], dict[str, tp.Any]]:
     callbacks = list(callbacks or [])
     evals = list(evals or [])
+    first_step  = True
 
     train_metric = (
         SufficientMetric(name="train", log_every_n_step=None)
@@ -563,10 +565,21 @@ def train_loop(
                 noop=train_step_idx > stop_train_wallclock_after_step
                 or not enable_wallclock,
             ):
-                with jax.profiler.StepTraceAnnotation("train_step", step = train_step_idx):
-                    module, optimizer, aux = train_step_fn(
-                        module, optimizer, batch, key=step_key
-                    )
+                if first_step:
+                    timing = time.monotonic()
+                    with jax.profiler.StepTraceAnnotation("train_step", step = train_step_idx):
+                        module, optimizer, aux = train_step_fn(
+                            module, optimizer, batch, key=step_key
+                        )
+
+                    diff = time.monotonic() - timing
+                    print(f"DEBUGPRINT[8]: _training.py:575: diff={diff}")
+                    first_step = False
+                else:
+                    with jax.profiler.StepTraceAnnotation("train_step", step = train_step_idx):
+                        module, optimizer, aux = train_step_fn(
+                            module, optimizer, batch, key=step_key
+                        )
 
             progress_bar.update()
 

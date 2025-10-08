@@ -1,0 +1,57 @@
+fp32 batchsize 64 dp 4
+compile time: 52 sec, without dropout 52 sec
+Total memory size: 8.0 GB, Output size: 1.2 GB, Temp size: 5.5 GB, Argument size: 1.2 GB, Host temp size: 0.0 GB.
+
+
+
+
+bf16
+Total memory size: 5.5 GB, Output size: 0.6 GB, Temp size: 4.3 GB, Argument size: 0.6 GB, Host temp size: 0.0 GB.
+
+
+why compiled memeory anlaysis just shows me analysis for one HBM and not althe hbm :D, i mean for this case it was a symmtery bcasue of me doing dp
+
+
+
+my implememtnation
+fp32 batchsize 64 dp 4 with dropout
+compile time: 210 sec, 
+        Total memory size: 8.0 GB, Output size: 1.2 GB, Temp size: 5.5 GB, Argument size: 1.2 GB, Host temp size: 0.0 GB.
+
+
+
+
+with dropout
+DEBUGPRINT[12]: train_with_flax.py:254: diff_dp=0.07424728572368622
+DEBUGPRINT[9]: train_with_flax.py:190: diff for compile=39.273700847290456
+DEBUGPRINT[11]: train_with_flax.py:198: compiled=<jax._src.stages.Compiled object at 0x7ff4b61cd430>
+Total memory size: 8.5 GB, Output size: 1.5 GB, Temp size: 5.6 GB, Argument size: 1.5 GB, Host temp size: 0.0 GB.
+/home/carlesoctav/.pyenv/versions/3.11.13/lib/python3.11/multiprocessing/resource_tracker.py:254: UserWarning: resource_tracker: There appear to be 4 leaked shared_memory objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
+
+flax without dropout see ./
+DEBUGPRINT[12]: train_with_flax.py:254: diff_dp=0.07411471614614129
+DEBUGPRINT[9]: train_with_flax.py:190: diff for compile=84.04566059680656
+DEBUGPRINT[11]: train_with_flax.py:198: compiled=<jax._src.stages.Compiled object at 0x7f192208f7d0>
+Total memory size: 8.5 GB, Output size: 1.5 GB, Temp size: 5.6 GB, Argument size: 1.5 GB, Host temp size: 0.0 GB.
+/home/carlesoctav/.pyenv/versions/3.11.13/lib/python3.11/multiprocessing/resource_tracker.py:254: UserWarning: resource_tracker: There appear to be 4 leaked shared_memory objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
+
+
+
+DEBUGPRINT[7]: train.py:140: diff=2.50066130887717
+DEBUGPRINT[11]: train.py:198: compiled=Compiled(
+  compiled=<jax._src.stages.Compiled object at 0x7f5395d723f0>,
+  info=(
+    <Signature (module: '_M', optimizer: 'Optimizer', batch: 'tp.Any', *, key: 'PRNGKeyArray | None' = None) -> 'tuple[_M, Optimizer, _Aux]'>,
+    (None,),
+    ((<function make_train_step.<locals>._step>,), PyTreeDef(*)),
+    False,
+    False
+  ),
+  preprocess=<function _preprocess>,
+  postprocess=<function _postprocess>
+)
+Total memory size: 5.6 GB, Output size: 0.6 GB, Temp size: 4.4 GB, Argument size: 0.6 GB, Host temp size: 0.0 GB.
+DEBUGPRINT[9]: train.py:190: diff for compile=111.401459753979
+

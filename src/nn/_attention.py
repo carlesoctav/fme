@@ -174,9 +174,14 @@ class EagerAttentionModule(AttentionModule):
         if self.inference:
             dropout_rate = 0.0
 
-        if dropout_rate >0.0 and dropout_mask is None:
-            keep_prob = 1.0 - jax.lax.stop_gradient(jnp.asarray(dropout_rate))
-            dropout_mask = jax.random.bernoulli(dropout_key, keep_prob, (B, T, N, T))
+        if dropout_rate > 0.0:
+            if dropout_key is None:
+                raise TypeError("dropout_rate > 0 but no dropout_key provided")
+            if dropout_mask is None:
+                # Use lower-rank mask (B, 1, N, T) to reduce HLO size; broadcast over query length.
+                keep_prob = 1.0 - jax.lax.stop_gradient(jnp.asarray(dropout_rate))
+                dropout_shape = (B, 1, N, T)
+                dropout_mask = jax.random.bernoulli(dropout_key, keep_prob, dropout_shape)
 
         return self.attn_fn(
             query,

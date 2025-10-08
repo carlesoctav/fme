@@ -1,0 +1,71 @@
+[0,0,101523] 2025-10-07 04:31:36,831 [_training.py] INFO Starting JAX profiler trace at step 10
+[0,0,101523] 2025-10-07 04:31:38,426 [_training.py] INFO Stopping JAX profiler trace at step 15
+[0,0,101523] 2025-10-07 04:32:07,920 [_training.py] INFO ==============================
+[0,0,101523] 2025-10-07 04:32:07,921 [_training.py] INFO ===== Benchmark Results ======
+[0,0,101523] 2025-10-07 04:32:07,921 [_training.py] INFO ==============================
+[0,0,101523] 2025-10-07 04:32:07,921 [_training.py] INFO Train Step Time (avg): 2.4374s
+[0,0,101523] 2025-10-07 04:32:07,921 [_training.py] INFO Train Step Time (median): 0.2032s
+[0,0,101523] 2025-10-07 04:32:07,921 [_training.py] INFO Train Step Time (std): 22.0204s
+[0,0,101523] 2025-10-07 04:32:07,922 [_training.py] INFO Next Batch Time (avg): 0.1056s
+[0,0,101523] 2025-10-07 04:32:07,922 [_training.py] INFO Batches/sec (avg): 0.41
+[0,0,101523] 2025-10-07 04:32:07,922 [_training.py] INFO ==============================
+[0,0,101523] 2025-10-07 04:32:07,922 [_training.py] INFO Benchmark loop ended
+[0,0,112958] 2025-10-07 04:36:40,828 [_training.py] ERROR Exception during benchmark loop
+Traceback (most recent call last):
+  File "/home/carlesoctav/personal/fme/src/_training.py", line 677, in benchmark_loop
+    module, optimizer, aux = train_step_fn(
+                             ^^^^^^^^^^^^^^
+  File "/home/carlesoctav/personal/fme/.venv/lib/python3.11/site-packages/equinox/_jit.py", line 209, in __call__
+    return _call(self, False, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/carlesoctav/personal/fme/.venv/lib/python3.11/site-packages/equinox/_jit.py", line 263, in _call
+    marker, _, _ = out = jit_wrapper._cached(
+                         ^^^^^^^^^^^^^^^^^^^^
+  File "/home/carlesoctav/personal/fme/src/_training.py", line 313, in _step
+    (_, aux), grad = grad_fn(module, optimizer, batch, key=key)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/carlesoctav/personal/fme/research/bert-mlm/benchmark.py", line 51, in loss_function
+    logits = model(
+             ^^^^^^
+  File "/home/carlesoctav/personal/fme/src/models/bert/modeling_bert.py", line 757, in __call__
+    sequence_output = self.bert(
+                      ^^^^^^^^^^
+  File "/home/carlesoctav/personal/fme/src/models/bert/modeling_bert.py", line 593, in __call__
+    hidden_states = self.embeddings(
+                    ^^^^^^^^^^^^^^^^
+  File "/home/carlesoctav/personal/fme/src/models/bert/modeling_bert.py", line 90, in __call__
+    inputs_embeddings = self.word_embeddings(input_ids)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/carlesoctav/personal/fme/src/nn/_embedding.py", line 57, in __call__
+    out = weight[x].astype(self.dtype)
+          ~~~~~~^^^
+TypeError: 'ShapeDtypeStruct' object is not subscriptable
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+[0,0,112958] 2025-10-07 04:36:40,830 [_training.py] INFO Benchmark loop ended
+[0,0,178758] 2025-10-07 05:45:50,206 [_training.py] INFO Starting JAX profiler trace at step 10
+[0,0,178758] 2025-10-07 05:45:51,323 [_training.py] INFO Stopping JAX profiler trace at step 15
+[0,0,178758] 2025-10-07 05:46:12,671 [_training.py] INFO ==============================
+[0,0,178758] 2025-10-07 05:46:12,671 [_training.py] INFO ===== Benchmark Results ======
+[0,0,178758] 2025-10-07 05:46:12,671 [_training.py] INFO ==============================
+[0,0,178758] 2025-10-07 05:46:12,671 [_training.py] INFO Train Step Time (avg): 0.6623s
+[0,0,178758] 2025-10-07 05:46:12,671 [_training.py] INFO Train Step Time (median): 0.1231s
+[0,0,178758] 2025-10-07 05:46:12,672 [_training.py] INFO Train Step Time (std): 5.1730s
+[0,0,178758] 2025-10-07 05:46:12,672 [_training.py] INFO Next Batch Time (avg): 0.1055s
+[0,0,178758] 2025-10-07 05:46:12,672 [_training.py] INFO Batches/sec (avg): 1.51
+[0,0,178758] 2025-10-07 05:46:12,672 [_training.py] INFO ==============================
+[0,0,178758] 2025-10-07 05:46:12,672 [_training.py] INFO Benchmark loop ended
+[0,0,1612191] 2025-10-08 04:29:04,202 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,1612191] 2025-10-08 04:29:57,638 [_training.py] INFO Step 0 (compilation) took 53.4354s
+[0,0,1612191] 2025-10-08 04:29:57,642 [_training.py] INFO Starting JAX profiler trace at step 1
+[0,0,1612191] 2025-10-08 04:29:58,585 [_training.py] INFO Stopping JAX profiler trace at step 5
+[0,0,1612191] 2025-10-08 04:30:21,494 [_training.py] INFO ==============================
+[0,0,1612191] 2025-10-08 04:30:21,495 [_training.py] INFO ===== Benchmark Results ======
+[0,0,1612191] 2025-10-08 04:30:21,495 [_training.py] INFO ==============================
+[0,0,1612191] 2025-10-08 04:30:21,495 [_training.py] INFO Train Step Time (avg): 0.6756s
+[0,0,1612191] 2025-10-08 04:30:21,495 [_training.py] INFO Train Step Time (median): 0.1257s
+[0,0,1612191] 2025-10-08 04:30:21,495 [_training.py] INFO Train Step Time (std): 5.2767s
+[0,0,1612191] 2025-10-08 04:30:21,495 [_training.py] INFO Next Batch Time (avg): 0.1293s
+[0,0,1612191] 2025-10-08 04:30:21,496 [_training.py] INFO Batches/sec (avg): 1.48
+[0,0,1612191] 2025-10-08 04:30:21,496 [_training.py] INFO ==============================
+[0,0,1612191] 2025-10-08 04:30:21,496 [_training.py] INFO Benchmark loop ended

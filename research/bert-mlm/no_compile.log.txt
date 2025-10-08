@@ -1,0 +1,9 @@
+NO compile
+<class 'datasets.arrow_dataset.Dataset'>
+DEBUGPRINT[9]: train.py:190: diff for compile=3.678573821205646
+Training: 0it [00:00, ?it/s]DEBUGPRINT[8]: _training.py:575: diff=52.8004181580618
+Training: 496it [02:20,  6.73it/s]DEBUGPRINT[5]: _training.py:547 (after except StopIteration:)
+[0,0,276769] 2025-10-07 07:06:08,194 [_training.py] INFO Train data loader exhausted, ending training loop.
+[0,0,276769] 2025-10-07 07:06:08,194 [_training.py] INFO Training loop ended
+/home/carlesoctav/.pyenv/versions/3.11.13/lib/python3.11/multiprocessing/resource_tracker.py:254: UserWarning: resource_tracker: There appear to be 4 leaked shared_memory objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
