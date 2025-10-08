@@ -60,6 +60,6 @@ class Dropout(eqx.Module):
         (x_,) = promote_dtype(x, dtype=self.dtype)
         keep_prob = 1.0 - lax.stop_gradient(jnp.asarray(self.p, dtype=self.dtype))
         mask = jax.random.bernoulli(key, keep_prob, shape=x_.shape)
-        output = jnp.where(mask, x_ / keep_prob, jnp.asarray(0.0, dtype=self.dtype))
+        output = jax.lax.select(mask, x_/keep_prob, jnp.zeros_like(x_))
         
         return output

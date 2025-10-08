@@ -61,7 +61,7 @@ def eager_dot_product_attention(
 
     if dropout_rate > 0.0:
         if dropout_mask is not None:
-            weights = jnp.where(dropout_mask, weights, 0.0) / (1.0 - dropout_rate)
+            weights = jax.lax.select(dropout_mask, weights, jnp.zeros_like(weights)) / (1.0 - dropout_rate)
 
     attn = jnp.einsum("btns, bsnh -> btnh", weights, value)
     return attn
@@ -180,7 +180,7 @@ class EagerAttentionModule(AttentionModule):
             if dropout_mask is None:
                 # Use lower-rank mask (B, 1, N, T) to reduce HLO size; broadcast over query length.
                 keep_prob = 1.0 - jax.lax.stop_gradient(jnp.asarray(dropout_rate))
-                dropout_shape = (B, 1, N, T)
+                dropout_shape = (B, T, N, T)
                 dropout_mask = jax.random.bernoulli(dropout_key, keep_prob, dropout_shape)
 
         return self.attn_fn(

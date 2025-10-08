@@ -17,6 +17,7 @@ class TrackioLogger(Logger):
     def __init__(
         self,
         project: str,
+        name: str | None = None,
         space_id: str | None = None,
         space_storage: Any = None,
         dataset_id: str | None = None,
@@ -31,6 +32,7 @@ class TrackioLogger(Logger):
             trackio.init
         )(
             project=project,
+            name = name,
             space_id=space_id,
             space_storage=space_storage,
             dataset_id=dataset_id,

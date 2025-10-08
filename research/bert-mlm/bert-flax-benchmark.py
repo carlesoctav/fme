@@ -263,7 +263,6 @@ def benchmark_loop_flax(
 
 
 def main():
-    setup_logger()
     LOGGER.info("Starting Flax BERT Benchmark")
     logger = TrackioLogger(project="benchmark", name="bert-flax")
     
@@ -283,7 +282,7 @@ def main():
         num_segments=2,
         num_hidden_layers=12,
         num_attention_heads=12,
-        dropout_rate=0.0,
+        dropout_rate=0.1,
     )
     
     schedule = optax.warmup_cosine_decay_schedule(
@@ -349,7 +348,7 @@ def main():
         encoder=encoder,
         hidden_size=768,
         vocab_size=30522,
-        dropout_rate=0.0,
+        dropout_rate=0.1,
     )
     
     dummy_encoded = jnp.zeros((1, MAX_LENGTH, 768))
@@ -403,4 +402,5 @@ def main():
 
 
 if __name__ == "__main__":
+    setup_logger()
     main()

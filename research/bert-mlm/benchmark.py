@@ -46,7 +46,6 @@ def _get_position_ids(batch, seq_length):
 
 
 def loss_function(model, optimizer, batch, key):
-    batch_size = batch.input_ids.shape[0]
     
     logits = model(
         input_ids=batch.input_ids,
@@ -97,8 +96,8 @@ def main():
         intermediate_size=3072,
         max_position_embeddings=512,
         type_vocab_size=2,
-        hidden_dropout_prob=0,
-        attention_probs_dropout_prob=0,
+        hidden_dropout_prob=0.1,
+        attention_probs_dropout_prob=0.1,
         _attn_implementation="eager",
     )
     
@@ -163,7 +162,7 @@ def main():
         batch_class=batch_class,
     )
     
-    logger = TrackioLogger(project="benchmark", name="bert")
+    logger = TrackioLogger(project="benchmark", name="bert-do")
     
     module, optimizer, stats = benchmark_loop(
         model,

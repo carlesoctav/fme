@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import contextlib
 import functools
+import logging
 import time
 import typing as tp
 
 import jax
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 if tp.TYPE_CHECKING:
@@ -45,15 +49,6 @@ def first_from(*args: A | None, error_msg: str) -> A:
             return arg
     raise ValueError(error_msg)
 
-
-
-
-
-
-
-
-
-
 class GeneralInterface(tp.MutableMapping[K, V], tp.Generic[K, V]):
     """
     Dict-like object keeping track of a class-wide mapping, as well as a local one. Allows to have library-wide
@@ -89,4 +84,25 @@ class GeneralInterface(tp.MutableMapping[K, V], tp.Generic[K, V]):
     def valid_keys(self) -> list[str]:
         return list(self.keys())
 
-__all__ = ["first_from", "rank_zero"]
+
+
+def print_memory(compiled_stats):
+    """Prints a summary of the compiled memory statistics."""
+
+    if compiled_stats is None:
+        return
+
+    def bytes_to_gb(num_bytes):
+        return num_bytes / (1024**3)
+
+    output_gb = bytes_to_gb(compiled_stats.output_size_in_bytes)
+    temp_gb = bytes_to_gb(compiled_stats.temp_size_in_bytes)
+    argument_gb = bytes_to_gb(compiled_stats.argument_size_in_bytes)
+    alias_gb = bytes_to_gb(compiled_stats.alias_size_in_bytes)
+    host_temp_gb = bytes_to_gb(compiled_stats.host_temp_size_in_bytes)
+    total_gb = output_gb + temp_gb + argument_gb - alias_gb
+    print(f"Total memory size: {total_gb:.1f} GB, Output size: {output_gb:.1f} GB, Temp size: {temp_gb:.1f} GB, " f"Argument size: {argument_gb:.1f} GB, Host temp size: {host_temp_gb:.1f} GB.")
+
+
+
+__all__ = ["first_from", "rank_zero", "GeneralInterface", "wallclock", "print_memory"]

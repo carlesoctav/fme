@@ -12,6 +12,7 @@ from src._metrics import SufficientMetric
 from src._logger import TrackioLogger
 from src.callbacks import LearningRateMonitor, ModelCheckpoint
 from src.data._training import make_dataloader
+from src._utils import print_memory
 from src.data.masked_language_modeling import (
     masked_language_modeling_transforms,
 )
@@ -20,6 +21,8 @@ from src.models.bert import BertForMaskedLM
 from src._logger import setup_logger
 import time
 import logging
+
+LOGGER = logging.getLogger(__name__)
 
 
 DATASET_NAME = "carlesoctav/skripsi_UI_membership_30K"
@@ -90,6 +93,7 @@ def loss_function(model, optimizer, batch, key):
 
 def main():
     setup_logger()
+    LOGGER.info("hallo")
     logger = TrackioLogger(project="bert-mlm-fineweb")
     
     key = jr.PRNGKey(SEED)
@@ -106,14 +110,15 @@ def main():
         intermediate_size=3072,
         max_position_embeddings=512,
         type_vocab_size=2,
-        hidden_dropout_prob=0.2,
-        attention_probs_dropout_prob=0.2,
+        hidden_dropout_prob=0.1,
+        attention_probs_dropout_prob=0.1,
         _attn_implementation="eager",
     )
     
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
     
-    model = BertForMaskedLM(config, key=model_key)
+    # model = BertForMaskedLM(config, key=model_key, params_dtype = jnp.bfloat16, dtype = jnp.bfloat16)
+    model = BertForMaskedLM(config, key=model_key,)
     
     schedule = optax.warmup_cosine_decay_schedule(
         init_value=0.0,
@@ -147,7 +152,6 @@ def main():
     )
 
 
-    
     dataset = load_dataset(
         DATASET_NAME,
         name=DATASET_SUBSET,
@@ -185,34 +189,24 @@ def main():
         schedule_fn=schedule,
     )
 
+    # model_checkpoint = ModelCheckpoint(
+    #     f"gs://carles-git-good/bert-mlm-fineweb",
+    #     run_name= logger.logger.name,
+    #     save_interval_steps=SAVE_INTERVAL_STEPS,
+    # )
+    #
+
     batch = next(iter(train_loader))
     timing = time.monotonic()
     compiled_text = train_step_fn.lower(model, optimizer, batch, key = jax.random.key(10)).as_text()
-
-    with open("./compiled_optimize.txt", mode = "w") as f:
-        f.write(compiled_text)
+    compiled = train_step_fn.lower(model, optimizer, batch, key = jax.random.key(10)).compile()
+    print(f"DEBUGPRINT[11]: train.py:198: compiled={compiled}")
     diff = time.monotonic() - timing
+    print_memory(compiled.compiled.memory_analysis())
     print(f"DEBUGPRINT[9]: train.py:190: diff for compile={diff}")
-    
-    train_metric = SufficientMetric(name="train", log_every_n_step=LOG_EVERY_N_STEPS)
-    
-    # model_checkpoint = ModelCheckpoint(
-    #     f"gs://carles-git-good/bert-mlm-fineweb",
-    #     save_interval_steps=SAVE_INTERVAL_STEPS,
-    # )
-    
-    train_loop(
-        model,
-        optimizer,
-        train_step_fn,
-        train_loader,
-        logger,
-        train_metric,
-        num_train_steps=None,
-        callbacks=[learning_rate_monitor],  # removed modelcheckpoint temporarily
-        key=key,
-    )
 
+    return
+    
 
 if __name__ == "__main__":
     main()

@@ -425,7 +425,7 @@ class BertLayer(eqx.Module):
 
 
 class BertEncoder(eqx.Module):
-    layer: list[BertLayer]
+    layer: tuple[BertLayer, ...]
 
     def __init__(
         self,
@@ -435,17 +435,16 @@ class BertEncoder(eqx.Module):
         params_dtype: jnp.dtype = jnp.float32,
         key: PRNGKeyArray,
     ):
-        self.layer = []
         encoder_keys = jax.random.split(key, config.num_hidden_layers)
-        for i in range(config.num_hidden_layers):
-            self.layer.append(
-                BertLayer(
-                    config,
-                    dtype=dtype,
-                    params_dtype=params_dtype,
-                    rngs=encoder_keys[i],
-                )
+        self.layer = tuple(
+            BertLayer(
+                config,
+                dtype=dtype,
+                params_dtype=params_dtype,
+                rngs=encoder_keys[i],
             )
+            for i in range(config.num_hidden_layers)
+        )
 
     def __call__(
         self,
@@ -454,16 +453,15 @@ class BertEncoder(eqx.Module):
         *,
         key: PRNGKeyArray | None = None,
     ) -> Float[Array, "T H"]:
-        layer_key = (
-            jax.random.split(key, len(self.layer))
-            if key is not None
-            else [None] * len(self.layer)
-        )
         for i, layer_module in enumerate(self.layer):
+            if key is not None:
+                layer_key = jax.random.fold_in(key, i)
+            else:
+                layer_key = None
             hidden_states = layer_module(
                 hidden_states,
                 attention_mask,
-                key=layer_key[i],
+                key=layer_key,
             )
         return hidden_states
 

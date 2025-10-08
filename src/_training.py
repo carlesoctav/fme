@@ -650,7 +650,7 @@ def benchmark_loop(
     
     if logger is None:
         raise ValueError("logger is required")
-    step_idx = 0
+    step_idx = -1
     train_step_times = []
     next_batch_times = []
     try:
@@ -658,7 +658,7 @@ def benchmark_loop(
     except TypeError as e:
         raise RuntimeError("train_loader is not iterable") from e
     progress_bar = tqdm(
-        total=num_steps,
+        total=num_steps + 1,
         desc="Benchmarking",
         disable=jax.process_index() != 0,
         leave=True,
@@ -684,6 +684,10 @@ def benchmark_loop(
                 LOGGER.info(f"Starting JAX profiler trace at step {step_idx}")
                 jax.profiler.start_trace(str(trace_path))
             key, step_key = jax.random.split(key, 2) if key is not None else (key, None)
+            
+            if step_idx == 0 and jax.process_index() == 0:
+                LOGGER.info("Running step 0 (compilation step)...")
+            
             step_start = time.monotonic()
             with jax.profiler.StepTraceAnnotation("train_step", step = step_idx):
                 module, optimizer, aux = train_step_fn(
@@ -710,8 +714,13 @@ def benchmark_loop(
             ):
                 LOGGER.info(f"Stopping JAX profiler trace at step {step_idx}")
                 jax.profiler.stop_trace()
+            
             train_step_times.append(step_end - step_start)
             next_batch_times.append(batch_end - batch_start)
+            
+            if step_idx == 0 and jax.process_index() == 0:
+                LOGGER.info(f"Step 0 (compilation) took {step_end - step_start:.4f}s")
+            
             progress_bar.update()
         progress_bar.close()
         train_step_times = np.array(train_step_times)
@@ -771,4 +780,4 @@ def benchmark_loop(
         raise
     finally:
         LOGGER.info("Benchmark loop ended")
-    eturn module, optimizer, stats
+    return module, optimizer, stats
