@@ -18,8 +18,8 @@ def eager_dot_product_attention(
     mask: Bool[Array, "B T N S"] | None = None,
     *,
     dropout_rate: float = 0.0,
-    dropout_mask: Bool[Array, "B T N S"] | None = None,
-    dropout_key: PRNGKeyArray | None = None,
+    dropout_rng: PRNGKeyArray | None = None,
+    broadcast_dropout: bool = True,
     **kwargs,
 ) -> Float[Array, "B T N H"]:
     query = query / jnp.sqrt(query.shape[-1])
@@ -60,8 +60,19 @@ def eager_dot_product_attention(
     weights = jax.nn.softmax(scores.astype(dtype), axis=-1).astype(scores.dtype)
 
     if dropout_rate > 0.0:
-        if dropout_mask is not None:
-            weights = jax.lax.select(dropout_mask, weights, jnp.zeros_like(weights)) / (1.0 - dropout_rate)
+        if dropout_rng is None:
+            raise TypeError("dropout_rate > 0 but no dropout_rng provided")
+        keep_prob = 1.0 - dropout_rate
+        if broadcast_dropout:
+            dropout_shape = list(weights.shape)
+            if len(dropout_shape) >= 2:
+                dropout_shape[1] = 1  # broadcast across query length
+            keep = jax.random.bernoulli(dropout_rng, keep_prob, tuple(dropout_shape))
+            keep = jnp.broadcast_to(keep, weights.shape)
+        else:
+            keep = jax.random.bernoulli(dropout_rng, keep_prob, weights.shape)
+        multiplier = keep.astype(weights.dtype) / keep_prob
+        weights = weights * multiplier
 
     attn = jnp.einsum("btns, bsnh -> btnh", weights, value)
     return attn
@@ -82,9 +93,9 @@ class AttentionModule(eqx.Module):
         mask: Array | None = None,
         *,
         dropout_rate: float = 0.0,
-        dropout_mask: Array | None = None,
         implementation: Literal["xla", "cudnn"] | None = None,
         dropout_key: PRNGKeyArray | None = None,
+        broadcast_dropout: bool = True,
         **kwargs,
     ) -> Array:
         raise NotImplementedError
@@ -111,13 +122,13 @@ class JaxNNAttentionModule(AttentionModule):
         mask: Array | None = None,
         *,
         dropout_rate: float = 0.0,
-        dropout_mask: Array | None = None,
         dropout_key: PRNGKeyArray | None = None,
+        broadcast_dropout: bool = True,
         **kwargs,
     ) -> Array:
         if self.inference:
             dropout_rate = 0.0
-        
+
         if dropout_rate > 0.0:
             raise NotImplementedError(
                 "dropout on sdpa which uses jax.nn.dot_product_attention is not implemented yet"
@@ -140,16 +151,19 @@ class JaxNNAttentionModule(AttentionModule):
 
 
 class EagerAttentionModule(AttentionModule):
+    broadcast_dropout: bool = eqx.field(static=True, default=True)
     def __init__(
         self,
         config: PretrainedConfig | None = None,
         dtype: Any = jnp.float32,
         implementation: str | None = None,
+        broadcast_dropout: bool = True,
     ):
         self.attn_fn = eager_dot_product_attention
         self._attn_implementation = "eager"
         self.implementation = implementation
         self.inference = False
+        self.broadcast_dropout = broadcast_dropout
 
     def __call__(
         self,
@@ -160,12 +174,10 @@ class EagerAttentionModule(AttentionModule):
         mask: Array | None = None,
         *,
         dropout_rate: float = 0.0,
-        dropout_mask: Array | None = None,
         dropout_key: PRNGKeyArray | None = None,
+        broadcast_dropout: bool | None = None,
         **kwargs,
     ) -> Array:
-        B, T, N, H = query.shape
-
         if mask.ndim == 3:
             mask = mask[..., None, :]
 
@@ -174,23 +186,14 @@ class EagerAttentionModule(AttentionModule):
         if self.inference:
             dropout_rate = 0.0
 
-        if dropout_rate > 0.0:
-            if dropout_key is None:
-                raise TypeError("dropout_rate > 0 but no dropout_key provided")
-            if dropout_mask is None:
-                # Use lower-rank mask (B, 1, N, T) to reduce HLO size; broadcast over query length.
-                keep_prob = 1.0 - jax.lax.stop_gradient(jnp.asarray(dropout_rate))
-                dropout_shape = (B, T, N, T)
-                dropout_mask = jax.random.bernoulli(dropout_key, keep_prob, dropout_shape)
-
         return self.attn_fn(
             query,
             key,
             value,
             mask=mask,
             dropout_rate=dropout_rate,
-            dropout_mask=dropout_mask,
-            dropout_key=dropout_key,
+            dropout_rng=dropout_key,
+            broadcast_dropout=self.broadcast_dropout if broadcast_dropout is None else broadcast_dropout,
             **kwargs,
         )
 

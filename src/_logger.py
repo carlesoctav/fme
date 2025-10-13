@@ -48,6 +48,11 @@ class TrackioLogger(Logger):
         self.logger.log(logs, step = step, **kwargs)
 
 
+    @rank_zero
+    def finish(self,):
+        self.logger.finish()
+
+
 
 
 def get_multiprocess_index():

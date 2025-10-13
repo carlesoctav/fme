@@ -1,0 +1,21 @@
+[0,0,1563415] 2025-10-08 03:52:44,438 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,1563415] 2025-10-08 03:53:38,094 [_training.py] INFO Step 0 (compilation) took 53.6557s
+[0,0,1563415] 2025-10-08 03:53:38,223 [_training.py] ERROR Exception during benchmark loop
+Traceback (most recent call last):
+  File "/home/carlesoctav/personal/fme/src/_training.py", line 724, in benchmark_loop
+    progress_bar.update()
+  File "/home/carlesoctav/personal/fme/.venv/lib/python3.11/site-packages/tqdm/std.py", line 1242, in update
+    self.refresh(lock_args=self.lock_args)
+  File "/home/carlesoctav/personal/fme/.venv/lib/python3.11/site-packages/tqdm/std.py", line 1347, in refresh
+    self.display()
+  File "/home/carlesoctav/personal/fme/.venv/lib/python3.11/site-packages/tqdm/std.py", line 1495, in display
+    self.sp(self.__str__() if msg is None else msg)
+  File "/home/carlesoctav/personal/fme/.venv/lib/python3.11/site-packages/tqdm/std.py", line 459, in print_status
+    fp_write('\r' + s + (' ' * max(last_len[0] - len_s, 0)))
+  File "/home/carlesoctav/personal/fme/.venv/lib/python3.11/site-packages/tqdm/std.py", line 452, in fp_write
+    fp.write(str(s))
+  File "/home/carlesoctav/personal/fme/.venv/lib/python3.11/site-packages/tqdm/utils.py", line 196, in inner
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+BrokenPipeError: [Errno 32] Broken pipe
+[0,0,1563415] 2025-10-08 03:53:38,225 [_training.py] INFO Benchmark loop ended

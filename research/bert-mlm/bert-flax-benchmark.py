@@ -8,6 +8,7 @@ from datasets import load_dataset
 from jax.sharding import Mesh, PartitionSpec
 from transformers import AutoTokenizer
 from flax import struct
+from flax import linen as nn
 import jax.tree_util as jtu
 import time
 import logging
@@ -101,31 +102,56 @@ def loss_function_flax(params, encoder, mlm_head, batch, key):
     return total_loss, aux
 
 
-def make_flax_train_step():
+def make_flax_train_step(mesh: Mesh):
     grad_fn = jax.value_and_grad(loss_function_flax, has_aux=True)
-    
+
+    def _unbox_partitioned(tree):
+        return jtu.tree_map(
+            lambda x: x.unbox() if isinstance(x, nn.Partitioned) else x,
+            tree,
+        )
+
+    def _rebox_partitioned(meta_tree, value_tree):
+        return jtu.tree_map(
+            lambda meta, value: meta.replace_boxed(value)
+            if isinstance(meta, nn.Partitioned)
+            else value,
+            meta_tree,
+            value_tree,
+        )
+
     def train_step(train_state, optimizer_placeholder, batch, key):
+        params_array = _unbox_partitioned(train_state.params)
+
         (total_loss, aux), grads = grad_fn(
-            train_state.params, 
+            params_array,
             train_state.encoder, 
             train_state.mlm_head, 
             batch, 
             key
         )
-        
+
         updates, new_opt_state = train_state.tx.update(
-            grads, train_state.opt_state, train_state.params
+            grads, train_state.opt_state, params_array
         )
-        new_params = optax.apply_updates(train_state.params, updates)
-        
+        new_params_array = optax.apply_updates(params_array, updates)
+        new_params = _rebox_partitioned(train_state.params, new_params_array)
+
         new_train_state = train_state.replace(
             params=new_params,
             opt_state=new_opt_state
         )
-        
+
         return new_train_state, optimizer_placeholder, aux
-    
-    return jax.jit(train_step)
+
+    tt = jax.jit(
+        train_step,
+        in_shardings=(None, None, None, None),
+        out_shardings=(None, None, None),
+    )
+
+
+    return tt
 
 
 def benchmark_loop_flax(
@@ -139,12 +165,11 @@ def benchmark_loop_flax(
     trace_dir="./benchmark_traces",
     key=None,
 ):
-    if logger is None:
-        raise ValueError("logger is required")
     
     step_idx = -1
     train_step_times = []
     next_batch_times = []
+    compile_step_time = None
     
     try:
         train_iterator = iter(train_loader)
@@ -189,7 +214,7 @@ def benchmark_loop_flax(
             step_start = time.monotonic()
             with jax.profiler.StepTraceAnnotation("train_step", step=step_idx):
                 train_state, optimizer_placeholder, aux = train_step_fn(
-                    train_state, optimizer_placeholder, batch, key=step_key
+                    train_state, optimizer_placeholder, batch, step_key
                 )
             
             jtu.tree_map(
@@ -208,11 +233,13 @@ def benchmark_loop_flax(
                 LOGGER.info(f"Stopping JAX profiler trace at step {step_idx}")
                 jax.profiler.stop_trace()
             
-            train_step_times.append(step_end - step_start)
-            next_batch_times.append(batch_end - batch_start)
-            
-            if step_idx == 0 and jax.process_index() == 0:
-                LOGGER.info(f"Step 0 (compilation) took {step_end - step_start:.4f}s")
+            if step_idx == 0:
+                compile_step_time = step_end - step_start
+                if jax.process_index() == 0:
+                    LOGGER.info(f"Step 0 (compilation) took {compile_step_time:.4f}s")
+            else:
+                train_step_times.append(step_end - step_start)
+                next_batch_times.append(batch_end - batch_start)
             
             progress_bar.update()
         
@@ -220,19 +247,15 @@ def benchmark_loop_flax(
         
         train_step_times = np.array(train_step_times)
         next_batch_times = np.array(next_batch_times)
+        batch_per_sec = 1/train_step_times
+        print(f"DEBUGPRINT[22]: bert-flax-benchmark.py:231: train_step_times={train_step_times}")
+        print(f"DEBUGPRINT[21]: bert-flax-benchmark.py:232: next_batch_times={next_batch_times}")
+        print(f"DEBUGPRINT[20]: bert-flax-benchmark.py:233: batch_per_sec={batch_per_sec}")
         
         if len(train_step_times) == 0:
             LOGGER.warning("No timing data collected (all steps were skipped)")
             return train_state, optimizer_placeholder, {}
         
-        for i, t in enumerate(train_step_times):
-            logger.log({f"benchmark/train_step_time": t}, step=i)
-        for i, t in enumerate(next_batch_times):
-            logger.log({f"benchmark/next_batch_time": t}, step=i)
-        
-        for i, step_time in enumerate(train_step_times):
-            batches_per_sec = 1.0 / step_time if step_time > 0 else 0
-            logger.log({f"benchmark/batches_per_sec": batches_per_sec}, step=i)
         
         if jax.process_index() == 0:
             LOGGER.info("=" * 30)
@@ -243,6 +266,8 @@ def benchmark_loop_flax(
             LOGGER.info(f"Train Step Time (std): {train_step_times.std():.4f}s")
             LOGGER.info(f"Next Batch Time (avg): {next_batch_times.mean():.4f}s")
             LOGGER.info(f"Batches/sec (avg): {1.0 / train_step_times.mean():.2f}")
+            if compile_step_time is not None:
+                LOGGER.info(f"Compile Time: {compile_step_time:.4f}s")
             LOGGER.info("=" * 30)
         
         stats = {
@@ -251,7 +276,11 @@ def benchmark_loop_flax(
             "train_step_time_std": float(train_step_times.std()),
             "next_batch_time_mean": float(next_batch_times.mean()),
             "batches_per_sec": float(1.0 / train_step_times.mean()),
+            "train_step_times": train_step_times.tolist(),
+            "next_batch_times": next_batch_times.tolist(),
         }
+        if compile_step_time is not None:
+            stats["compile_time"] = float(compile_step_time)
         
     except Exception:
         LOGGER.error("Exception during benchmark loop", exc_info=True)
@@ -264,7 +293,7 @@ def benchmark_loop_flax(
 
 def main():
     LOGGER.info("Starting Flax BERT Benchmark")
-    logger = TrackioLogger(project="benchmark", name="bert-flax")
+    logger = TrackioLogger(project="benchmark", name="bert-flax-with-drop-final_run")
     
     key = jr.PRNGKey(SEED)
     key, model_key, mlm_key = jr.split(key, 3)
@@ -282,7 +311,7 @@ def main():
         num_segments=2,
         num_hidden_layers=12,
         num_attention_heads=12,
-        dropout_rate=0.1,
+        dropout_rate=0.0,
     )
     
     schedule = optax.warmup_cosine_decay_schedule(
@@ -338,6 +367,7 @@ def main():
         'input_mask': batch.attention_mask[:1],
     }
 
+
     encoder_params = encoder.init(
         model_key,
         **dummy_input,
@@ -348,30 +378,31 @@ def main():
         encoder=encoder,
         hidden_size=768,
         vocab_size=30522,
-        dropout_rate=0.1,
+        dropout_rate=0.0,
     )
-    
+
+
     dummy_encoded = jnp.zeros((1, MAX_LENGTH, 768))
+
     mlm_params = mlm_head.init(
         mlm_key,
         dummy_encoded,
         masked_positions=None,
     )
-    
-    params = {
+
+    raw_params = {
         'encoder': encoder_params,
         'mlm_head': mlm_params,
     }
+    def _unbox_partitioned(tree):
+        return jtu.tree_map(
+            lambda x: x.unbox() if isinstance(x, nn.Partitioned) else x,
+            tree,
+        )
 
-    sharding = jax.NamedSharding(mesh, jax.P(None))
-    start_dp = time.monotonic()
-    params = jtu.tree_map(lambda x: jax.device_put(x, sharding), params)
-    jax.block_until_ready(params)
-    diff_dp = time.monotonic() - start_dp
-    print(f"DEBUGPRINT[12]: train_with_flax.py:254: diff_dp={diff_dp}")
-    
-    opt_state = grad_tx.init(params)
-    
+    params = raw_params
+    opt_state = grad_tx.init(_unbox_partitioned(params))
+
     train_state = TrainState(
         params=params,
         opt_state=opt_state,
@@ -382,7 +413,7 @@ def main():
     
     optimizer_placeholder = None
     
-    train_step_fn = make_flax_train_step()
+    train_step_fn = make_flax_train_step(mesh)
     
     LOGGER.info("Running benchmark loop...")
     train_state, optimizer_placeholder, stats = benchmark_loop_flax(
@@ -390,15 +421,16 @@ def main():
         optimizer_placeholder=optimizer_placeholder,
         train_step_fn=train_step_fn,
         train_loader=train_loader,
-        logger=logger,
+        logger=None,
         num_steps=NUM_STEPS,
-        trace_steps=(1, 5),
-        trace_dir="./flax_benchmark_traces",
+        trace_steps=(0, 100),
+        trace_dir="./flax_benchmark_traces_no_drop_sdpa",
         key=key,
     )
     
     LOGGER.info("Benchmark completed!")
     LOGGER.info(f"Stats: {stats}")
+    print(f"DEBUGPRINT[6]: bert-flax-benchmark.py:410: stats={stats}")
 
 
 if __name__ == "__main__":

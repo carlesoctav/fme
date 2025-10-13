@@ -1,28 +1,316 @@
-[0,0,1643115] 2025-10-08 04:50:46,326 [_training.py] INFO Running step 0 (compilation step)...
-[0,0,1643115] 2025-10-08 04:51:37,860 [_training.py] INFO Step 0 (compilation) took 51.5329s
-[0,0,1643115] 2025-10-08 04:51:37,865 [_training.py] INFO Starting JAX profiler trace at step 1
-[0,0,1643115] 2025-10-08 04:51:38,803 [_training.py] INFO Stopping JAX profiler trace at step 5
-[0,0,1643115] 2025-10-08 04:52:00,905 [_training.py] INFO ==============================
-[0,0,1643115] 2025-10-08 04:52:00,905 [_training.py] INFO ===== Benchmark Results ======
-[0,0,1643115] 2025-10-08 04:52:00,906 [_training.py] INFO ==============================
-[0,0,1643115] 2025-10-08 04:52:00,906 [_training.py] INFO Train Step Time (avg): 0.6522s
-[0,0,1643115] 2025-10-08 04:52:00,906 [_training.py] INFO Train Step Time (median): 0.1261s
-[0,0,1643115] 2025-10-08 04:52:00,906 [_training.py] INFO Train Step Time (std): 5.0886s
-[0,0,1643115] 2025-10-08 04:52:00,906 [_training.py] INFO Next Batch Time (avg): 0.1309s
-[0,0,1643115] 2025-10-08 04:52:00,906 [_training.py] INFO Batches/sec (avg): 1.53
-[0,0,1643115] 2025-10-08 04:52:00,906 [_training.py] INFO ==============================
-[0,0,1643115] 2025-10-08 04:52:00,907 [_training.py] INFO Benchmark loop ended
-[0,0,1649762] 2025-10-08 04:54:10,967 [_training.py] INFO Running step 0 (compilation step)...
-[0,0,1649762] 2025-10-08 04:57:45,753 [_training.py] INFO Step 0 (compilation) took 214.7824s
-[0,0,1649762] 2025-10-08 04:57:45,758 [_training.py] INFO Starting JAX profiler trace at step 1
-[0,0,1649762] 2025-10-08 04:57:47,076 [_training.py] INFO Stopping JAX profiler trace at step 5
-[0,0,1649762] 2025-10-08 04:58:17,698 [_training.py] INFO ==============================
-[0,0,1649762] 2025-10-08 04:58:17,698 [_training.py] INFO ===== Benchmark Results ======
-[0,0,1649762] 2025-10-08 04:58:17,698 [_training.py] INFO ==============================
-[0,0,1649762] 2025-10-08 04:58:17,698 [_training.py] INFO Train Step Time (avg): 2.3424s
-[0,0,1649762] 2025-10-08 04:58:17,699 [_training.py] INFO Train Step Time (median): 0.2003s
-[0,0,1649762] 2025-10-08 04:58:17,699 [_training.py] INFO Train Step Time (std): 21.2441s
-[0,0,1649762] 2025-10-08 04:58:17,699 [_training.py] INFO Next Batch Time (avg): 0.1289s
-[0,0,1649762] 2025-10-08 04:58:17,699 [_training.py] INFO Batches/sec (avg): 0.43
-[0,0,1649762] 2025-10-08 04:58:17,699 [_training.py] INFO ==============================
-[0,0,1649762] 2025-10-08 04:58:17,699 [_training.py] INFO Benchmark loop ended
+[0,0,2141693] 2025-10-08 13:18:24,178 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,2141693] 2025-10-08 13:22:02,138 [_training.py] INFO Step 0 (compilation) took 217.9595s
+[0,0,2141693] 2025-10-08 13:22:02,142 [_training.py] INFO Starting JAX profiler trace at step 1
+[0,0,2141693] 2025-10-08 13:22:03,474 [_training.py] INFO Stopping JAX profiler trace at step 5
+[0,0,2141693] 2025-10-08 13:22:34,560 [_training.py] INFO ==============================
+[0,0,2141693] 2025-10-08 13:22:34,560 [_training.py] INFO ===== Benchmark Results ======
+[0,0,2141693] 2025-10-08 13:22:34,561 [_training.py] INFO ==============================
+[0,0,2141693] 2025-10-08 13:22:34,561 [_training.py] INFO Train Step Time (avg): 2.3772s
+[0,0,2141693] 2025-10-08 13:22:34,561 [_training.py] INFO Train Step Time (median): 0.2033s
+[0,0,2141693] 2025-10-08 13:22:34,562 [_training.py] INFO Train Step Time (std): 21.5584s
+[0,0,2141693] 2025-10-08 13:22:34,562 [_training.py] INFO Next Batch Time (avg): 0.1273s
+[0,0,2141693] 2025-10-08 13:22:34,562 [_training.py] INFO Batches/sec (avg): 0.42
+[0,0,2141693] 2025-10-08 13:22:34,562 [_training.py] INFO ==============================
+[0,0,2141693] 2025-10-08 13:22:34,562 [_training.py] INFO Benchmark loop ended
+[0,0,2151220] 2025-10-08 13:25:19,305 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,2151220] 2025-10-08 13:26:13,782 [_training.py] INFO Step 0 (compilation) took 54.4771s
+[0,0,2151220] 2025-10-08 13:26:13,787 [_training.py] INFO Starting JAX profiler trace at step 1
+[0,0,2151220] 2025-10-08 13:26:14,725 [_training.py] INFO Stopping JAX profiler trace at step 5
+[0,0,2151220] 2025-10-08 13:26:36,542 [_training.py] INFO ==============================
+[0,0,2151220] 2025-10-08 13:26:36,542 [_training.py] INFO ===== Benchmark Results ======
+[0,0,2151220] 2025-10-08 13:26:36,542 [_training.py] INFO ==============================
+[0,0,2151220] 2025-10-08 13:26:36,543 [_training.py] INFO Train Step Time (avg): 0.6802s
+[0,0,2151220] 2025-10-08 13:26:36,543 [_training.py] INFO Train Step Time (median): 0.1248s
+[0,0,2151220] 2025-10-08 13:26:36,543 [_training.py] INFO Train Step Time (std): 5.3802s
+[0,0,2151220] 2025-10-08 13:26:36,543 [_training.py] INFO Next Batch Time (avg): 0.1288s
+[0,0,2151220] 2025-10-08 13:26:36,543 [_training.py] INFO Batches/sec (avg): 1.47
+[0,0,2151220] 2025-10-08 13:26:36,543 [_training.py] INFO ==============================
+[0,0,2151220] 2025-10-08 13:26:36,544 [_training.py] INFO Benchmark loop ended
+[0,0,2267613] 2025-10-08 14:59:27,580 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,2267613] 2025-10-08 15:02:58,694 [_training.py] INFO Step 0 (compilation) took 211.1132s
+[0,0,2267613] 2025-10-08 15:02:58,698 [_training.py] INFO Starting JAX profiler trace at step 1
+[0,0,2267613] 2025-10-08 15:02:59,773 [_training.py] INFO Stopping JAX profiler trace at step 5
+[0,0,2267613] 2025-10-08 15:03:25,221 [_training.py] INFO ==============================
+[0,0,2267613] 2025-10-08 15:03:25,221 [_training.py] INFO ===== Benchmark Results ======
+[0,0,2267613] 2025-10-08 15:03:25,221 [_training.py] INFO ==============================
+[0,0,2267613] 2025-10-08 15:03:25,221 [_training.py] INFO Train Step Time (avg): 2.2580s
+[0,0,2267613] 2025-10-08 15:03:25,222 [_training.py] INFO Train Step Time (median): 0.1520s
+[0,0,2267613] 2025-10-08 15:03:25,222 [_training.py] INFO Train Step Time (std): 20.8857s
+[0,0,2267613] 2025-10-08 15:03:25,222 [_training.py] INFO Next Batch Time (avg): 0.1307s
+[0,0,2267613] 2025-10-08 15:03:25,222 [_training.py] INFO Batches/sec (avg): 0.44
+[0,0,2267613] 2025-10-08 15:03:25,222 [_training.py] INFO ==============================
+[0,0,2267613] 2025-10-08 15:03:25,222 [_training.py] INFO Benchmark loop ended
+[0,0,2277538] 2025-10-08 15:06:29,218 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,2277538] 2025-10-08 15:10:04,101 [_training.py] INFO Step 0 (compilation) took 214.8828s
+[0,0,2277538] 2025-10-08 15:10:04,106 [_training.py] INFO Starting JAX profiler trace at step 1
+[0,0,2277538] 2025-10-08 15:10:05,190 [_training.py] INFO Stopping JAX profiler trace at step 5
+[0,0,2277538] 2025-10-08 15:10:31,561 [_training.py] INFO ==============================
+[0,0,2277538] 2025-10-08 15:10:31,561 [_training.py] INFO ===== Benchmark Results ======
+[0,0,2277538] 2025-10-08 15:10:31,561 [_training.py] INFO ==============================
+[0,0,2277538] 2025-10-08 15:10:31,561 [_training.py] INFO Train Step Time (avg): 2.3020s
+[0,0,2277538] 2025-10-08 15:10:31,562 [_training.py] INFO Train Step Time (median): 0.1537s
+[0,0,2277538] 2025-10-08 15:10:31,562 [_training.py] INFO Train Step Time (std): 21.2583s
+[0,0,2277538] 2025-10-08 15:10:31,562 [_training.py] INFO Next Batch Time (avg): 0.1311s
+[0,0,2277538] 2025-10-08 15:10:31,562 [_training.py] INFO Batches/sec (avg): 0.43
+[0,0,2277538] 2025-10-08 15:10:31,562 [_training.py] INFO ==============================
+[0,0,2277538] 2025-10-08 15:10:31,562 [_training.py] INFO Benchmark loop ended
+[0,0,2293019] 2025-10-08 15:19:15,470 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,2293019] 2025-10-08 15:22:54,018 [_training.py] INFO Step 0 (compilation) took 218.5473s
+[0,0,2293019] 2025-10-08 15:22:54,023 [_training.py] INFO Starting JAX profiler trace at step 1
+[0,0,2293019] 2025-10-08 15:22:55,084 [_training.py] INFO Stopping JAX profiler trace at step 5
+[0,0,2293019] 2025-10-08 15:23:20,074 [_training.py] INFO ==============================
+[0,0,2293019] 2025-10-08 15:23:20,075 [_training.py] INFO ===== Benchmark Results ======
+[0,0,2293019] 2025-10-08 15:23:20,075 [_training.py] INFO ==============================
+[0,0,2293019] 2025-10-08 15:23:20,075 [_training.py] INFO Train Step Time (avg): 0.1677s
+[0,0,2293019] 2025-10-08 15:23:20,075 [_training.py] INFO Train Step Time (median): 0.1502s
+[0,0,2293019] 2025-10-08 15:23:20,075 [_training.py] INFO Train Step Time (std): 0.0767s
+[0,0,2293019] 2025-10-08 15:23:20,075 [_training.py] INFO Next Batch Time (avg): 0.0023s
+[0,0,2293019] 2025-10-08 15:23:20,075 [_training.py] INFO Batches/sec (avg): 5.96
+[0,0,2293019] 2025-10-08 15:23:20,076 [_training.py] INFO Compile Time: 218.5473s
+[0,0,2293019] 2025-10-08 15:23:20,076 [_training.py] INFO ==============================
+[0,0,2293019] 2025-10-08 15:23:20,076 [_training.py] INFO Benchmark loop ended
+[0,0,2310283] 2025-10-08 15:30:45,715 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,2310283] 2025-10-08 15:31:40,208 [_training.py] INFO Step 0 (compilation) took 54.4928s
+[0,0,2310283] 2025-10-08 15:31:40,214 [_training.py] INFO Starting JAX profiler trace at step 1
+[0,0,2310283] 2025-10-08 15:31:41,164 [_training.py] INFO Stopping JAX profiler trace at step 5
+[0,0,2310283] 2025-10-08 15:32:03,497 [_training.py] INFO ==============================
+[0,0,2310283] 2025-10-08 15:32:03,498 [_training.py] INFO ===== Benchmark Results ======
+[0,0,2310283] 2025-10-08 15:32:03,498 [_training.py] INFO ==============================
+[0,0,2310283] 2025-10-08 15:32:03,498 [_training.py] INFO Train Step Time (avg): 0.1436s
+[0,0,2310283] 2025-10-08 15:32:03,498 [_training.py] INFO Train Step Time (median): 0.1260s
+[0,0,2310283] 2025-10-08 15:32:03,498 [_training.py] INFO Train Step Time (std): 0.0771s
+[0,0,2310283] 2025-10-08 15:32:03,498 [_training.py] INFO Next Batch Time (avg): 0.0026s
+[0,0,2310283] 2025-10-08 15:32:03,499 [_training.py] INFO Batches/sec (avg): 6.97
+[0,0,2310283] 2025-10-08 15:32:03,499 [_training.py] INFO Compile Time: 54.4928s
+[0,0,2310283] 2025-10-08 15:32:03,499 [_training.py] INFO ==============================
+[0,0,2310283] 2025-10-08 15:32:03,499 [_training.py] INFO Benchmark loop ended
+[0,0,2317003] 2025-10-08 15:34:12,170 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,2317003] 2025-10-08 15:35:08,759 [_training.py] INFO Step 0 (compilation) took 56.5877s
+[0,0,2317003] 2025-10-08 15:35:08,764 [_training.py] INFO Starting JAX profiler trace at step 1
+[0,0,2317003] 2025-10-08 15:35:09,732 [_training.py] INFO Stopping JAX profiler trace at step 5
+[0,0,2317003] 2025-10-08 15:35:32,380 [_training.py] INFO ==============================
+[0,0,2317003] 2025-10-08 15:35:32,380 [_training.py] INFO ===== Benchmark Results ======
+[0,0,2317003] 2025-10-08 15:35:32,380 [_training.py] INFO ==============================
+[0,0,2317003] 2025-10-08 15:35:32,380 [_training.py] INFO Train Step Time (avg): 0.1455s
+[0,0,2317003] 2025-10-08 15:35:32,380 [_training.py] INFO Train Step Time (median): 0.1275s
+[0,0,2317003] 2025-10-08 15:35:32,381 [_training.py] INFO Train Step Time (std): 0.0782s
+[0,0,2317003] 2025-10-08 15:35:32,381 [_training.py] INFO Next Batch Time (avg): 0.0027s
+[0,0,2317003] 2025-10-08 15:35:32,381 [_training.py] INFO Batches/sec (avg): 6.88
+[0,0,2317003] 2025-10-08 15:35:32,381 [_training.py] INFO Compile Time: 56.5877s
+[0,0,2317003] 2025-10-08 15:35:32,381 [_training.py] INFO ==============================
+[0,0,2317003] 2025-10-08 15:35:32,381 [_training.py] INFO Benchmark loop ended
+[0,0,2326106] 2025-10-08 15:39:20,840 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,2326106] 2025-10-08 15:40:17,642 [_training.py] INFO Step 0 (compilation) took 56.8016s
+[0,0,2326106] 2025-10-08 15:40:17,648 [_training.py] INFO Starting JAX profiler trace at step 1
+[0,0,2326106] 2025-10-08 15:40:18,627 [_training.py] INFO Stopping JAX profiler trace at step 5
+[0,0,2326106] 2025-10-08 15:40:41,060 [_training.py] INFO ==============================
+[0,0,2326106] 2025-10-08 15:40:41,060 [_training.py] INFO ===== Benchmark Results ======
+[0,0,2326106] 2025-10-08 15:40:41,060 [_training.py] INFO ==============================
+[0,0,2326106] 2025-10-08 15:40:41,060 [_training.py] INFO Train Step Time (avg): 0.1440s
+[0,0,2326106] 2025-10-08 15:40:41,061 [_training.py] INFO Train Step Time (median): 0.1266s
+[0,0,2326106] 2025-10-08 15:40:41,061 [_training.py] INFO Train Step Time (std): 0.0766s
+[0,0,2326106] 2025-10-08 15:40:41,061 [_training.py] INFO Next Batch Time (avg): 0.0026s
+[0,0,2326106] 2025-10-08 15:40:41,061 [_training.py] INFO Batches/sec (avg): 6.95
+[0,0,2326106] 2025-10-08 15:40:41,061 [_training.py] INFO Compile Time: 56.8016s
+[0,0,2326106] 2025-10-08 15:40:41,061 [_training.py] INFO ==============================
+[0,0,2326106] 2025-10-08 15:40:41,061 [_training.py] INFO Benchmark loop ended
+[0,0,2340592] 2025-10-08 15:51:14,477 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,2340592] 2025-10-08 15:52:12,986 [_training.py] INFO Step 0 (compilation) took 58.5087s
+[0,0,2340592] 2025-10-08 15:52:12,990 [_training.py] INFO Starting JAX profiler trace at step 1
+[0,0,2340592] 2025-10-08 15:52:13,953 [_training.py] INFO Stopping JAX profiler trace at step 5
+[0,0,2340592] 2025-10-08 15:52:36,489 [_training.py] INFO ==============================
+[0,0,2340592] 2025-10-08 15:52:36,490 [_training.py] INFO ===== Benchmark Results ======
+[0,0,2340592] 2025-10-08 15:52:36,490 [_training.py] INFO ==============================
+[0,0,2340592] 2025-10-08 15:52:36,490 [_training.py] INFO Train Step Time (avg): 0.1442s
+[0,0,2340592] 2025-10-08 15:52:36,490 [_training.py] INFO Train Step Time (median): 0.1270s
+[0,0,2340592] 2025-10-08 15:52:36,490 [_training.py] INFO Train Step Time (std): 0.0774s
+[0,0,2340592] 2025-10-08 15:52:36,490 [_training.py] INFO Next Batch Time (avg): 0.0026s
+[0,0,2340592] 2025-10-08 15:52:36,490 [_training.py] INFO Batches/sec (avg): 6.93
+[0,0,2340592] 2025-10-08 15:52:36,491 [_training.py] INFO Compile Time: 58.5087s
+[0,0,2340592] 2025-10-08 15:52:36,491 [_training.py] INFO ==============================
+[0,0,2340592] 2025-10-08 15:52:36,491 [_training.py] INFO Benchmark loop ended
+[0,0,2349317] 2025-10-08 15:56:43,443 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,2349317] 2025-10-08 15:57:38,282 [_training.py] INFO Step 0 (compilation) took 54.8384s
+[0,0,2349317] 2025-10-08 15:57:38,287 [_training.py] INFO Starting JAX profiler trace at step 1
+[0,0,2349317] 2025-10-08 15:57:39,242 [_training.py] INFO Stopping JAX profiler trace at step 5
+[0,0,2349317] 2025-10-08 15:58:02,388 [_training.py] INFO ==============================
+[0,0,2349317] 2025-10-08 15:58:02,388 [_training.py] INFO ===== Benchmark Results ======
+[0,0,2349317] 2025-10-08 15:58:02,388 [_training.py] INFO ==============================
+[0,0,2349317] 2025-10-08 15:58:02,389 [_training.py] INFO Train Step Time (avg): 0.1513s
+[0,0,2349317] 2025-10-08 15:58:02,389 [_training.py] INFO Train Step Time (median): 0.1279s
+[0,0,2349317] 2025-10-08 15:58:02,389 [_training.py] INFO Train Step Time (std): 0.0915s
+[0,0,2349317] 2025-10-08 15:58:02,389 [_training.py] INFO Next Batch Time (avg): 0.0027s
+[0,0,2349317] 2025-10-08 15:58:02,389 [_training.py] INFO Batches/sec (avg): 6.61
+[0,0,2349317] 2025-10-08 15:58:02,389 [_training.py] INFO Compile Time: 54.8384s
+[0,0,2349317] 2025-10-08 15:58:02,389 [_training.py] INFO ==============================
+[0,0,2349317] 2025-10-08 15:58:02,390 [_training.py] INFO Benchmark loop ended
+[0,0,2979433] 2025-10-09 03:44:02,795 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,2979433] 2025-10-09 03:45:00,161 [_training.py] INFO Step 0 (compilation) took 57.3659s
+[0,0,2979433] 2025-10-09 03:45:00,166 [_training.py] INFO Starting JAX profiler trace at step 1
+[0,0,2979433] 2025-10-09 03:45:01,129 [_training.py] INFO Stopping JAX profiler trace at step 5
+[0,0,2979433] 2025-10-09 03:45:24,528 [_training.py] INFO ==============================
+[0,0,2979433] 2025-10-09 03:45:24,529 [_training.py] INFO ===== Benchmark Results ======
+[0,0,2979433] 2025-10-09 03:45:24,529 [_training.py] INFO ==============================
+[0,0,2979433] 2025-10-09 03:45:24,529 [_training.py] INFO Train Step Time (avg): 0.1518s
+[0,0,2979433] 2025-10-09 03:45:24,529 [_training.py] INFO Train Step Time (median): 0.1305s
+[0,0,2979433] 2025-10-09 03:45:24,529 [_training.py] INFO Train Step Time (std): 0.0864s
+[0,0,2979433] 2025-10-09 03:45:24,529 [_training.py] INFO Next Batch Time (avg): 0.0027s
+[0,0,2979433] 2025-10-09 03:45:24,530 [_training.py] INFO Batches/sec (avg): 6.59
+[0,0,2979433] 2025-10-09 03:45:24,530 [_training.py] INFO Compile Time: 57.3659s
+[0,0,2979433] 2025-10-09 03:45:24,530 [_training.py] INFO ==============================
+[0,0,2979433] 2025-10-09 03:45:24,530 [_training.py] INFO Benchmark loop ended
+[0,0,3022001] 2025-10-09 04:20:42,370 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,3022001] 2025-10-09 04:21:35,929 [_training.py] INFO Step 0 (compilation) took 53.5587s
+[0,0,3022001] 2025-10-09 04:21:35,934 [_training.py] INFO Starting JAX profiler trace at step 1
+[0,0,3022001] 2025-10-09 04:21:36,883 [_training.py] INFO Stopping JAX profiler trace at step 5
+[0,0,3022001] 2025-10-09 04:21:59,149 [_training.py] INFO ==============================
+[0,0,3022001] 2025-10-09 04:21:59,149 [_training.py] INFO ===== Benchmark Results ======
+[0,0,3022001] 2025-10-09 04:21:59,149 [_training.py] INFO ==============================
+[0,0,3022001] 2025-10-09 04:21:59,149 [_training.py] INFO Train Step Time (avg): 0.1434s
+[0,0,3022001] 2025-10-09 04:21:59,149 [_training.py] INFO Train Step Time (median): 0.1259s
+[0,0,3022001] 2025-10-09 04:21:59,150 [_training.py] INFO Train Step Time (std): 0.0775s
+[0,0,3022001] 2025-10-09 04:21:59,150 [_training.py] INFO Next Batch Time (avg): 0.0026s
+[0,0,3022001] 2025-10-09 04:21:59,150 [_training.py] INFO Batches/sec (avg): 6.97
+[0,0,3022001] 2025-10-09 04:21:59,150 [_training.py] INFO Compile Time: 53.5587s
+[0,0,3022001] 2025-10-09 04:21:59,150 [_training.py] INFO ==============================
+[0,0,3022001] 2025-10-09 04:21:59,150 [_training.py] INFO Benchmark loop ended
+[0,0,3032321] 2025-10-09 04:25:56,041 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,3032321] 2025-10-09 04:26:51,313 [_training.py] INFO Step 0 (compilation) took 55.2712s
+[0,0,3032321] 2025-10-09 04:26:51,317 [_training.py] INFO Starting JAX profiler trace at step 1
+[0,0,3032321] 2025-10-09 04:26:52,261 [_training.py] INFO Stopping JAX profiler trace at step 5
+[0,0,3032321] 2025-10-09 04:27:14,341 [_training.py] INFO ==============================
+[0,0,3032321] 2025-10-09 04:27:14,341 [_training.py] INFO ===== Benchmark Results ======
+[0,0,3032321] 2025-10-09 04:27:14,341 [_training.py] INFO ==============================
+[0,0,3032321] 2025-10-09 04:27:14,341 [_training.py] INFO Train Step Time (avg): 0.1418s
+[0,0,3032321] 2025-10-09 04:27:14,342 [_training.py] INFO Train Step Time (median): 0.1245s
+[0,0,3032321] 2025-10-09 04:27:14,342 [_training.py] INFO Train Step Time (std): 0.0764s
+[0,0,3032321] 2025-10-09 04:27:14,342 [_training.py] INFO Next Batch Time (avg): 0.0026s
+[0,0,3032321] 2025-10-09 04:27:14,342 [_training.py] INFO Batches/sec (avg): 7.05
+[0,0,3032321] 2025-10-09 04:27:14,342 [_training.py] INFO Compile Time: 55.2712s
+[0,0,3032321] 2025-10-09 04:27:14,342 [_training.py] INFO ==============================
+[0,0,3032321] 2025-10-09 04:27:14,343 [_training.py] INFO Benchmark loop ended
+[0,0,3040120] 2025-10-09 04:29:55,310 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,3040120] 2025-10-09 04:30:55,901 [_training.py] INFO Step 0 (compilation) took 60.5909s
+[0,0,3040120] 2025-10-09 04:30:57,067 [_training.py] INFO Starting JAX profiler trace at step 10
+[0,0,3040120] 2025-10-09 04:30:59,618 [_training.py] INFO Stopping JAX profiler trace at step 20
+[0,0,3040120] 2025-10-09 04:31:24,761 [_training.py] INFO ==============================
+[0,0,3040120] 2025-10-09 04:31:24,761 [_training.py] INFO ===== Benchmark Results ======
+[0,0,3040120] 2025-10-09 04:31:24,761 [_training.py] INFO ==============================
+[0,0,3040120] 2025-10-09 04:31:24,761 [_training.py] INFO Train Step Time (avg): 0.1485s
+[0,0,3040120] 2025-10-09 04:31:24,761 [_training.py] INFO Train Step Time (median): 0.1256s
+[0,0,3040120] 2025-10-09 04:31:24,761 [_training.py] INFO Train Step Time (std): 0.0884s
+[0,0,3040120] 2025-10-09 04:31:24,762 [_training.py] INFO Next Batch Time (avg): 0.0029s
+[0,0,3040120] 2025-10-09 04:31:24,762 [_training.py] INFO Batches/sec (avg): 6.74
+[0,0,3040120] 2025-10-09 04:31:24,762 [_training.py] INFO Compile Time: 60.5909s
+[0,0,3040120] 2025-10-09 04:31:24,762 [_training.py] INFO ==============================
+[0,0,3040120] 2025-10-09 04:31:24,762 [_training.py] INFO Benchmark loop ended
+[0,0,3056136] 2025-10-09 04:40:25,841 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,3056136] 2025-10-09 04:41:22,463 [_training.py] INFO Step 0 (compilation) took 56.6214s
+[0,0,3056136] 2025-10-09 04:41:23,630 [_training.py] INFO Starting JAX profiler trace at step 10
+[0,0,3056136] 2025-10-09 04:41:26,096 [_training.py] INFO Stopping JAX profiler trace at step 20
+[0,0,3056136] 2025-10-09 04:41:50,927 [_training.py] INFO ==============================
+[0,0,3056136] 2025-10-09 04:41:50,927 [_training.py] INFO ===== Benchmark Results ======
+[0,0,3056136] 2025-10-09 04:41:50,927 [_training.py] INFO ==============================
+[0,0,3056136] 2025-10-09 04:41:50,927 [_training.py] INFO Train Step Time (avg): 0.1488s
+[0,0,3056136] 2025-10-09 04:41:50,927 [_training.py] INFO Train Step Time (median): 0.1282s
+[0,0,3056136] 2025-10-09 04:41:50,927 [_training.py] INFO Train Step Time (std): 0.0831s
+[0,0,3056136] 2025-10-09 04:41:50,927 [_training.py] INFO Next Batch Time (avg): 0.0029s
+[0,0,3056136] 2025-10-09 04:41:50,928 [_training.py] INFO Batches/sec (avg): 6.72
+[0,0,3056136] 2025-10-09 04:41:50,928 [_training.py] INFO Compile Time: 56.6214s
+[0,0,3056136] 2025-10-09 04:41:50,928 [_training.py] INFO ==============================
+[0,0,3056136] 2025-10-09 04:41:50,928 [_training.py] INFO Benchmark loop ended
+[0,0,3067105] 2025-10-09 04:48:15,282 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,3067105] 2025-10-09 04:49:12,226 [_training.py] INFO Step 0 (compilation) took 56.9443s
+[0,0,3067105] 2025-10-09 04:49:26,685 [_training.py] INFO ==============================
+[0,0,3067105] 2025-10-09 04:49:26,685 [_training.py] INFO ===== Benchmark Results ======
+[0,0,3067105] 2025-10-09 04:49:26,685 [_training.py] INFO ==============================
+[0,0,3067105] 2025-10-09 04:49:26,685 [_training.py] INFO Train Step Time (avg): 0.1408s
+[0,0,3067105] 2025-10-09 04:49:26,685 [_training.py] INFO Train Step Time (median): 0.1252s
+[0,0,3067105] 2025-10-09 04:49:26,686 [_training.py] INFO Train Step Time (std): 0.0765s
+[0,0,3067105] 2025-10-09 04:49:26,686 [_training.py] INFO Next Batch Time (avg): 0.0025s
+[0,0,3067105] 2025-10-09 04:49:26,686 [_training.py] INFO Batches/sec (avg): 7.10
+[0,0,3067105] 2025-10-09 04:49:26,686 [_training.py] INFO Compile Time: 56.9443s
+[0,0,3067105] 2025-10-09 04:49:26,686 [_training.py] INFO ==============================
+[0,0,3067105] 2025-10-09 04:49:26,686 [_training.py] INFO Benchmark loop ended
+[0,0,3077181] 2025-10-09 04:54:15,714 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,3077181] 2025-10-09 04:55:13,227 [_training.py] INFO Step 0 (compilation) took 57.5118s
+[0,0,3077181] 2025-10-09 04:55:28,310 [_training.py] INFO ==============================
+[0,0,3077181] 2025-10-09 04:55:28,310 [_training.py] INFO ===== Benchmark Results ======
+[0,0,3077181] 2025-10-09 04:55:28,310 [_training.py] INFO ==============================
+[0,0,3077181] 2025-10-09 04:55:28,310 [_training.py] INFO Train Step Time (avg): 0.1470s
+[0,0,3077181] 2025-10-09 04:55:28,311 [_training.py] INFO Train Step Time (median): 0.1282s
+[0,0,3077181] 2025-10-09 04:55:28,311 [_training.py] INFO Train Step Time (std): 0.0825s
+[0,0,3077181] 2025-10-09 04:55:28,311 [_training.py] INFO Next Batch Time (avg): 0.0025s
+[0,0,3077181] 2025-10-09 04:55:28,311 [_training.py] INFO Batches/sec (avg): 6.80
+[0,0,3077181] 2025-10-09 04:55:28,311 [_training.py] INFO Compile Time: 57.5118s
+[0,0,3077181] 2025-10-09 04:55:28,311 [_training.py] INFO ==============================
+[0,0,3077181] 2025-10-09 04:55:28,311 [_training.py] INFO Benchmark loop ended
+[0,0,3084251] 2025-10-09 04:57:24,659 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,3084251] 2025-10-09 04:58:20,282 [_training.py] INFO Step 0 (compilation) took 55.6220s
+[0,0,3084251] 2025-10-09 04:58:34,770 [_training.py] INFO ==============================
+[0,0,3084251] 2025-10-09 04:58:34,770 [_training.py] INFO ===== Benchmark Results ======
+[0,0,3084251] 2025-10-09 04:58:34,770 [_training.py] INFO ==============================
+[0,0,3084251] 2025-10-09 04:58:34,770 [_training.py] INFO Train Step Time (avg): 0.1412s
+[0,0,3084251] 2025-10-09 04:58:34,770 [_training.py] INFO Train Step Time (median): 0.1265s
+[0,0,3084251] 2025-10-09 04:58:34,771 [_training.py] INFO Train Step Time (std): 0.0740s
+[0,0,3084251] 2025-10-09 04:58:34,771 [_training.py] INFO Next Batch Time (avg): 0.0025s
+[0,0,3084251] 2025-10-09 04:58:34,771 [_training.py] INFO Batches/sec (avg): 7.08
+[0,0,3084251] 2025-10-09 04:58:34,771 [_training.py] INFO Compile Time: 55.6220s
+[0,0,3084251] 2025-10-09 04:58:34,771 [_training.py] INFO ==============================
+[0,0,3084251] 2025-10-09 04:58:34,771 [_training.py] INFO Benchmark loop ended
+[0,0,3104648] 2025-10-09 05:10:21,123 [_training.py] INFO Starting JAX profiler trace at step 0
+[0,0,3104648] 2025-10-09 05:10:21,209 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,3104648] 2025-10-09 05:11:18,898 [_training.py] INFO Step 0 (compilation) took 57.6890s
+[0,0,3104648] 2025-10-09 05:11:38,541 [_training.py] INFO Stopping JAX profiler trace at step 100
+[0,0,3104648] 2025-10-09 05:12:24,725 [_training.py] INFO ==============================
+[0,0,3104648] 2025-10-09 05:12:24,726 [_training.py] INFO ===== Benchmark Results ======
+[0,0,3104648] 2025-10-09 05:12:24,726 [_training.py] INFO ==============================
+[0,0,3104648] 2025-10-09 05:12:24,726 [_training.py] INFO Train Step Time (avg): 0.1890s
+[0,0,3104648] 2025-10-09 05:12:24,726 [_training.py] INFO Train Step Time (median): 0.1694s
+[0,0,3104648] 2025-10-09 05:12:24,727 [_training.py] INFO Train Step Time (std): 0.0851s
+[0,0,3104648] 2025-10-09 05:12:24,727 [_training.py] INFO Next Batch Time (avg): 0.0051s
+[0,0,3104648] 2025-10-09 05:12:24,727 [_training.py] INFO Batches/sec (avg): 5.29
+[0,0,3104648] 2025-10-09 05:12:24,727 [_training.py] INFO Compile Time: 57.6890s
+[0,0,3104648] 2025-10-09 05:12:24,727 [_training.py] INFO ==============================
+[0,0,3104648] 2025-10-09 05:12:24,727 [_training.py] INFO Benchmark loop ended
+[0,0,3113624] 2025-10-09 05:15:26,874 [_training.py] INFO Starting JAX profiler trace at step 0
+[0,0,3113624] 2025-10-09 05:15:26,958 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,3113624] 2025-10-09 05:16:26,678 [_training.py] INFO Step 0 (compilation) took 59.7197s
+[0,0,3113624] 2025-10-09 05:16:46,111 [_training.py] INFO ==============================
+[0,0,3113624] 2025-10-09 05:16:46,111 [_training.py] INFO ===== Benchmark Results ======
+[0,0,3113624] 2025-10-09 05:16:46,112 [_training.py] INFO ==============================
+[0,0,3113624] 2025-10-09 05:16:46,112 [_training.py] INFO Train Step Time (avg): 0.1867s
+[0,0,3113624] 2025-10-09 05:16:46,112 [_training.py] INFO Train Step Time (median): 0.1718s
+[0,0,3113624] 2025-10-09 05:16:46,112 [_training.py] INFO Train Step Time (std): 0.0740s
+[0,0,3113624] 2025-10-09 05:16:46,113 [_training.py] INFO Next Batch Time (avg): 0.0052s
+[0,0,3113624] 2025-10-09 05:16:46,113 [_training.py] INFO Batches/sec (avg): 5.36
+[0,0,3113624] 2025-10-09 05:16:46,113 [_training.py] INFO Compile Time: 59.7197s
+[0,0,3113624] 2025-10-09 05:16:46,113 [_training.py] INFO ==============================
+[0,0,3113624] 2025-10-09 05:16:46,113 [_training.py] INFO Benchmark loop ended
+[0,0,3129410] 2025-10-09 05:26:23,061 [_training.py] INFO Starting JAX profiler trace at step 0
+[0,0,3129410] 2025-10-09 05:26:23,169 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,3129410] 2025-10-09 05:27:21,887 [_training.py] INFO Step 0 (compilation) took 58.7175s
+[0,0,3129410] 2025-10-09 05:28:48,109 [_training.py] INFO ==============================
+[0,0,3129410] 2025-10-09 05:28:48,109 [_training.py] INFO ===== Benchmark Results ======
+[0,0,3129410] 2025-10-09 05:28:48,109 [_training.py] INFO ==============================
+[0,0,3129410] 2025-10-09 05:28:48,109 [_training.py] INFO Train Step Time (avg): 0.8545s
+[0,0,3129410] 2025-10-09 05:28:48,110 [_training.py] INFO Train Step Time (median): 0.1757s
+[0,0,3129410] 2025-10-09 05:28:48,110 [_training.py] INFO Train Step Time (std): 6.5983s
+[0,0,3129410] 2025-10-09 05:28:48,110 [_training.py] INFO Next Batch Time (avg): 0.0049s
+[0,0,3129410] 2025-10-09 05:28:48,110 [_training.py] INFO Batches/sec (avg): 1.17
+[0,0,3129410] 2025-10-09 05:28:48,110 [_training.py] INFO Compile Time: 58.7175s
+[0,0,3129410] 2025-10-09 05:28:48,110 [_training.py] INFO ==============================
+[0,0,3129410] 2025-10-09 05:28:48,111 [_training.py] INFO Benchmark loop ended
+[0,0,3144991] 2025-10-09 05:33:49,046 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,3144991] 2025-10-09 05:34:48,378 [_training.py] INFO Step 0 (compilation) took 59.3316s
+[0,0,3144991] 2025-10-09 05:36:03,150 [_training.py] INFO ==============================
+[0,0,3144991] 2025-10-09 05:36:03,150 [_training.py] INFO ===== Benchmark Results ======
+[0,0,3144991] 2025-10-09 05:36:03,150 [_training.py] INFO ==============================
+[0,0,3144991] 2025-10-09 05:36:03,151 [_training.py] INFO Train Step Time (avg): 0.7440s
+[0,0,3144991] 2025-10-09 05:36:03,151 [_training.py] INFO Train Step Time (median): 0.1280s
+[0,0,3144991] 2025-10-09 05:36:03,151 [_training.py] INFO Train Step Time (std): 5.9620s
+[0,0,3144991] 2025-10-09 05:36:03,151 [_training.py] INFO Next Batch Time (avg): 0.0025s
+[0,0,3144991] 2025-10-09 05:36:03,151 [_training.py] INFO Batches/sec (avg): 1.34
+[0,0,3144991] 2025-10-09 05:36:03,151 [_training.py] INFO Compile Time: 59.3316s
+[0,0,3144991] 2025-10-09 05:36:03,151 [_training.py] INFO ==============================
+[0,0,3144991] 2025-10-09 05:36:03,152 [_training.py] INFO Benchmark loop ended

@@ -638,7 +638,7 @@ def benchmark_loop(
     optimizer: _OptimizerInput,
     train_step_fn: _TrainStepCallable[_ModuleInput, _OptimizerInput],
     train_loader: tp.Iterable[tp.Any],
-    logger: Logger,
+    logger: Logger | None = None,
     num_steps: int = 100,
     theoretical_flops_per_step: float | None = None,
     trace_steps: tuple[int, int] | None = None,
@@ -648,11 +648,12 @@ def benchmark_loop(
 ) -> tuple[_ModuleInput, _OptimizerInput, dict[str, tp.Any]]:
     import time
     
-    if logger is None:
-        raise ValueError("logger is required")
+    # if logger is None:
+    #     raise ValueError("logger is required")
     step_idx = -1
-    train_step_times = []
-    next_batch_times = []
+    train_step_times: list[float] = []
+    next_batch_times: list[float] = []
+    compile_step_time: float | None = None
     try:
         train_iterator = iter(train_loader)
     except TypeError as e:
@@ -715,41 +716,24 @@ def benchmark_loop(
                 LOGGER.info(f"Stopping JAX profiler trace at step {step_idx}")
                 jax.profiler.stop_trace()
             
-            train_step_times.append(step_end - step_start)
-            next_batch_times.append(batch_end - batch_start)
-            
-            if step_idx == 0 and jax.process_index() == 0:
-                LOGGER.info(f"Step 0 (compilation) took {step_end - step_start:.4f}s")
+            if step_idx == 0:
+                compile_step_time = step_end - step_start
+                if jax.process_index() == 0:
+                    LOGGER.info(
+                        f"Step 0 (compilation) took {compile_step_time:.4f}s"
+                    )
+            else:
+                train_step_times.append(step_end - step_start)
+                next_batch_times.append(batch_end - batch_start)
             
             progress_bar.update()
         progress_bar.close()
         train_step_times = np.array(train_step_times)
         next_batch_times = np.array(next_batch_times)
-        if len(train_step_times) == 0:
-            LOGGER.warning("No timing data collected (all steps were skipped)")
-            return module, optimizer, {}
-        for i, t in enumerate(train_step_times, ):
-            logger.log({f"benchmark/train_step_time": t}, step=i)
-        for i, t in enumerate(next_batch_times):
-            logger.log({f"benchmark/next_batch_time": t}, step=i)
-        if theoretical_flops_per_step is not None:
-            for i, step_time in enumerate(train_step_times):
-                measured_flops_per_sec = (
-                    theoretical_flops_per_step / step_time if step_time > 0 else 0
-                )
-                logger.log({f"benchmark/flops_per_sec": measured_flops_per_sec}, step=i)
-                logger.log(
-                    {
-                        f"benchmark/mfu": measured_flops_per_sec
-                        / theoretical_flops_per_step
-                        if theoretical_flops_per_step > 0
-                        else 0
-                    },
-                    step=i,
-                )
-        for i, step_time in enumerate(train_step_times):
-            batches_per_sec = 1.0 / step_time if step_time > 0 else 0
-            logger.log({f"benchmark/batches_per_sec": batches_per_sec}, step=i)
+        batches_per_sec = 1.0 / train_step_times 
+        print(f"DEBUGPRINT[17]: _training.py:731: train_step_times={train_step_times}")
+        print(f"DEBUGPRINT[18]: _training.py:733: next_batch_times={next_batch_times}")
+        print(f"DEBUGPRINT[19]: _training.py:735: batches_per_sec={batches_per_sec}")
         if jax.process_index() == 0:
             LOGGER.info("=" * 30)
             LOGGER.info(" Benchmark Results ".center(30, "="))
@@ -759,6 +743,8 @@ def benchmark_loop(
             LOGGER.info(f"Train Step Time (std): {train_step_times.std():.4f}s")
             LOGGER.info(f"Next Batch Time (avg): {next_batch_times.mean():.4f}s")
             LOGGER.info(f"Batches/sec (avg): {1.0 / train_step_times.mean():.2f}")
+            if compile_step_time is not None:
+                LOGGER.info(f"Compile Time: {compile_step_time:.4f}s")
             if theoretical_flops_per_step is not None:
                 avg_flops = theoretical_flops_per_step / train_step_times.mean()
                 LOGGER.info(f"FLOPs/sec (avg): {avg_flops:.2e}")
@@ -770,7 +756,11 @@ def benchmark_loop(
             "train_step_time_std": float(train_step_times.std()),
             "next_batch_time_mean": float(next_batch_times.mean()),
             "batches_per_sec": float(1.0 / train_step_times.mean()),
+            "train_step_times": train_step_times.tolist(),
+            "next_batch_times": next_batch_times.tolist(),
         }
+        if compile_step_time is not None:
+            stats["compile_time"] = float(compile_step_time)
         if theoretical_flops_per_step is not None:
             avg_flops = theoretical_flops_per_step / train_step_times.mean()
             stats["flops_per_sec"] = float(avg_flops)

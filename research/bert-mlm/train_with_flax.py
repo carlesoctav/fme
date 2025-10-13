@@ -26,6 +26,7 @@ from flaxformer.architectures.bert.heads import MLMHead
 import time
 import logging
 from jax import P
+from jax.experimental import pjit
 
 LOGGER = logging.getLogger(__name__)
 
@@ -75,7 +76,7 @@ def loss_function_flax(params, encoder, mlm_head, batch, key):
         position_ids=_get_position_ids(batch, MAX_LENGTH),
         segment_ids=batch.token_type_ids,
         input_mask=batch.attention_mask,
-        enable_dropout=False,
+        enable_dropout=True,
         rngs={'dropout': key},
     )
     
@@ -110,7 +111,7 @@ def loss_function_flax(params, encoder, mlm_head, batch, key):
     return total_loss, aux
 
 
-def make_flax_train_step():
+def make_flax_train_step(mesh: Mesh):
     grad_fn = jax.value_and_grad(loss_function_flax, has_aux=True)
     
     def train_step(train_state, optimizer_placeholder, batch, key):
@@ -134,7 +135,17 @@ def make_flax_train_step():
         
         return new_train_state, optimizer_placeholder, aux
     
-    return jax.jit(train_step)
+    pjit_train_step = pjit(
+        train_step,
+        in_shardings=(None, None, None, None),
+        out_shardings=(None, None, None),
+    )
+
+    def wrapped_train_step(train_state, optimizer_placeholder, batch, key):
+        with mesh:
+            return pjit_train_step(train_state, optimizer_placeholder, batch, key)
+
+    return wrapped_train_step
 
 
 def main():
@@ -224,7 +235,7 @@ def main():
     encoder_params = encoder.init(
         model_key,
         **dummy_input,
-        enable_dropout=False,
+        enable_dropout=True,
     )
     
     mlm_head = MLMHead(
@@ -267,7 +278,7 @@ def main():
     
     optimizer_placeholder = None
     
-    train_step_fn = make_flax_train_step()
+    train_step_fn = make_flax_train_step(mesh)
     
     timing = time.monotonic()
     compiled_text = train_step_fn.lower(train_state, optimizer_placeholder, batch, key=jax.random.key(10)).as_text()
@@ -276,7 +287,7 @@ def main():
     print(f"DEBUGPRINT[9]: train_with_flax.py:190: diff for compile={diff}")
     print(f"DEBUGPRINT[11]: train_with_flax.py:198: compiled={compiled}")
 
-    with open("./compiled_with_flax_no_dropout.txt", "w") as f:
+    with open("./compiled_flax_dropout.txt", "w") as f:
         f.write(compiled_text)
 
     print_memory(compiled.memory_analysis())
