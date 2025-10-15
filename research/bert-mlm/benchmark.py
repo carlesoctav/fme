@@ -327,7 +327,7 @@ def main():
         train_state=train_state,
         train_step_fn=train_step,
         train_loader=train_loader,
-        trace_dir="/tmp/carles/mine_array_sdpa",
+        trace_dir="./mine_array_sdpa",
         trace_steps=(0, NUM_STEPS),
         key=key,
         num_steps=NUM_STEPS,

@@ -15,8 +15,8 @@ A = TypeVar('A')
 
 
 class Dropout(eqx.Module):
-    p: float 
-    inference: bool 
+    p: float = eqx.field(static=True)
+    inference: bool = eqx.field(static=True)
     dtype: jnp.dtype = eqx.field(static=True)
     params_dtype: jnp.dtype = eqx.field(static=True)
 

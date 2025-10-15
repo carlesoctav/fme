@@ -82,7 +82,7 @@ class AttentionModule(eqx.Module):
     attn_fn: Callable = eqx.field(static=True)
     _attn_implementation: str = eqx.field(static=True, default="eager")
     implementation: str = eqx.field(static=True, default="xla")
-    inference: bool = False
+    inference: bool = eqx.field(static=True, default=False)
 
     def __call__(
         self,

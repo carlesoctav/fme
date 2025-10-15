@@ -4,7 +4,7 @@ import logging
 import time
 import typing as tp
 from contextlib import nullcontext
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Protocol
 
 import equinox as eqx
@@ -71,17 +71,16 @@ class _EvalStepCallable(Protocol[_ModuleInput, _OptimizerInput]):
     ) -> _Aux: ...
 
 
+@dataclass
 class Optimizer(eqx.Module):
     opt_state: PyTree[Array]
     wrt: PyTree[_AxisSpec] = eqx.field(static=True)
     tx: GradientTransformationExtraArgs = eqx.field(static=True)
-
-    def __init__(
-        self, grad_tx: _GradTx, model: eqx.Module, *, wrt: _Wrt = eqx.is_inexact_array
-    ):
-        self.tx = grad_tx
-        self.wrt = wrt
-        self.opt_state = self.tx.init(eqx.filter(model, self.wrt))
+    
+    @staticmethod
+    def create(grad_tx: _GradTx, model: eqx.Module, *, wrt: _Wrt = eqx.is_inexact_array):
+        opt_state = grad_tx.init(eqx.filter(model, wrt))
+        return Optimizer(opt_state=opt_state, wrt=wrt, tx=grad_tx)
 
     def __call__(
         self, grads: PyTree[Array], model: eqx.Module
@@ -90,8 +89,7 @@ class Optimizer(eqx.Module):
             grads, self.opt_state, eqx.filter(model, self.wrt)
         )
         new_model = eqx.apply_updates(model, updates)
-        new_self = eqx.tree_at(lambda o: [o.opt_state], self, [opt_state])
-        return new_model, new_self
+        return new_model, replace(self, opt_state=opt_state) 
 
 
 _T = tp.TypeVar("_T")
@@ -237,7 +235,7 @@ def make_module_opt(
 
         pspec_tree = get_partition_spec(m)
         m_sharded = eqx.filter_shard(m, pspec_tree)
-        opt = Optimizer(grad_tx, m_sharded, wrt=wrt)
+        opt = Optimizer.create(grad_tx, m_sharded, wrt=wrt)
 
         return m_sharded, opt
 
@@ -274,7 +272,7 @@ def make_train_step(
     assert loss_function is not None
     if gradient_accumulation_steps < 1:
         raise ValueError("gradient_accumulation_steps must be >= 1")
-
+    
     grad_fn = eqx.filter_value_and_grad(loss_function, has_aux=True)
 
     def _step(
@@ -331,6 +329,58 @@ def make_train_step(
 
     fn = eqx.filter_jit(_step) if jit else _step
     return fn
+
+
+def make_train_step_with_partition(
+    module: _M,
+    optimizer: Optimizer,
+    loss_function: _LossFn,
+    *,
+    jit: bool = True,
+) -> tuple[
+    _TrainStepCallable[PyTree[Array], Optimizer],
+    PyTree[tp.Any],
+]:
+    """
+    Create a train step that uses partition/combine pattern for better performance.
+    
+    This function extracts static (non-array) parts of the module once, before JIT compilation.
+    Returns a modified train step that operates on params (arrays only) instead of full module,
+    and the static parts that need to be kept around.
+    
+    Args:
+        module: The module to train
+        optimizer: The optimizer
+        loss_function: Loss function that takes (module, optimizer, batch, key)
+        jit: Whether to JIT compile the step
+        
+    Returns:
+        train_step: Function that takes (params, optimizer, batch, key) -> (params, optimizer, aux)
+        static_parts: Static (non-array) parts of the module that must be kept
+    """
+    params, static = eqx.partition(module, eqx.is_array)
+    
+    def loss_fn_params(params, batch, key):
+        module_inst = eqx.combine(params, static)
+        return loss_function(module_inst, optimizer, batch, key)
+    
+    grad_fn = jax.value_and_grad(loss_fn_params, has_aux=True, allow_int=True)
+    
+    def _step(
+        params: PyTree[Array],
+        optimizer: Optimizer,
+        batch: tp.Any,
+        *,
+        key: PRNGKeyArray | None = None,
+    ) -> tuple[PyTree[Array], Optimizer, _Aux]:
+        (_, aux), grads = grad_fn(params, batch, key)
+        updates, new_opt_state = optimizer.tx.update(grads, optimizer.opt_state, params)
+        new_params = eqx.apply_updates(params, updates)
+        new_optimizer = replace(optimizer, opt_state=new_opt_state)
+        return new_params, new_optimizer, aux or {}
+    
+    fn = jax.jit(_step) if jit else _step
+    return fn, static
 
 
 @dataclass

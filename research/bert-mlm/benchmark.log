@@ -314,3 +314,189 @@
 [0,0,3144991] 2025-10-09 05:36:03,151 [_training.py] INFO Compile Time: 59.3316s
 [0,0,3144991] 2025-10-09 05:36:03,151 [_training.py] INFO ==============================
 [0,0,3144991] 2025-10-09 05:36:03,152 [_training.py] INFO Benchmark loop ended
+[0,0,316704] 2025-10-15 02:16:13,388 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,320622] 2025-10-15 02:18:14,970 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,320622] 2025-10-15 02:19:11,192 [_training.py] INFO Step 0 (compilation) took 56.2219s
+[0,0,320622] 2025-10-15 02:19:11,197 [_training.py] INFO Starting JAX profiler trace at step 1
+[0,0,320622] 2025-10-15 02:19:30,470 [_training.py] INFO Stopping JAX profiler trace at step 100
+[0,0,320622] 2025-10-15 02:20:10,623 [_training.py] INFO ==============================
+[0,0,320622] 2025-10-15 02:20:10,623 [_training.py] INFO ===== Benchmark Results ======
+[0,0,320622] 2025-10-15 02:20:10,623 [_training.py] INFO ==============================
+[0,0,320622] 2025-10-15 02:20:10,623 [_training.py] INFO Train Step Time (avg): 0.1859s
+[0,0,320622] 2025-10-15 02:20:10,624 [_training.py] INFO Train Step Time (median): 0.1689s
+[0,0,320622] 2025-10-15 02:20:10,624 [_training.py] INFO Train Step Time (std): 0.0814s
+[0,0,320622] 2025-10-15 02:20:10,624 [_training.py] INFO Next Batch Time (avg): 0.0037s
+[0,0,320622] 2025-10-15 02:20:10,624 [_training.py] INFO Batches/sec (avg): 5.38
+[0,0,320622] 2025-10-15 02:20:10,624 [_training.py] INFO Compile Time: 56.2219s
+[0,0,320622] 2025-10-15 02:20:10,624 [_training.py] INFO ==============================
+[0,0,320622] 2025-10-15 02:20:10,626 [_training.py] INFO Benchmark loop ended
+[0,0,339542] 2025-10-15 02:47:29,537 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,339542] 2025-10-15 02:48:22,885 [_training.py] INFO Step 0 (compilation) took 53.3473s
+[0,0,339542] 2025-10-15 02:48:22,889 [_training.py] INFO Starting JAX profiler trace at step 1
+[0,0,339542] 2025-10-15 02:48:41,115 [_training.py] INFO ==============================
+[0,0,339542] 2025-10-15 02:48:41,115 [_training.py] INFO ===== Benchmark Results ======
+[0,0,339542] 2025-10-15 02:48:41,115 [_training.py] INFO ==============================
+[0,0,339542] 2025-10-15 02:48:41,115 [_training.py] INFO Train Step Time (avg): 0.1753s
+[0,0,339542] 2025-10-15 02:48:41,116 [_training.py] INFO Train Step Time (median): 0.1627s
+[0,0,339542] 2025-10-15 02:48:41,116 [_training.py] INFO Train Step Time (std): 0.0705s
+[0,0,339542] 2025-10-15 02:48:41,116 [_training.py] INFO Next Batch Time (avg): 0.0038s
+[0,0,339542] 2025-10-15 02:48:41,116 [_training.py] INFO Batches/sec (avg): 5.70
+[0,0,339542] 2025-10-15 02:48:41,116 [_training.py] INFO Compile Time: 53.3473s
+[0,0,339542] 2025-10-15 02:48:41,116 [_training.py] INFO ==============================
+[0,0,339542] 2025-10-15 02:48:41,117 [_training.py] INFO Benchmark loop ended
+[0,0,345113] 2025-10-15 02:55:54,305 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,345113] 2025-10-15 02:55:56,246 [_training.py] ERROR Exception during benchmark loop
+Traceback (most recent call last):
+  File "/mnt/carles/fme/src/_training.py", line 701, in benchmark_loop
+    module, optimizer, aux = train_step_fn(
+                             ^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/.venv/lib/python3.11/site-packages/equinox/_jit.py", line 209, in __call__
+    return _call(self, False, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/.venv/lib/python3.11/site-packages/equinox/_jit.py", line 263, in _call
+    marker, _, _ = out = jit_wrapper._cached(
+                         ^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/src/_training.py", line 320, in _step
+    new_module, new_opt = optimizer(grad, module)
+                          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/src/_training.py", line 101, in __call__
+    return new_model, replace(self, opt_state = opt_state)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/carlesoctav/.pyenv/versions/3.11.13/lib/python3.11/dataclasses.py", line 1503, in replace
+    return obj.__class__(**changes)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/.venv/lib/python3.11/site-packages/equinox/_module/_module.py", line 416, in __call__
+    if self is not None:
+       ^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/.venv/lib/python3.11/site-packages/equinox/_module/_better_abstract.py", line 232, in __call__
+    self = super().__call__(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: Optimizer.__init__() got an unexpected keyword argument 'tx'
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+[0,0,345113] 2025-10-15 02:55:56,248 [_training.py] INFO Benchmark loop ended
+[0,0,348445] 2025-10-15 02:57:27,167 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,348445] 2025-10-15 02:57:29,114 [_training.py] ERROR Exception during benchmark loop
+Traceback (most recent call last):
+  File "/mnt/carles/fme/src/_training.py", line 702, in benchmark_loop
+    module, optimizer, aux = train_step_fn(
+                             ^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/.venv/lib/python3.11/site-packages/equinox/_jit.py", line 209, in __call__
+    return _call(self, False, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/.venv/lib/python3.11/site-packages/equinox/_jit.py", line 263, in _call
+    marker, _, _ = out = jit_wrapper._cached(
+                         ^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/src/_training.py", line 321, in _step
+    new_module, new_opt = optimizer(grad, module)
+                          ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/src/_training.py", line 102, in __call__
+    return new_model, replace(self, opt_state=opt_state)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/carlesoctav/.pyenv/versions/3.11.13/lib/python3.11/dataclasses.py", line 1503, in replace
+    return obj.__class__(**changes)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/.venv/lib/python3.11/site-packages/equinox/_module/_module.py", line 416, in __call__
+    if self is not None:
+       ^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/.venv/lib/python3.11/site-packages/equinox/_module/_better_abstract.py", line 232, in __call__
+    self = super().__call__(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: Optimizer.__init__() missing 2 required positional arguments: 'grad_tx' and 'model'
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+[0,0,348445] 2025-10-15 02:57:29,115 [_training.py] INFO Benchmark loop ended
+[0,0,351720] 2025-10-15 02:59:10,222 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,351720] 2025-10-15 03:00:03,119 [_training.py] INFO Step 0 (compilation) took 52.8964s
+[0,0,351720] 2025-10-15 03:00:03,123 [_training.py] INFO Starting JAX profiler trace at step 1
+[0,0,351720] 2025-10-15 03:00:21,498 [_training.py] INFO ==============================
+[0,0,351720] 2025-10-15 03:00:21,499 [_training.py] INFO ===== Benchmark Results ======
+[0,0,351720] 2025-10-15 03:00:21,499 [_training.py] INFO ==============================
+[0,0,351720] 2025-10-15 03:00:21,499 [_training.py] INFO Train Step Time (avg): 0.1770s
+[0,0,351720] 2025-10-15 03:00:21,499 [_training.py] INFO Train Step Time (median): 0.1637s
+[0,0,351720] 2025-10-15 03:00:21,500 [_training.py] INFO Train Step Time (std): 0.0734s
+[0,0,351720] 2025-10-15 03:00:21,500 [_training.py] INFO Next Batch Time (avg): 0.0036s
+[0,0,351720] 2025-10-15 03:00:21,500 [_training.py] INFO Batches/sec (avg): 5.65
+[0,0,351720] 2025-10-15 03:00:21,500 [_training.py] INFO Compile Time: 52.8964s
+[0,0,351720] 2025-10-15 03:00:21,500 [_training.py] INFO ==============================
+[0,0,351720] 2025-10-15 03:00:21,500 [_training.py] INFO Benchmark loop ended
+[0,0,357304] 2025-10-15 03:06:34,134 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,357304] 2025-10-15 03:07:27,888 [_training.py] INFO Step 0 (compilation) took 53.7539s
+[0,0,357304] 2025-10-15 03:07:27,893 [_training.py] INFO Starting JAX profiler trace at step 1
+[0,0,357304] 2025-10-15 03:07:46,161 [_training.py] INFO ==============================
+[0,0,357304] 2025-10-15 03:07:46,161 [_training.py] INFO ===== Benchmark Results ======
+[0,0,357304] 2025-10-15 03:07:46,162 [_training.py] INFO ==============================
+[0,0,357304] 2025-10-15 03:07:46,162 [_training.py] INFO Train Step Time (avg): 0.1759s
+[0,0,357304] 2025-10-15 03:07:46,162 [_training.py] INFO Train Step Time (median): 0.1622s
+[0,0,357304] 2025-10-15 03:07:46,162 [_training.py] INFO Train Step Time (std): 0.0737s
+[0,0,357304] 2025-10-15 03:07:46,163 [_training.py] INFO Next Batch Time (avg): 0.0037s
+[0,0,357304] 2025-10-15 03:07:46,163 [_training.py] INFO Batches/sec (avg): 5.69
+[0,0,357304] 2025-10-15 03:07:46,163 [_training.py] INFO Compile Time: 53.7539s
+[0,0,357304] 2025-10-15 03:07:46,163 [_training.py] INFO ==============================
+[0,0,357304] 2025-10-15 03:07:46,163 [_training.py] INFO Benchmark loop ended
+[0,0,363750] 2025-10-15 03:34:11,441 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,363750] 2025-10-15 03:35:02,690 [_training.py] INFO Benchmark loop ended
+[0,0,367415] 2025-10-15 03:36:43,666 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,367415] 2025-10-15 03:36:43,798 [_training.py] ERROR Exception during benchmark loop
+Traceback (most recent call last):
+  File "/mnt/carles/fme/src/_training.py", line 720, in benchmark_loop
+    module, optimizer, aux = train_step_fn(
+                             ^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/src/_training.py", line 293, in _step
+    (_, aux), grads = grad_fn(params, batch, key)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/src/_training.py", line 289, in loss_fn_params
+    return loss_function(module_inst, optimizer, batch, key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/research/bert-mlm/another_bench.py", line 52, in loss_function
+    logits = model(
+             ^^^^^^
+  File "/mnt/carles/fme/src/models/bert/modeling_bert.py", line 755, in __call__
+    sequence_output = self.bert(
+                      ^^^^^^^^^^
+  File "/mnt/carles/fme/src/models/bert/modeling_bert.py", line 591, in __call__
+    hidden_states = self.embeddings(
+                    ^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/src/models/bert/modeling_bert.py", line 98, in __call__
+    embeddings = self.dropout(embeddings, key=d_key)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/src/nn/_dropout.py", line 48, in __call__
+    if self.inference or self.p == 0.0:
+jax.errors.TracerBoolConversionError: Attempted boolean conversion of traced array with shape bool[].
+The error occurred while tracing the function _step at /mnt/carles/fme/src/_training.py:278 for jit. This concrete value was not available in Python because it depends on the value of the argument module.bert.embeddings.dropout.inference.
+See https://docs.jax.dev/en/latest/errors.html#jax.errors.TracerBoolConversionError
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+[0,0,367415] 2025-10-15 03:36:43,799 [_training.py] INFO Benchmark loop ended
+[0,0,370921] 2025-10-15 03:39:06,768 [_training.py] INFO Running step 0 (compilation step)...
+[0,0,370921] 2025-10-15 03:39:06,906 [_training.py] ERROR Exception during benchmark loop
+Traceback (most recent call last):
+  File "/mnt/carles/fme/src/_training.py", line 727, in benchmark_loop
+    module, optimizer, aux = train_step_fn(
+                             ^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/src/_training.py", line 300, in _step
+    (_, aux), grads = grad_fn(params, batch, key)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/src/_training.py", line 296, in loss_fn_params
+    return loss_function(module_inst, optimizer, batch, key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/research/bert-mlm/another_bench.py", line 52, in loss_function
+    logits = model(
+             ^^^^^^
+  File "/mnt/carles/fme/src/models/bert/modeling_bert.py", line 755, in __call__
+    sequence_output = self.bert(
+                      ^^^^^^^^^^
+  File "/mnt/carles/fme/src/models/bert/modeling_bert.py", line 591, in __call__
+    hidden_states = self.embeddings(
+                    ^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/src/models/bert/modeling_bert.py", line 98, in __call__
+    embeddings = self.dropout(embeddings, key=d_key)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/src/nn/_dropout.py", line 48, in __call__
+    if self.inference or self.p == 0.0:
+jax.errors.TracerBoolConversionError: Attempted boolean conversion of traced array with shape bool[].
+The error occurred while tracing the function _step at /mnt/carles/fme/src/_training.py:280 for jit. This concrete value was not available in Python because it depends on the value of the argument module.bert.embeddings.dropout.inference.
+See https://docs.jax.dev/en/latest/errors.html#jax.errors.TracerBoolConversionError
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+[0,0,370921] 2025-10-15 03:39:06,907 [_training.py] INFO Benchmark loop ended

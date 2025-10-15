@@ -104,8 +104,8 @@ class BertSelfAttention(eqx.Module):
     query: nn.Linear
     value: nn.Linear
     key: nn.Linear
-    dropout_rate: float
-    inference: bool
+    dropout_rate: float = field(static=True)
+    inference: bool = field(static=True)
     sdpa: AttentionModule
     num_attention_heads: int = field(static=True)
     attention_head_size: int = field(static=True)
