@@ -6,33 +6,17 @@ import equinox as eqx
 import jax
 import jax.tree_util as jtu
 import numpy as np
-from jax import P
+from jax import P, lax
 from jax.sharding import Mesh
 
-from src import DArray
+from src.utils import is_in_jit
+from src.distributed.array import ArrayWithSharding
 
 
 def is_darray(x: tp.Any) -> bool:
-    return isinstance(x, DArray)
+    return isinstance(x, ArrayWithSharding)
 
 
-def get_partition_spec(module: eqx.Module):
-    def _maybe_replicate(x):
-        if hasattr(x, "shape"):
-            return P()
-        else:
-            return None
-
-    def _f(leaf):
-        if isinstance(leaf, DArray):
-            if leaf.pspec is not None:
-                return dc.replace(leaf, value = P(*leaf.pspec)) 
-            else:
-                return dc.replace(leaf, value = _maybe_replicate(leaf.value))
-        else:
-            return _maybe_replicate(leaf) 
-
-    return jtu.tree_map(_f, module, is_leaf = is_darray)
 
 
 def fully_shard(
@@ -80,9 +64,9 @@ def fully_shard(
         return name
 
     def _annotate_pspec(path, leaf: tp.Any):
-        if not isinstance(leaf, DArray):
+        if not isinstance(leaf, ArrayWithSharding):
             return leaf
-        value, pspec = leaf.value, leaf.pspec
+        value, pspec = leaf.value, leaf.sharding
 
         if value is None:
             return leaf
@@ -96,20 +80,18 @@ def fully_shard(
             )
 
         if any(
-            (p == axis_name)
-            or (isinstance(p, tuple) and axis_name in p)
-            for p in pspec
+            (p == axis_name) or (isinstance(p, tuple) and axis_name in p) for p in pspec
         ):
             logging.warning(
                 f"Parameter {value.shape} with names {jax.tree_util.keystr(path)} already sharded on axis {axis_name}. the partition spec is {pspec}."
             )
-            return DArray(value=value, pspec=pspec)
+            return ArrayWithSharding(value=value, sharding=pspec)
 
         if value.size <= min_weight_size:
             logging.info(
                 f"Parameter {value.shape} with names {pspec} too small to shard, size {value.size} < {min_weight_size}."
             )
-            return DArray(value=value, pspec=pspec)
+            return ArrayWithSharding(value=value, sharding=pspec)
 
         shape = value.shape
         divs = tuple(_effective_div(p) for p in pspec)
@@ -120,11 +102,11 @@ def fully_shard(
                 if s % axis_size == 0:
                     new_i_pspec = _append_axis(pspec[i], axis_name)
                     new_pspec = pspec[:i] + (new_i_pspec,) + pspec[i + 1 :]
-                    return DArray(value=value, pspec=new_pspec)
+                    return ArrayWithSharding(value=value, sharding=new_pspec)
             logging.warning(
                 f"Could not shard {value.shape} with names {pspec} on axis {axis_name}, no suitable axis found"
             )
-            return DArray(value=value, pspec=pspec)
+            return ArrayWithSharding(value=value, sharding=pspec)
 
         elif strategy == "greatest_size":
             idx = np.argsort(eff_shape)[::-1]
@@ -132,11 +114,11 @@ def fully_shard(
                 if eff_shape[i] % axis_size == 0:
                     new_i_pspec = _append_axis(pspec[i], axis_name)
                     new_pspec = pspec[:i] + (new_i_pspec,) + pspec[i + 1 :]
-                    return DArray(value=value, pspec=new_pspec)
+                    return ArrayWithSharding(value=value, sharding=new_pspec)
             logging.warning(
                 f"Could not shard {value.shape} with names {pspec} on axis {axis_name}, no suitable axis found"
             )
-            return DArray(value=value, pspec=pspec)
+            return ArrayWithSharding(value=value, sharding=pspec)
 
         else:
             raise ValueError(f"Unknown strategy: {strategy}")
@@ -203,10 +185,10 @@ def tensor_parallel(
         return name
 
     def _annotate_pspec(path, leaf: tp.Any):
-        if not isinstance(leaf, DArray):
+        if not isinstance(leaf, ArrayWithSharding):
             return leaf
 
-        value, pspec = leaf.value, leaf.pspec
+        value, pspec = leaf.value, leaf.sharding
         if value is None:
             return leaf
 
@@ -219,23 +201,25 @@ def tensor_parallel(
             )
 
         if any(
-            (p == axis_name)
-            or (isinstance(p, tuple) and axis_name in p)
-            for p in pspec
+            (p == axis_name) or (isinstance(p, tuple) and axis_name in p) for p in pspec
         ):
             logging.warning(
                 f"Parameter {value.shape} with names {jax.tree_util.keystr(path)} already sharded on axis {axis_name}. the partition spec is {pspec}."
             )
-            return DArray(value=value, pspec=pspec)
+            return ArrayWithSharding(value=value, sharding=pspec)
 
         ndim = value.ndim
-        dim = tensor_dim_to_sharded if tensor_dim_to_sharded >= 0 else ndim + tensor_dim_to_sharded
+        dim = (
+            tensor_dim_to_sharded
+            if tensor_dim_to_sharded >= 0
+            else ndim + tensor_dim_to_sharded
+        )
         if dim < 0 or dim >= ndim:
             if skip_on_dim_mismatch:
                 logging.info(
                     f"Skip sharding: dim {tensor_dim_to_sharded} out of range for shape {value.shape}"
                 )
-                return DArray(value=value, pspec=pspec)
+                return ArrayWithSharding(value=value, sharding=pspec)
             else:
                 raise ValueError(
                     f"dim_to_sharded {tensor_dim_to_sharded} out of range for value.ndim={ndim}"
@@ -249,18 +233,18 @@ def tensor_parallel(
             logging.info(
                 f"Skip sharding: small array {value.shape}, size {value.size} < {min_weight_size}"
             )
-            return DArray(value=value, pspec=pspec)
+            return ArrayWithSharding(value=value, sharding=pspec)
 
         if eff_shape[dim] % axis_size == 0:
             new_i_pspec = _append_axis(pspec[dim], axis_name)
             new_pspec = pspec[:dim] + (new_i_pspec,) + pspec[dim + 1 :]
-            return DArray(value=value, pspec=new_pspec)
+            return ArrayWithSharding(value=value, sharding=new_pspec)
         else:
             logging.warning(
                 f"Could not shard {value.shape} with names {jtu.keystr(path)} on axis {axis_name} for dim {dim}; "
                 f"effective size {eff_shape[dim]} not divisible by {axis_size}"
             )
-            return DArray(value=value, pspec=pspec)
+            return ArrayWithSharding(value=value, sharding=pspec)
 
     return jtu.tree_map_with_path(_annotate_pspec, module, is_leaf=is_darray)
 
@@ -317,9 +301,9 @@ def shard_params(
         return merged[0] if len(merged) == 1 else merged
 
     def _annotate_pspec(leaf: tp.Any):
-        if not isinstance(leaf, DArray):
+        if not isinstance(leaf, ArrayWithSharding):
             return leaf
-        value, pspec = leaf.value, leaf.pspec
+        value, pspec = leaf.value, leaf.sharding
         if value is None:
             return leaf
         if pspec is None:
@@ -355,6 +339,31 @@ def shard_params(
                 )
             new_pspec[d] = _append_axes(new_pspec[d], axes_tuple)
 
-        return DArray(value=value, pspec=tuple(new_pspec))
+        return ArrayWithSharding(value=value, sharding=tuple(new_pspec))
 
     return jtu.tree_map(_annotate_pspec, module, is_leaf=is_darray)
+
+
+def unbox_params(module: eqx.Module, mesh: Mesh) -> eqx.Module:
+
+    def _unbox(leaf):
+        if not isinstance(leaf, ArrayWithSharding):
+            return leaf
+
+        value = leaf.value
+        if value is None:
+            return None
+
+        if leaf.sharding is None:
+            return value
+
+        pspec = P(*leaf.sharding) if isinstance(leaf.sharding, tuple) else P(leaf.sharding)
+
+        if is_in_jit():
+            return lax.with_sharding_constraint(value, pspec)
+        else:
+            sharding = jax.sharding.NamedSharding(mesh, pspec)
+            return jax.device_put(value, sharding)
+
+    with mesh:
+        return jtu.tree_map(_unbox, module, is_leaf=is_darray)

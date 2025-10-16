@@ -1,4 +1,3 @@
-
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -10,23 +9,17 @@ from jax.nn.initializers import (
 )
 from jaxtyping import Float, PRNGKeyArray
 
-from src import DArray
-
-from ._utils import promote_dtype
-
 
 Array = jax.Array
 
 
 class LayerNorm(eqx.Module):
-    weight: DArray | None
-    bias: DArray | None
+    weight: Array | None
+    bias: Array | None
     normalized_shape: tuple[int, ...] = eqx.field(static=True)
     eps: float = eqx.field(static=True)
     elementwise_affine: bool = eqx.field(static=True)
-    dtype: jnp.dtype = eqx.field(static=True)
-    params_dtype: jnp.dtype = eqx.field(static=True)
-    initializer: Initializer = eqx.field(static = True) 
+    initializer: Initializer = eqx.field(static=True)
 
     def __init__(
         self,
@@ -36,36 +29,32 @@ class LayerNorm(eqx.Module):
         elementwise_affine: bool = True,
         bias: bool = True,
         initializer: Initializer = None,
-        dtype: jnp.dtype = jnp.float32,
-        params_dtype: jnp.dtype = jnp.float32,
-        key: PRNGKeyArray, 
+        key: PRNGKeyArray,
         weight_spec: str | tuple[str, ...] | None = None,
         bias_spec: str | tuple[str, ...] | None = None,
         input_pspec: jax.P | None = None,
         output_pspec: jax.P | None = None,
     ):
-        self.normalized_shape = (normalized_shape,) if isinstance(normalized_shape, int) else normalized_shape
+        self.normalized_shape = (
+            (normalized_shape,)
+            if isinstance(normalized_shape, int)
+            else normalized_shape
+        )
         self.eps = eps
         self.elementwise_affine = elementwise_affine
 
         self.initializer = ones_init if initializer is None else initializer
-        self.dtype = dtype
-        self.params_dtype = params_dtype
 
         if self.elementwise_affine:
             wkey, bkey = jax.random.split(key, 2)
-            wvalue = self.initializer(wkey, normalized_shape, dtype=self.params_dtype)
-            self.weight = DArray(value=wvalue, pspec=weight_spec)
+            self.weight = self.initializer(wkey, normalized_shape, dtype=jnp.float32)
             if bias:
-                bvalue = zeros_init(bkey, normalized_shape, dtype=self.params_dtype)
-                self.bias = DArray(value=bvalue, pspec=bias_spec) 
+                self.bias = zeros_init(bkey, normalized_shape, dtype=jnp.float32)
             else:
                 self.bias = None
         else:
             self.weight = None
             self.bias = None
-
-
 
     def __call__(
         self,
@@ -73,11 +62,7 @@ class LayerNorm(eqx.Module):
         *,
         key: PRNGKeyArray | None = None,
     ) -> Array:
-        """
-        Applies LayerNorm over the last `len(normalized_shape)` dims.
-        """
-        (x_,) = promote_dtype(x, dtype=self.dtype)
-        nd = x_.ndim
+        nd = x.ndim
         k = len(self.normalized_shape)
 
         if k == 0 or nd < k:
@@ -85,25 +70,21 @@ class LayerNorm(eqx.Module):
                 f"Input rank {nd} too small for normalized_shape {self.normalized_shape}"
             )
 
-        if tuple(x_.shape[-k:]) != tuple(self.normalized_shape):
+        if tuple(x.shape[-k:]) != tuple(self.normalized_shape):
             raise ValueError(
-                f"Trailing shape {x_.shape[-k:]} does not match normalized_shape {self.normalized_shape}"
+                f"Trailing shape {x.shape[-k:]} does not match normalized_shape {self.normalized_shape}"
             )
 
         axes = tuple(range(nd - k, nd))
-        mean = jnp.mean(x_, axis=axes, keepdims=True)
-        var = jnp.var(x_, axis=axes, keepdims=True)
-        inv = lax.rsqrt(jnp.maximum(var, 0.0) + jnp.asarray(self.eps, dtype=self.dtype))
-        y = (x_ - mean) * inv
+        mean = jnp.mean(x, axis=axes, keepdims=True)
+        var = jnp.var(x, axis=axes, keepdims=True)
+        inv = lax.rsqrt(jnp.maximum(var, 0.0) + self.eps)
+        y = (x - mean) * inv
 
         if self.weight is not None:
-            weight = getattr(self.weight, "value", self.weight)
-            (w,) = promote_dtype(weight, dtype=self.dtype)
-            y = w * y
+            y = self.weight * y
         if self.bias is not None:
-            bias = getattr(self.bias, "value", self.bias)
-            (b,) = promote_dtype(bias, dtype=self.dtype)
-            y = y + b
+            y = y + self.bias
 
         return y
 
@@ -117,15 +98,17 @@ class LayerNorm(eqx.Module):
             return self
 
         w_shape = self.normalized_shape
-        w_dtype = self.params_dtype
 
-        new_w = self.initializer(w_key, w_shape, dtype=w_dtype)
-        new_self = eqx.tree_at(lambda m: m.weight, self, DArray(value=new_w, pspec=self.weight.pspec if self.weight is not None else None))
+        new_w = self.initializer(w_key, w_shape, dtype=jnp.float32)
+        new_self = eqx.tree_at(
+            lambda m: m.weight,
+            self,
+            new_w,
+        )
 
         if self.bias is not None:
             b_shape = self.normalized_shape
-            b_dtype = self.params_dtype
-            new_b = zeros_init(b_key, b_shape, dtype=b_dtype)
-            new_self = eqx.tree_at(lambda m: m.bias, new_self, DArray(value=new_b, pspec=self.bias.pspec))
+            new_b = zeros_init(b_key, b_shape, dtype=jnp.float32)
+            new_self = eqx.tree_at(lambda m: m.bias, new_self, new_b)
 
         return new_self

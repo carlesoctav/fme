@@ -1,14 +1,14 @@
-from ._attention import (
+from .attention import (
     AttentionModule,
     make_attention_module,
     eager_dot_product_attention,
     JaxNNAttentionModule,
 )
-from ._dropout import Dropout
-from ._embedding import Embedding
-from ._layernorm import LayerNorm
-from ._linear import Linear
-from ._rope import ROPE_INIT_FUNCTIONS, make_rope_init_fn
+from .dropout import Dropout
+from .embedding import Embedding
+from .layernorm import LayerNorm
+from .linear import Linear
+from .rope import ROPE_INIT_FUNCTIONS, make_rope_init_fn
 
 
 __all__ = [

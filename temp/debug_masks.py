@@ -3,7 +3,7 @@ os.environ.setdefault("JAX_PLATFORMS", "cpu")
 
 import jax.numpy as jnp
 import numpy as np
-from src._masking_utils import make_full_mask, slliding_window_full_mask
+from src.masking_utils import make_full_mask, slliding_window_full_mask
 
 # Simple test case
 B, T, H = 1, 5, 768

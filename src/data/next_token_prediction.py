@@ -11,7 +11,12 @@ from jaxtyping import Array
 from transformers import PreTrainedTokenizerBase
 import jax.tree_util as jtu
 
-from ._dataset_transforms import ApplyFirstFitPacking, BaseDatasetTransform, EnsureMapDataset, ToIterDataset
+from .dataset_transforms import (
+    ApplyFirstFitPacking,
+    BaseDatasetTransform,
+    EnsureMapDataset,
+    ToIterDataset,
+)
 
 
 @jtu.register_dataclass
@@ -62,7 +67,7 @@ class TokenizeText(grain_transforms.Map):
         encoded = self.tokenizer(
             text,
             truncation=self.max_length is not None,
-            padding = "max_length" if not self.packing else None,
+            padding="max_length" if not self.packing else None,
             max_length=self.max_length,
             return_attention_mask=False,
             return_token_type_ids=False,
@@ -84,8 +89,6 @@ class EnsureTokenIds(grain_transforms.Map):
             raise KeyError(f"Column {self.column!r} not found in element")
         token_ids = np.asarray(features[self.column], dtype=np.int32)
         return {"input_ids": token_ids}
-
-
 
 
 @dc.dataclass
@@ -111,9 +114,13 @@ class ShiftTokensForNTD(grain_transforms.Map):
         inputs = np.asarray(features["inputs"], dtype=np.int32)
 
         if inputs.shape != targets.shape:
-            raise ValueError("inputs and targets must have identical shapes before shifting")
+            raise ValueError(
+                "inputs and targets must have identical shapes before shifting"
+            )
 
-        features["inputs"] = _shift_right(inputs, axis=self.axis, padding_value=self.bos_token_id)
+        features["inputs"] = _shift_right(
+            inputs, axis=self.axis, padding_value=self.bos_token_id
+        )
         features["targets"] = targets
 
         mask = features.get("attention_mask")
@@ -162,7 +169,14 @@ def next_token_prediction_transforms(
     if is_tokenized:
         operations.append(EnsureTokenIds(column=column))
     else:
-        operations.append(TokenizeText(column=column, tokenizer=tokenizer, max_length=max_length, packing = packing))
+        operations.append(
+            TokenizeText(
+                column=column,
+                tokenizer=tokenizer,
+                max_length=max_length,
+                packing=packing,
+            )
+        )
 
     operations.append(MakeInputsTargets())
 
@@ -170,8 +184,11 @@ def next_token_prediction_transforms(
 
     if packing:
         length_struct = {"inputs": max_length, "targets": max_length}
-        operations.append(ApplyFirstFitPacking(length_struct=length_struct, num_packing_bins=packing_bins))
+        operations.append(
+            ApplyFirstFitPacking(
+                length_struct=length_struct, num_packing_bins=packing_bins
+            )
+        )
         operations.append(ReformatPackedKeys())
-
 
     return operations, LLMBatch

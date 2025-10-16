@@ -2,7 +2,7 @@ from .next_token_prediction import next_token_prediction_transforms
 from .masked_language_modeling import (
     masked_language_modeling_transforms,
 )
-from ._training import IterDatasetWithInputSpec, make_dataloader
+from .training import IterDatasetWithInputSpec, make_dataloader
 
 
 __all__ = [

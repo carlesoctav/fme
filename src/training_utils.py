@@ -19,75 +19,84 @@ from optax import GradientTransformation, GradientTransformationExtraArgs
 from tqdm.auto import tqdm
 import time
 
-from ._filter import apply_transforms, iter_module
-from ._logger import Logger
-from ._metrics import SufficientMetric
-from ._utils import first_from, wallclock
+from .filter import apply_transforms, iter_module
+from .logger import Logger
+from .metrics import SufficientMetric
+from .utils import first_from, wallclock
 from .callbacks import Callback
-from .distributed import get_partition_spec
+from .distributed import get_partition_spec, unbox_params
 
 
 LOGGER = logging.getLogger("distributed_logger")
 
 
-_M = tp.TypeVar("_M", bound=eqx.Module)
-_O = tp.TypeVar("_O", bound="Optimizer")
+M = tp.TypeVar("_M", bound=eqx.Module)
+O = tp.TypeVar("_O", bound="Optimizer")
 
-_GradTx = GradientTransformation | GradientTransformationExtraArgs
-_AxisSpec = bool | tp.Callable[[tp.Any], bool]
-_Wrt = PyTree[_AxisSpec]
-_Aux = dict[str, tp.Any]
-_Loss = float
-_Batch = tp.Any
+GradTx = GradientTransformation | GradientTransformationExtraArgs
+AxisSpec = bool | tp.Callable[[tp.Any], bool]
+Wrt = PyTree[AxisSpec]
+Aux = dict[str, tp.Any]
+Loss = float
+Batch = tp.Any
 
-_LossFn = tp.Callable[[_M, _O, _Batch, PRNGKeyArray], tuple[_Loss, _Aux]]
-_ParallelismPlans = (
-    dict[str, tp.Callable[[_M], _M]] | tp.Sequence[dict[str, tp.Callable[[_M], _M]]]
+LossFn = tp.Callable[[M, O, Batch, PRNGKeyArray], tuple[Loss, Aux]]
+ParallelismPlans = (
+    dict[str, tp.Callable[[M], M]] | tp.Sequence[dict[str, tp.Callable[[M], M]]]
 )
 
 
-_ModuleInput = tp.TypeVar("_ModuleInput", _M, tp.Sequence[_M])
-_OptimizerInput = tp.TypeVar("_OptimizerInput", _O, tp.Sequence[_O])
+ModuleInput = tp.TypeVar("_ModuleInput", M, tp.Sequence[M])
+OptimizerInput = tp.TypeVar("_OptimizerInput", O, tp.Sequence[O])
 
 
-class _TrainStepCallable(Protocol[_ModuleInput, _OptimizerInput]):
+class TrainStepCallable(Protocol[ModuleInput, OptimizerInput]):
     def __call__(
         self,
-        module: _ModuleInput,
-        optimizer: _OptimizerInput,
+        module: ModuleInput,
+        optimizer: OptimizerInput,
         batch: tp.Any,
         key: PRNGKeyArray | None = None,
-    ) -> tuple[_ModuleInput, _OptimizerInput, _Aux]: ...
+    ) -> tuple[ModuleInput, OptimizerInput, Aux]: ...
 
 
-class _EvalStepCallable(Protocol[_ModuleInput, _OptimizerInput]):
+class EvalStepCallable(Protocol[ModuleInput, OptimizerInput]):
     def __call__(
         self,
-        module: _ModuleInput,
-        optimizer: _OptimizerInput,
+        module: ModuleInput,
+        optimizer: OptimizerInput,
         batch: tp.Any,
         *,
         key: PRNGKeyArray | None = None,
-    ) -> _Aux: ...
+    ) -> Aux: ...
 
 
 @dataclass
 class Optimizer(eqx.Module):
     opt_state: PyTree[Array]
-    wrt: PyTree[_AxisSpec] = eqx.field(static=True)
-    tx: GradientTransformationExtraArgs = eqx.field(static=True)
-    
-    @staticmethod
-    def create(grad_tx: _GradTx, model: eqx.Module, *, wrt: _Wrt = eqx.is_inexact_array):
-        opt_state = grad_tx.init(eqx.filter(model, wrt))
-        return Optimizer(opt_state=opt_state, wrt=wrt, tx=grad_tx)
+    wrt: PyTree[AxisSpec] = eqx.field(static=True)
+    tx: GradTx = eqx.field(static=True)
+
+
+
+    def __init__(
+        self,
+        model: M,
+        tx: GradTx
+        wrt: Wrt,
+    ):
+        self.tx = tx
+        self.wrt = wrt
+        self.opt_state= tx.init(eqx.filter(model, self.wrt))
 
     def __call__(
         self, grads: PyTree[Array], model: eqx.Module
     ) -> tuple[eqx.Module, Optimizer]:
+
         updates, opt_state = self.tx.update(
-            grads, self.opt_state, eqx.filter(model, self.wrt)
-        )
+            grads,
+            self.opt_state
+        ) 
         new_model = eqx.apply_updates(model, updates)
         new_self = eqx.tree_at(lambda x: x.opt_state, self, opt_state)
         return new_model, new_self
@@ -202,18 +211,18 @@ def _module_has_abstract_params(m: eqx.Module) -> bool:
 
 
 def make_module_opt(
-    module: _M,
-    grad_tx: _GradTx,
+    module: M,
+    tx: GradTx,
     mesh: Mesh | None = None,
-    wrt: _Wrt = eqx.is_inexact_array,
-    parallelism_plans: _ParallelismPlans | None = None,
+    wrt: Wrt = eqx.is_inexact_array,
+    parallelism_plans: ParallelismPlans | None = None,
     *,
     key: PRNGKeyArray | None = None,
-) -> tuple[_M, Optimizer]:
+) -> tuple[M, Optimizer]:
     if not isinstance(module, eqx.Module):
         raise TypeError("module must be an equinox.Module instance")
     if not isinstance(
-        grad_tx, (GradientTransformation, GradientTransformationExtraArgs)
+        tx, (GradientTransformation, GradientTransformationExtraArgs)
     ):
         raise TypeError(
             "grad_tx must be an optax.GradientTransformation or GradientTransformationExtraArgs instance"
@@ -227,42 +236,43 @@ def make_module_opt(
         else ([parallelism_plans] if parallelism_plans else [])
     )
 
+    need_init =  _module_has_abstract_params(module):
+
     def _build(
-        m: _M,
+        m: M,
         rng: PRNGKeyArray,
-    ) -> tuple[_M, Optimizer]:
+    ) -> tuple[M, Optimizer]:
+
+        if need_init:
+            m = init_module(m, key=key)
+
         for plan in plans:
             m = apply_transforms(m, plan)
 
-        pspec_tree = get_partition_spec(m)
-        m_sharded = eqx.filter_shard(m, pspec_tree)
-        opt = Optimizer.create(grad_tx, m_sharded, wrt=wrt)
+        m = unbox_params(m)
+        opt = Optimizer(m, tx, wrt)
 
         return m_sharded, opt
 
-    if _module_has_abstract_params(module):
-        module = init_module(module, key=key)
 
-    build = eqx.filter_jit(_build)
+    _build = eqx.filter_jit(_build)
 
-    with mesh if mesh else nullcontext():
-        new_module, new_opt = build(module, key)
+    with mesh: 
+        new_module, new_opt = _build(module, key)
 
     return new_module, new_opt
 
 
 def make_train_step(
-    loss_function: _LossFn | None = None,
-    train_step: _TrainStepCallable[tp.Sequence[_M], tp.Sequence[Optimizer]]
-    | _TrainStepCallable[_M, Optimizer]
+    loss_function: LossFn | None = None,
+    train_step: TrainStepCallable[tp.Sequence[M], tp.Sequence[Optimizer]]
+    | TrainStepCallable[M, Optimizer]
     | None = None,
     *,
     gradient_accumulation_steps: int = 1,
     jit: bool = True,
-) -> (
-    _TrainStepCallable[_M, Optimizer]
-    | _TrainStepCallable[tp.Sequence[_M], tp.Sequence[Optimizer]]
-):
+) -> TrainStepCallable[ModuleInput, OptimizerInput]:
+
     if train_step is None and loss_function is None:
         raise ValueError("Provide either train_step or loss_function")
 
@@ -273,16 +283,16 @@ def make_train_step(
     assert loss_function is not None
     if gradient_accumulation_steps < 1:
         raise ValueError("gradient_accumulation_steps must be >= 1")
-    
+
     grad_fn = eqx.filter_value_and_grad(loss_function, has_aux=True)
 
     def _step(
-        module: _M,
+        module: M,
         optimizer: Optimizer,
         batch: tp.Any,
         *,
         key: PRNGKeyArray | None = None,
-    ) -> tuple[_M, Optimizer, _Aux]:
+    ) -> tuple[M, Optimizer, Aux]:
         def _minibatch_step(batch, step_key):
             (_, step_aux), step_grad = grad_fn(module, optimizer, batch, key=step_key)
             return step_grad, step_aux
@@ -332,67 +342,15 @@ def make_train_step(
     return fn
 
 
-def make_train_step_with_partition(
-    module: _M,
-    optimizer: Optimizer,
-    loss_function: _LossFn,
-    *,
-    jit: bool = True,
-) -> tuple[
-    _TrainStepCallable[PyTree[Array], Optimizer],
-    PyTree[tp.Any],
-]:
-    """
-    Create a train step that uses partition/combine pattern for better performance.
-    
-    This function extracts static (non-array) parts of the module once, before JIT compilation.
-    Returns a modified train step that operates on params (arrays only) instead of full module,
-    and the static parts that need to be kept around.
-    
-    Args:
-        module: The module to train
-        optimizer: The optimizer
-        loss_function: Loss function that takes (module, optimizer, batch, key)
-        jit: Whether to JIT compile the step
-        
-    Returns:
-        train_step: Function that takes (params, optimizer, batch, key) -> (params, optimizer, aux)
-        static_parts: Static (non-array) parts of the module that must be kept
-    """
-    params, static = eqx.partition(module, eqx.is_array)
-    
-    def loss_fn_params(params, batch, key):
-        module_inst = eqx.combine(params, static)
-        return loss_function(module_inst, optimizer, batch, key)
-    
-    grad_fn = jax.value_and_grad(loss_fn_params, has_aux=True, allow_int=True)
-    
-    def _step(
-        params: PyTree[Array],
-        optimizer: Optimizer,
-        batch: tp.Any,
-        *,
-        key: PRNGKeyArray | None = None,
-    ) -> tuple[PyTree[Array], Optimizer, _Aux]:
-        (_, aux), grads = grad_fn(params, batch, key)
-        updates, new_opt_state = optimizer.tx.update(grads, optimizer.opt_state, params)
-        new_params = eqx.apply_updates(params, updates)
-        new_optimizer = replace(optimizer, opt_state=new_opt_state)
-        return new_params, new_optimizer, aux or {}
-    
-    fn = jax.jit(_step) if jit else _step
-    return fn, static
-
-
 @dataclass
 class Eval:
     name: str
     dataset: tp.Iterable[tp.Any]
-    eval_step: _EvalStepCallable[_ModuleInput, _OptimizerInput] | None = None
-    loss_function: _LossFn | None = None
+    eval_step: EvalStepCallable[ModuleInput, OptimizerInput] | None = None
+    loss_function: LossFn | None = None
     eval_metric: SufficientMetric | None = None
     jit: bool = True
-    _compiled_eval_step: _EvalStepCallable[_ModuleInput, _OptimizerInput] | None = (
+    _compiled_eval_step: EvalStepCallable[ModuleInput, OptimizerInput] | None = (
         field(default=None, init=False, repr=False)
     )
 
@@ -414,8 +372,8 @@ class Eval:
 
     def run(
         self,
-        module: _ModuleInput,
-        optimizer: _OptimizerInput,
+        module: ModuleInput,
+        optimizer: OptimizerInput,
         logger: Logger | None = None,
         enable_wallclock: bool = True,
         train_step_idx: int | None = None,
@@ -468,15 +426,15 @@ class Eval:
 
 
 def make_eval_step(
-    loss_function: _LossFn | None = None,
-    eval_step: _EvalStepCallable[tp.Sequence[_M], tp.Sequence[Optimizer]]
-    | _EvalStepCallable[_M, Optimizer]
+    loss_function: LossFn | None = None,
+    eval_step: EvalStepCallable[tp.Sequence[M], tp.Sequence[Optimizer]]
+    | EvalStepCallable[M, Optimizer]
     | None = None,
     *,
     jit: bool = True,
 ) -> (
-    _EvalStepCallable[_M, Optimizer]
-    | _EvalStepCallable[tp.Sequence[_M], tp.Sequence[Optimizer]]
+    EvalStepCallable[M, Optimizer]
+    | EvalStepCallable[tp.Sequence[M], tp.Sequence[Optimizer]]
 ):
     if eval_step is None and loss_function is None:
         raise ValueError("Provide either eval_step or loss_function")
@@ -487,12 +445,12 @@ def make_eval_step(
     assert loss_function is not None
 
     def _step(
-        module: _M,
+        module: M,
         optimizer: Optimizer,
         batch: tp.Any,
         *,
         key: PRNGKeyArray | None = None,
-    ) -> _Aux:
+    ) -> Aux:
         _, aux = loss_function(module, optimizer, batch, key=key)
         return aux
 
@@ -500,8 +458,8 @@ def make_eval_step(
 
 
 def eval_loop(
-    module: _ModuleInput,
-    optimizer: _OptimizerInput,
+    module: ModuleInput,
+    optimizer: OptimizerInput,
     evals: list[Eval],
     logger: Logger,
     callbacks: tp.Sequence[Callback] | None = None,
@@ -520,7 +478,7 @@ def eval_loop(
             method(module, optimizer, logger, train_step_idx)
 
     for eval_obj in evals:
-        with wallclock(f"eval{eval_obj.name}", logger =logger):
+        with wallclock(f"eval{eval_obj.name}", logger=logger):
             eval_metric, logs = eval_obj.run(
                 module,
                 optimizer,
@@ -530,7 +488,7 @@ def eval_loop(
                 train_step_idx=train_step_idx,
             )
             eval_metrics[eval_obj.name] = eval_metric
-            eval_logs = {**eval_logs, **logs} 
+            eval_logs = {**eval_logs, **logs}
 
     for callback in callbacks:
         method = getattr(callback, "on_validation_end", None)
@@ -547,9 +505,9 @@ def eval_loop(
 
 
 def train_loop(
-    module: _ModuleInput,
-    optimizer: _OptimizerInput,
-    train_step_fn: _TrainStepCallable[_ModuleInput, _OptimizerInput],
+    module: ModuleInput,
+    optimizer: OptimizerInput,
+    train_step_fn: TrainStepCallable[ModuleInput, OptimizerInput],
     train_loader: tp.Iterable[tp.Any],
     logger: Logger,
     train_metric: SufficientMetric | None = None,
@@ -561,10 +519,10 @@ def train_loop(
     eval_interval: int | None = None,
     *,
     key: PRNGKeyArray | None = None,
-) -> tuple[_ModuleInput, _OptimizerInput, dict[str, tp.Any], dict[str, tp.Any]]:
+) -> tuple[ModuleInput, OptimizerInput, dict[str, tp.Any], dict[str, tp.Any]]:
     callbacks = list(callbacks or [])
     evals = list(evals or [])
-    first_step  = True
+    first_step = True
 
     train_metric = (
         SufficientMetric(name="train", log_every_n_step=None)
@@ -601,7 +559,6 @@ def train_loop(
             try:
                 batch = next(train_iterator)
             except StopIteration:
-                print("DEBUGPRINT[5]: _training.py:547 (after except StopIteration:)")
                 LOGGER.info("Train data loader exhausted, ending training loop.")
                 break
 
@@ -618,16 +575,19 @@ def train_loop(
             ):
                 if first_step:
                     timing = time.monotonic()
-                    with jax.profiler.StepTraceAnnotation("train_step", step = train_step_idx):
+                    with jax.profiler.StepTraceAnnotation(
+                        "train_step", step=train_step_idx
+                    ):
                         module, optimizer, aux = train_step_fn(
                             module, optimizer, batch, key=step_key
                         )
 
                     diff = time.monotonic() - timing
-                    print(f"DEBUGPRINT[8]: _training.py:575: diff={diff}")
                     first_step = False
                 else:
-                    with jax.profiler.StepTraceAnnotation("train_step", step = train_step_idx):
+                    with jax.profiler.StepTraceAnnotation(
+                        "train_step", step=train_step_idx
+                    ):
                         module, optimizer, aux = train_step_fn(
                             module, optimizer, batch, key=step_key
                         )
@@ -684,141 +644,3 @@ def train_loop(
     return module, optimizer, train_metric, eval_metrics if evals else {}
 
 
-def benchmark_loop(
-    module: _ModuleInput,
-    optimizer: _OptimizerInput,
-    train_step_fn: _TrainStepCallable[_ModuleInput, _OptimizerInput],
-    train_loader: tp.Iterable[tp.Any],
-    logger: Logger | None = None,
-    num_steps: int = 100,
-    theoretical_flops_per_step: float | None = None,
-    trace_steps: tuple[int, int] | None = None,
-    trace_dir: str = "./benchmark_traces",
-    *,
-    key: PRNGKeyArray | None = None,
-) -> tuple[_ModuleInput, _OptimizerInput, dict[str, tp.Any]]:
-    import time
-    
-    # if logger is None:
-    #     raise ValueError("logger is required")
-    step_idx = -1
-    train_step_times: list[float] = []
-    next_batch_times: list[float] = []
-    compile_step_time: float | None = None
-    try:
-        train_iterator = iter(train_loader)
-    except TypeError as e:
-        raise RuntimeError("train_loader is not iterable") from e
-    progress_bar = tqdm(
-        total=num_steps + 1,
-        desc="Benchmarking",
-        disable=jax.process_index() != 0,
-        leave=True,
-    )
-    try:
-        while step_idx < num_steps:
-            batch_start = time.perf_counter()
-            try:
-                batch = next(train_iterator)
-            except StopIteration:
-                LOGGER.info("Train data loader exhausted, ending benchmark loop.")
-                break
-            batch_end = time.perf_counter()
-            step_idx += 1
-            if (
-                trace_steps is not None
-                and step_idx == trace_steps[0]
-                and jax.process_index() == 0
-            ):
-                from pathlib import Path
-                trace_path = Path(trace_dir)
-                trace_path.mkdir(parents=True, exist_ok=True)
-                LOGGER.info(f"Starting JAX profiler trace at step {step_idx}")
-                jax.profiler.start_trace(str(trace_path))
-            key, step_key = jax.random.split(key, 2) if key is not None else (key, None)
-            
-            if step_idx == 0 and jax.process_index() == 0:
-                LOGGER.info("Running step 0 (compilation step)...")
-            
-            step_start = time.monotonic()
-            with jax.profiler.StepTraceAnnotation("train_step", step = step_idx):
-                module, optimizer, aux = train_step_fn(
-                    module, optimizer, batch, key=step_key
-                )
-            jtu.tree_map(
-                lambda x: x.block_until_ready()
-                if hasattr(x, "block_until_ready")
-                else x,
-                module,
-            )
-            jtu.tree_map(
-                lambda x: x.block_until_ready()
-                if hasattr(x, "block_until_ready")
-                else x,
-                optimizer,
-            )
-            step_end = time.monotonic()
-
-            if (
-                trace_steps is not None
-                and step_idx == trace_steps[1]
-                and jax.process_index() == 0
-            ):
-                LOGGER.info(f"Stopping JAX profiler trace at step {step_idx}")
-                jax.profiler.stop_trace()
-            
-            if step_idx == 0:
-                compile_step_time = step_end - step_start
-                if jax.process_index() == 0:
-                    LOGGER.info(
-                        f"Step 0 (compilation) took {compile_step_time:.4f}s"
-                    )
-            else:
-                train_step_times.append(step_end - step_start)
-                next_batch_times.append(batch_end - batch_start)
-            
-            progress_bar.update()
-        progress_bar.close()
-        train_step_times = np.array(train_step_times)
-        next_batch_times = np.array(next_batch_times)
-        batches_per_sec = 1.0 / train_step_times 
-        print(f"DEBUGPRINT[17]: _training.py:731: train_step_times={train_step_times}")
-        print(f"DEBUGPRINT[18]: _training.py:733: next_batch_times={next_batch_times}")
-        print(f"DEBUGPRINT[19]: _training.py:735: batches_per_sec={batches_per_sec}")
-        if jax.process_index() == 0:
-            LOGGER.info("=" * 30)
-            LOGGER.info(" Benchmark Results ".center(30, "="))
-            LOGGER.info("=" * 30)
-            LOGGER.info(f"Train Step Time (avg): {train_step_times.mean():.4f}s")
-            LOGGER.info(f"Train Step Time (median): {np.median(train_step_times):.4f}s")
-            LOGGER.info(f"Train Step Time (std): {train_step_times.std():.4f}s")
-            LOGGER.info(f"Next Batch Time (avg): {next_batch_times.mean():.4f}s")
-            LOGGER.info(f"Batches/sec (avg): {1.0 / train_step_times.mean():.2f}")
-            if compile_step_time is not None:
-                LOGGER.info(f"Compile Time: {compile_step_time:.4f}s")
-            if theoretical_flops_per_step is not None:
-                avg_flops = theoretical_flops_per_step / train_step_times.mean()
-                LOGGER.info(f"FLOPs/sec (avg): {avg_flops:.2e}")
-                LOGGER.info(f"MFU (avg): {avg_flops / theoretical_flops_per_step:.4f}")
-            LOGGER.info("=" * 30)
-        stats = {
-            "train_step_time_mean": float(train_step_times.mean()),
-            "train_step_time_median": float(np.median(train_step_times)),
-            "train_step_time_std": float(train_step_times.std()),
-            "next_batch_time_mean": float(next_batch_times.mean()),
-            "batches_per_sec": float(1.0 / train_step_times.mean()),
-            "train_step_times": train_step_times.tolist(),
-            "next_batch_times": next_batch_times.tolist(),
-        }
-        if compile_step_time is not None:
-            stats["compile_time"] = float(compile_step_time)
-        if theoretical_flops_per_step is not None:
-            avg_flops = theoretical_flops_per_step / train_step_times.mean()
-            stats["flops_per_sec"] = float(avg_flops)
-            stats["mfu"] = float(avg_flops / theoretical_flops_per_step)
-    except Exception:
-        LOGGER.error("Exception during benchmark loop", exc_info=True)
-        raise
-    finally:
-        LOGGER.info("Benchmark loop ended")
-    return module, optimizer, stats

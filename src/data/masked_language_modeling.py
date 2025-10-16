@@ -10,7 +10,7 @@ from grain import transforms as grain_transforms
 from jaxtyping import Array
 from transformers import PreTrainedTokenizerBase
 
-from ._dataset_transforms import (
+from .dataset_transforms import (
     ApplyFirstFitPacking,
     BaseDatasetTransform,
     EnsureMapDataset,
@@ -28,7 +28,6 @@ class DataTransformsForMaskedLMGivenText(grain.transforms.RandomMap):
     random_replace_prob: float = 0.1
     pad_to_multiple_of: int | None = None
 
-
     def __post_init__(self):
         if self.tokenizer.mask_token is None:
             raise ValueError(
@@ -40,7 +39,6 @@ class DataTransformsForMaskedLMGivenText(grain.transforms.RandomMap):
         texts: dict[str, str],
         rng: np.random.Generator,
     ) -> dict[str, np.ndarray]:
-
         if self.columns not in texts:
             raise ValueError(f"Column {self.columns} not found in the input data.")
 
@@ -99,7 +97,6 @@ class DataTransformsForMaskedLMGivenText(grain.transforms.RandomMap):
         special_tokens_mask: np.ndarray,
         rng: np.random.Generator,
     ) -> tuple[np.ndarray, np.ndarray]:
-
         if not self.mlm_probability or self.mlm_probability <= 0:
             labels = np.full_like(input_ids, fill_value=-100)
             return input_ids, labels
@@ -107,7 +104,9 @@ class DataTransformsForMaskedLMGivenText(grain.transforms.RandomMap):
         masked_draw = rng.binomial(1, self.mlm_probability, size=input_ids.shape)
         masked_indices = masked_draw & ~special_tokens_mask
 
-        mask_replace_draw = rng.binomial(1, self.mask_replace_prob, size=input_ids.shape)
+        mask_replace_draw = rng.binomial(
+            1, self.mask_replace_prob, size=input_ids.shape
+        )
         replace_with_mask_token_indices = masked_indices & mask_replace_draw
 
         denom = max(1e-12, 1.0 - self.mask_replace_prob)
@@ -116,7 +115,9 @@ class DataTransformsForMaskedLMGivenText(grain.transforms.RandomMap):
         random_replace_prob = float(min(1.0, max(0.0, random_replace_prob)))
         random_replace_draw = rng.binomial(1, random_replace_prob, size=input_ids.shape)
 
-        replace_with_random_indices = masked_indices & (~replace_with_mask_token_indices) & random_replace_draw
+        replace_with_random_indices = (
+            masked_indices & (~replace_with_mask_token_indices) & random_replace_draw
+        )
 
         random_token = rng.integers(
             low=0,

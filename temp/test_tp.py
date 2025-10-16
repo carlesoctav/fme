@@ -11,7 +11,7 @@ from jax.sharding import Mesh
 
 from dataclasses import dataclass
 
-from src._filter import apply_transforms
+from src.filter import apply_transforms
 from src.models.bert.modeling_bert import BertModel
 from src.distributed import (
     tensor_parallel,
@@ -126,15 +126,22 @@ def main():
         sharded,
         {
             # Column-parallel: inputs replicated, outputs sharded on last dim
-            "encoder.layer.*.attention.self.query": lambda m: as_column_parallel(m, "tp"),
+            "encoder.layer.*.attention.self.query": lambda m: as_column_parallel(
+                m, "tp"
+            ),
             "encoder.layer.*.attention.self.key": lambda m: as_column_parallel(m, "tp"),
-            "encoder.layer.*.attention.self.value": lambda m: as_column_parallel(m, "tp"),
+            "encoder.layer.*.attention.self.value": lambda m: as_column_parallel(
+                m, "tp"
+            ),
             "encoder.layer.*.intermediate.dense": lambda m: as_column_parallel(m, "tp"),
-
             # Row-parallel: inputs sharded on last dim; outputs sharded to
             # encourage reduce-scatter across the boundary.
-            "encoder.layer.*.attention.output.dense": lambda m: as_row_parallel(m, "tp", out_sharded=True),
-            "encoder.layer.*.output.dense": lambda m: as_row_parallel(m, "tp", out_sharded=True),
+            "encoder.layer.*.attention.output.dense": lambda m: as_row_parallel(
+                m, "tp", out_sharded=True
+            ),
+            "encoder.layer.*.output.dense": lambda m: as_row_parallel(
+                m, "tp", out_sharded=True
+            ),
         },
     )
 
@@ -143,30 +150,36 @@ def main():
 
     # Validate a few canonical parameters got the 'tp' axis
     we = sharded.embeddings.word_embeddings.weight
-    assert pspec_has_axis(we.pspec, "tp"), "Expected word_embeddings.weight to be sharded on tp"
+    assert pspec_has_axis(we.pspec, "tp"), (
+        "Expected word_embeddings.weight to be sharded on tp"
+    )
 
     q_w = sharded.encoder.layer[0].attention.self.query.weight
-    assert pspec_has_axis(q_w.pspec, "tp"), "Expected attention.query.weight to be sharded on tp (column)"
+    assert pspec_has_axis(q_w.pspec, "tp"), (
+        "Expected attention.query.weight to be sharded on tp (column)"
+    )
 
     attn_out_w = sharded.encoder.layer[0].attention.output.dense.weight
-    assert pspec_has_axis(
-        attn_out_w.pspec, "tp"
-    ), "Expected attention.output.dense.weight to be sharded on tp (row)"
+    assert pspec_has_axis(attn_out_w.pspec, "tp"), (
+        "Expected attention.output.dense.weight to be sharded on tp (row)"
+    )
 
     inter_w = sharded.encoder.layer[0].intermediate.dense.weight
-    assert pspec_has_axis(
-        inter_w.pspec, "tp"
-    ), "Expected intermediate.dense.weight to be sharded on tp (column)"
+    assert pspec_has_axis(inter_w.pspec, "tp"), (
+        "Expected intermediate.dense.weight to be sharded on tp (column)"
+    )
 
     out_w = sharded.encoder.layer[0].output.dense.weight
-    assert pspec_has_axis(out_w.pspec, "tp"), "Expected output.dense.weight to be sharded on tp (row)"
+    assert pspec_has_axis(out_w.pspec, "tp"), (
+        "Expected output.dense.weight to be sharded on tp (row)"
+    )
 
     # LayerNorm params should remain unsharded due to small size threshold
     ln_w = sharded.embeddings.LayerNorm.weight
     if ln_w is not None:
-        assert not pspec_has_axis(
-            ln_w.pspec, "tp"
-        ), "LayerNorm.weight should remain unsharded in TP"
+        assert not pspec_has_axis(ln_w.pspec, "tp"), (
+            "LayerNorm.weight should remain unsharded in TP"
+        )
 
     print("TP sharding + IO constraints (subclass) applied and validated on BertModel.")
 

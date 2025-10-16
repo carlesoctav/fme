@@ -1,6 +1,6 @@
 import jax.numpy as jnp
 import pytest
-from src._masking_utils import make_causal_mask, make_full_mask
+from src.masking_utils import make_causal_mask, make_full_mask
 
 
 class TestCausalMask:
@@ -14,8 +14,8 @@ class TestCausalMask:
 
         attention_mask = jnp.array(
             [
-                [1, 1, 1, 0],  
-                [1, 1, 0, 0],  
+                [1, 1, 1, 0],
+                [1, 1, 0, 0],
             ],
             dtype=jnp.bool_,
         )
@@ -123,8 +123,8 @@ class TestFullMask:
 
         attention_mask = jnp.array(
             [
-                [1, 1, 1, 0],  
-                [1, 1, 0, 0], 
+                [1, 1, 1, 0],
+                [1, 1, 0, 0],
             ],
             dtype=jnp.bool_,
         )

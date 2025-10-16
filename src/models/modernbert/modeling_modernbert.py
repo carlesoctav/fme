@@ -15,9 +15,9 @@ from jaxtyping import Array, Bool, Float, Int, PRNGKeyArray
 from transformers import ModernBertConfig
 
 from ... import nn
-from ..._darray import DArray
+from ...distributed.array import DArray
 from ..._huggingface import HuggingFaceCompatibleModule
-from ..._masking_utils import make_full_mask, slliding_window_full_mask
+from ...masking_utils import make_full_mask, slliding_window_full_mask
 from ...nn import (
     AttentionModule,
     make_attention_module,
@@ -71,10 +71,10 @@ class ModernBertRotaryEmbedding(eqx.Module):
         half_dim = H // 2
         x1 = hidden_states[..., :half_dim]  # (*B, T, N, halfdim)
         x2 = hidden_states[..., half_dim:]  # (*B, T, N, halfdim)
-        
+
         # Create complex representation: x1 + i*x2
         tensor_complex = x1 + 1j * x2  # (*B, T, N, halfdim) but complex
-        
+
         # Apply rotation
         rotated = (
             tensor_complex * rtheta
@@ -84,8 +84,10 @@ class ModernBertRotaryEmbedding(eqx.Module):
         # Extract real and imaginary parts and concatenate
         rotated_real = jnp.real(rotated)  # (*B, T, N, halfdim)
         rotated_imag = jnp.imag(rotated)  # (*B, T, N, halfdim)
-        rotated = jnp.concatenate([rotated_real, rotated_imag], axis=-1)  # (*B, T, N, H)
-        
+        rotated = jnp.concatenate(
+            [rotated_real, rotated_imag], axis=-1
+        )  # (*B, T, N, H)
+
         rotated = rotated * self.attention_scaling
         return rotated
 
@@ -146,24 +148,18 @@ class ModernBertAttention(eqx.Module):
             config.hidden_size,
             3 * config.hidden_size,
             use_bias=config.attention_bias,
-            dtype=dtype,
-            params_dtype=params_dtype,
             key=qkv_key,
         )
         self.Wo = nn.Linear(
             config.hidden_size,
             config.hidden_size,
             use_bias=config.attention_bias,
-            dtype=dtype,
-            params_dtype=params_dtype,
             key=out_key,
         )
-        self.out_drop = nn.Dropout(
-            p=config.attention_dropout, dtype=dtype, params_dtype=params_dtype
-        )
+        self.out_drop = nn.Dropout(p=config.attention_dropout)
         self.attn_dropout_rate = float(config.attention_dropout)
 
-        self.attention_module = make_attention_module(config=config, dtype=dtype)
+        self.attention_module = make_attention_module(config=config)
 
         use_global = (layer_id % config.global_attn_every_n_layers) == 0
         rope_config = copy.deepcopy(config)
@@ -254,22 +250,16 @@ class ModernBertMLP(eqx.Module):
             config.hidden_size,
             2 * int(config.intermediate_size),
             use_bias=config.mlp_bias,
-            dtype=dtype,
-            params_dtype=params_dtype,
             key=wi_key,
         )
         self.Wo = nn.Linear(
             int(config.intermediate_size),
             config.hidden_size,
             use_bias=config.mlp_bias,
-            dtype=dtype,
-            params_dtype=params_dtype,
             key=wo_key,
         )
         self.act = _get_activation(config.hidden_activation)
-        self.drop = nn.Dropout(
-            p=config.mlp_dropout, dtype=dtype, params_dtype=params_dtype
-        )
+        self.drop = nn.Dropout(p=config.mlp_dropout)
 
     def __call__(
         self,
@@ -309,8 +299,6 @@ class ModernBertEncoderLayer(eqx.Module):
                 config.hidden_size,
                 eps=config.norm_eps,
                 bias=config.norm_bias,
-                dtype=dtype,
-                params_dtype=params_dtype,
                 key=attn_norm_key,
             )
         self.attention = ModernBertAttention(
@@ -324,8 +312,6 @@ class ModernBertEncoderLayer(eqx.Module):
             config.hidden_size,
             eps=config.norm_eps,
             bias=config.norm_bias,
-            dtype=dtype,
-            params_dtype=params_dtype,
             key=mlp_norm_key,
         )
         self.mlp = ModernBertMLP(
@@ -435,21 +421,15 @@ class ModernBertEmbeddings(eqx.Module):
         self.tok_embeddings = nn.Embedding(
             num_embeddings=config.vocab_size,
             embedding_dim=config.hidden_size,
-            dtype=dtype,
-            params_dtype=params_dtype,
             key=tok_key,
         )
         self.norm = nn.LayerNorm(
             config.hidden_size,
             eps=config.norm_eps,
             bias=config.norm_bias,
-            dtype=dtype,
-            params_dtype=params_dtype,
             key=norm_key,
         )
-        self.drop = nn.Dropout(
-            p=config.embedding_dropout, dtype=dtype, params_dtype=params_dtype
-        )
+        self.drop = nn.Dropout(p=config.embedding_dropout)
 
     def __call__(
         self,
@@ -581,8 +561,6 @@ class ModernBertModel(
             config.hidden_size,
             eps=config.norm_eps,
             bias=config.norm_bias,
-            dtype=dtype,
-            params_dtype=params_dtype,
             key=norm_key,
         )
 
@@ -623,8 +601,7 @@ class ModernBertModel(
                 # No attention mask: use simple range
                 batch_size, seq_len = hidden_states.shape[:2]
                 position_ids = jnp.broadcast_to(
-                    jnp.arange(seq_len, dtype=jnp.int32),
-                    (batch_size, seq_len)
+                    jnp.arange(seq_len, dtype=jnp.int32), (batch_size, seq_len)
                 )
 
         full_mask = make_full_mask(
@@ -673,8 +650,6 @@ class ModernBertPredictionHead(eqx.Module):
             config.hidden_size,
             config.hidden_size,
             use_bias=config.classifier_bias,
-            dtype=dtype,
-            params_dtype=params_dtype,
             key=dense_key,
         )
         self.act = _get_activation(config.classifier_activation)
@@ -682,8 +657,6 @@ class ModernBertPredictionHead(eqx.Module):
             config.hidden_size,
             eps=config.norm_eps,
             bias=config.norm_bias,
-            dtype=dtype,
-            params_dtype=params_dtype,
             key=norm_key,
         )
 
@@ -736,8 +709,6 @@ class ModernBertForMaskedLM(
             config.hidden_size,
             config.vocab_size,
             use_bias=config.decoder_bias,
-            dtype=dtype,
-            params_dtype=params_dtype,
             key=decoder_key,
         )
         if store_config:

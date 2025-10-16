@@ -9,7 +9,7 @@ import numpy as np
 
 from jax.sharding import Mesh
 
-from src._filter import apply_transforms
+from src.filter import apply_transforms
 from src.models.bert.modeling_bert import BertModel
 from dataclasses import dataclass
 from src.distributed import fully_shard, simulate_CPU_devices, get_partition_spec
@@ -64,22 +64,26 @@ def main():
     print(f"DEBUGPRINT[239]: test_fsdp.py:63: part_spec={part_spec}")
 
     we = sharded.embeddings.word_embeddings.weight
-    assert pspec_has_axis(we.pspec, "fsdp"), "Expected word_embeddings.weight to be sharded on fsdp"
+    assert pspec_has_axis(we.pspec, "fsdp"), (
+        "Expected word_embeddings.weight to be sharded on fsdp"
+    )
 
     ln_bias = sharded.embeddings.LayerNorm.bias
     if ln_bias is not None:
-        assert not pspec_has_axis(
-            ln_bias.pspec, "fsdp"
-        ), "LayerNorm.bias should remain unsharded due to min_weight_size"
+        assert not pspec_has_axis(ln_bias.pspec, "fsdp"), (
+            "LayerNorm.bias should remain unsharded due to min_weight_size"
+        )
 
     q_w = sharded.encoder.layer[0].attention.self.query.weight
-    assert pspec_has_axis(q_w.pspec, "fsdp"), "Expected attention.query.weight to be sharded on fsdp"
+    assert pspec_has_axis(q_w.pspec, "fsdp"), (
+        "Expected attention.query.weight to be sharded on fsdp"
+    )
 
     q_b = sharded.encoder.layer[0].attention.self.query.bias
     if q_b is not None:
-        assert not pspec_has_axis(
-            q_b.pspec, "fsdp"
-        ), "attention.query.bias should remain unsharded due to min_weight_size"
+        assert not pspec_has_axis(q_b.pspec, "fsdp"), (
+            "attention.query.bias should remain unsharded due to min_weight_size"
+        )
 
     print("FSDP sharding transform applied and validated on BertModel.")
 

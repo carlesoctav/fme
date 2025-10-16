@@ -9,8 +9,8 @@ from typing import Any
 import jax
 import jax.tree_util as jtu
 
-from ._callbacks import Callback
-from .._utils import rank_zero
+from .callbacks import Callback
+from ..utils import rank_zero
 
 
 LOGGER = logging.getLogger(__name__)

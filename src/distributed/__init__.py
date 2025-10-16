@@ -1,5 +1,5 @@
-from ._params import fully_shard, get_partition_spec, tensor_parallel
-from ._tp import (
+from .params import fully_shard, get_partition_spec, tensor_parallel, unbox_params
+from .tp import (
     column_parallel,
     prepare_input,
     prepare_input_output,
@@ -7,18 +7,19 @@ from ._tp import (
     row_parallel,
 )
 
-# _mixin utilities are experimental and not required by core layers/tests.
-# Avoid importing missing symbols to keep the package importable.
-from ._utils import simulate_CPU_devices
+from .utils import simulate_CPU_devices
+from .array import DArray
 
 __all__ = [
+    "DArray",
     "fully_shard",
     "tensor_parallel",
     "simulate_CPU_devices",
     "get_partition_spec",
+    "unbox_params",
     "row_parallel",
     "column_parallel",
     "prepare_input",
     "prepare_output",
-    "prepare_input_output"
+    "prepare_input_output",
 ]

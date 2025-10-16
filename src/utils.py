@@ -7,6 +7,7 @@ import time
 import typing as tp
 
 import jax
+import jax.numpy as jnp
 
 
 LOGGER = logging.getLogger(__name__)
@@ -20,13 +21,16 @@ A = tp.TypeVar("A")
 K = tp.TypeVar("K")
 V = tp.TypeVar("V")
 
+
 def rank_zero(fn: tp.Callable[..., A]) -> tp.Callable[..., A | None]:
     @functools.wraps(fn)
     def _wrapped(*args: tp.Any, **kwargs: tp.Any) -> A | None:
         if not jax.process_index() == 0:
             return None
         return fn(*args, **kwargs)
+
     return _wrapped
+
 
 @contextlib.contextmanager
 def wallclock(
@@ -41,13 +45,15 @@ def wallclock(
     finally:
         diff = time.monotonic() - t0
         if not noop:
-            logger.log({f"time/{name}": diff}, step = step)
+            logger.log({f"time/{name}": diff}, step=step)
+
 
 def first_from(*args: A | None, error_msg: str) -> A:
     for arg in args:
         if arg is not None:
             return arg
     raise ValueError(error_msg)
+
 
 class GeneralInterface(tp.MutableMapping[K, V], tp.Generic[K, V]):
     """
@@ -85,7 +91,6 @@ class GeneralInterface(tp.MutableMapping[K, V], tp.Generic[K, V]):
         return list(self.keys())
 
 
-
 def print_memory(compiled_stats):
     """Prints a summary of the compiled memory statistics."""
 
@@ -101,8 +106,21 @@ def print_memory(compiled_stats):
     alias_gb = bytes_to_gb(compiled_stats.alias_size_in_bytes)
     host_temp_gb = bytes_to_gb(compiled_stats.host_temp_size_in_bytes)
     total_gb = output_gb + temp_gb + argument_gb - alias_gb
-    print(f"Total memory size: {total_gb:.1f} GB, Output size: {output_gb:.1f} GB, Temp size: {temp_gb:.1f} GB, " f"Argument size: {argument_gb:.1f} GB, Host temp size: {host_temp_gb:.1f} GB.")
+    print(
+        f"Total memory size: {total_gb:.1f} GB, Output size: {output_gb:.1f} GB, Temp size: {temp_gb:.1f} GB, "
+        f"Argument size: {argument_gb:.1f} GB, Host temp size: {host_temp_gb:.1f} GB."
+    )
 
 
+def is_in_jit() -> bool:
+    return isinstance(jnp.zeros((), dtype=jnp.float32), jax.core.Tracer)
 
-__all__ = ["first_from", "rank_zero", "GeneralInterface", "wallclock", "print_memory"]
+
+__all__ = [
+    "first_from",
+    "rank_zero",
+    "GeneralInterface",
+    "wallclock",
+    "print_memory",
+    "is_in_jit",
+]

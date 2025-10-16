@@ -1,4 +1,4 @@
-from src._masking_utils import create_causal_mask, MaskRequest, EagerAttentionMaskImplementation
+from src.masking_utils import create_causal_mask, MaskRequest, EagerAttentionMaskImplementation
 
 
 req = MaskRequest(1, 1, 10, 10)

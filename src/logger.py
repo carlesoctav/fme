@@ -6,12 +6,12 @@ from typing import Any, Protocol
 import jax
 import trackio
 
-from ._utils import rank_zero
+from .utils import rank_zero
 
 
 class Logger(Protocol):
-    def log(self, *args, **kwargs):
-        ...
+    def log(self, *args, **kwargs): ...
+
 
 class TrackioLogger(Logger):
     def __init__(
@@ -28,11 +28,9 @@ class TrackioLogger(Logger):
         embed: bool = True,
     ):
         self.name = project
-        self.logger = rank_zero(
-            trackio.init
-        )(
+        self.logger = rank_zero(trackio.init)(
             project=project,
-            name = name,
+            name=name,
             space_id=space_id,
             space_storage=space_storage,
             dataset_id=dataset_id,
@@ -40,19 +38,18 @@ class TrackioLogger(Logger):
             resume=resume,
             settings=settings,
             private=private,
-            embed=embed
+            embed=embed,
         )
 
     @rank_zero
     def log(self, logs, step, **kwargs):
-        self.logger.log(logs, step = step, **kwargs)
-
+        self.logger.log(logs, step=step, **kwargs)
 
     @rank_zero
-    def finish(self,):
+    def finish(
+        self,
+    ):
         self.logger.finish()
-
-
 
 
 def get_multiprocess_index():
@@ -63,13 +60,16 @@ def get_multiprocess_index():
 class CustomFormatter(logging.Formatter):
     def format(self, record):
         process_index = getattr(record, "process_index", jax.process_index())
-        multiprocess_index = getattr(record, "multiprocess_index", get_multiprocess_index())
+        multiprocess_index = getattr(
+            record, "multiprocess_index", get_multiprocess_index()
+        )
         pid = os.getpid()
         timing = self.formatTime(record, self.datefmt)
         filename = record.filename
         prefix = f"[{process_index},{multiprocess_index},{pid}] {timing} [{filename}] {record.levelname}"
         original = super().format(record)
         return f"{prefix} {original}"
+
 
 def setup_logger(log_file="./train.log"):
     os.makedirs(os.path.dirname(log_file) or ".", exist_ok=True)
@@ -82,7 +82,7 @@ def setup_logger(log_file="./train.log"):
     stream_handler = logging.StreamHandler()
     stream_handler.setFormatter(formatter)
 
-    file_handler = logging.FileHandler(log_file, mode='a')
+    file_handler = logging.FileHandler(log_file, mode="a")
     file_handler.setFormatter(formatter)
     file_handler.setLevel(logging.DEBUG)
 
@@ -92,11 +92,17 @@ def setup_logger(log_file="./train.log"):
 
     process_index = jax.process_index()
     multiprocess_index = get_multiprocess_index()
-    level = logging.DEBUG if (process_index == 0 and multiprocess_index == 0) else logging.ERROR
+    level = (
+        logging.DEBUG
+        if (process_index == 0 and multiprocess_index == 0)
+        else logging.ERROR
+    )
     logger.setLevel(level)
 
-    return logging.LoggerAdapter(logger, {
-        "process_index": process_index,
-        "multiprocess_index": multiprocess_index,
-    })
-
+    return logging.LoggerAdapter(
+        logger,
+        {
+            "process_index": process_index,
+            "multiprocess_index": multiprocess_index,
+        },
+    )

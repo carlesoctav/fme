@@ -1,13 +1,12 @@
-from ._darray import DArray
-from ._filter import apply_transforms, iter_module
+from .filter import apply_transforms, iter_module
 
 try:
-    from ._huggingface import HuggingFaceCompatibleModule
+    from .huggingface import HuggingFaceCompatibleModule
 except ImportError:
     HuggingFaceCompatibleModule = None
 
 try:
-    from ._training import (
+    from .training_utils import (
         SufficientMetric,
         Eval,
         Optimizer,
@@ -32,7 +31,6 @@ except ImportError:
 
 __all__ = [
     "HuggingFaceCompatibleModule",
-    "DArray",
     "iter_module",
     "apply_transforms",
     "SufficientMetric",

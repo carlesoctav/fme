@@ -9,11 +9,13 @@ from jax import P
 from jax.sharding import Mesh
 
 from src import nn
-from ._params import tensor_parallel
+from .params import tensor_parallel
+
 
 class ModuleWithShardingConstraint(eqx.Module):
     _inputs_layout: P | tuple[P, ...] | None = eqx.field(static=True, default=None)
     _outputs_layout: P | tuple[P, ...] | None = eqx.field(static=True, default=None)
+
 
 def _normalize_layout(layout, n_args):
     if layout is None:
@@ -21,6 +23,7 @@ def _normalize_layout(layout, n_args):
     if isinstance(layout, tuple):
         return layout
     return (layout,) * n_args
+
 
 def make_module_with_sharding_constraint(
     module: eqx.Module,
@@ -43,6 +46,7 @@ def make_module_with_sharding_constraint(
             if prepare_output_fn is not None:
                 out = prepare_output_fn(self, out)
             return out
+
         return method_with_prepare
 
     dct: dict[str, object] = {}
@@ -74,6 +78,7 @@ def make_module_with_sharding_constraint(
 
     return new_module
 
+
 def column_parallel(
     module: eqx.Module,
     axis_name: str,
@@ -84,11 +89,17 @@ def column_parallel(
 ) -> eqx.Module:
     def _params_fn(m: eqx.Module) -> eqx.Module:
         if isinstance(m, nn.Linear):
-            return tensor_parallel(m, mesh=mesh, axis_name=axis_name, tensor_dim_to_sharded=0)
+            return tensor_parallel(
+                m, mesh=mesh, axis_name=axis_name, tensor_dim_to_sharded=0
+            )
         elif isinstance(m, nn.Embedding):
-            return tensor_parallel(m, mesh=mesh, axis_name=axis_name, tensor_dim_to_sharded=1)
+            return tensor_parallel(
+                m, mesh=mesh, axis_name=axis_name, tensor_dim_to_sharded=1
+            )
         else:
-            raise ValueError(f"column_parallel only supports nn.Linear and nn.Embedding, got {m}")
+            raise ValueError(
+                f"column_parallel only supports nn.Linear and nn.Embedding, got {m}"
+            )
 
     def _prep_in(self, args: tuple, kwargs: dict) -> tuple:
         norm_layout = _normalize_layout(inputs_layout, len(args))
@@ -123,6 +134,7 @@ def column_parallel(
         name="ColParallel",
     )
 
+
 def row_parallel(
     module: eqx.Module,
     axis_name: str,
@@ -133,11 +145,16 @@ def row_parallel(
 ) -> eqx.Module:
     def _params_fn(m: eqx.Module) -> eqx.Module:
         if isinstance(m, nn.Linear):
-            return tensor_parallel(m, mesh=mesh, axis_name=axis_name, tensor_dim_to_sharded=1)
+            return tensor_parallel(
+                m, mesh=mesh, axis_name=axis_name, tensor_dim_to_sharded=1
+            )
         elif isinstance(m, nn.Embedding):
-            return tensor_parallel(m, mesh=mesh, axis_name=axis_name, tensor_dim_to_sharded=0)
+            return tensor_parallel(
+                m, mesh=mesh, axis_name=axis_name, tensor_dim_to_sharded=0
+            )
         else:
             raise ValueError(f"Row-parallel only supports Linear/Embedding, got {m}")
+
     def _prep_in(self, args: tuple, kwargs: dict) -> tuple:
         norm_layout = _normalize_layout(inputs_layout, len(args))
         if norm_layout is None:
@@ -145,6 +162,7 @@ def row_parallel(
         if len(args) != len(norm_layout):
             raise ValueError("input_layouts must match number of positional args")
         return eqx.filter_shard(args, norm_layout)
+
     def _prep_out(self, out):
         if isinstance(out, tuple):
             norm_layout = _normalize_layout(outputs_layout, len(out))
@@ -170,6 +188,7 @@ def row_parallel(
         name="RowParallel",
     )
 
+
 def prepare_input(
     module: eqx.Module,
     inputs_layout: P | tuple[P, ...] | None,
@@ -181,6 +200,7 @@ def prepare_input(
         if len(args) != len(norm_layout):
             raise ValueError("input_layouts must match number of positional args")
         return eqx.filter_shard(args, norm_layout)
+
     return make_module_with_sharding_constraint(
         module,
         params_partition_fn=None,
@@ -188,6 +208,7 @@ def prepare_input(
         prepare_output_fn=None,
         name="WithPrepareInput",
     )
+
 
 def prepare_output(
     module: eqx.Module,
@@ -209,6 +230,7 @@ def prepare_output(
             else:
                 norm_layout = outputs_layout
             return eqx.filter_shard(out, norm_layout)
+
     return make_module_with_sharding_constraint(
         module,
         params_partition_fn=None,
@@ -216,6 +238,7 @@ def prepare_output(
         prepare_output_fn=_prep_out,
         name="WithPrepareOutput",
     )
+
 
 def prepare_input_output(
     module: eqx.Module,
@@ -230,6 +253,7 @@ def prepare_input_output(
         if len(args) != len(norm_layout):
             raise ValueError("input_layouts must match number of positional args")
         return eqx.filter_shard(args, norm_layout)
+
     def _prep_out(self, out):
         if isinstance(out, tuple):
             norm_layout = _normalize_layout(outputs_layout, len(out))
@@ -246,6 +270,7 @@ def prepare_input_output(
             else:
                 norm_layout = outputs_layout
             return eqx.filter_shard(out, norm_layout)
+
     return make_module_with_sharding_constraint(
         module,
         params_partition_fn=None,

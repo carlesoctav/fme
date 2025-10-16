@@ -12,9 +12,9 @@ from jaxtyping import Array, Float, Int, PRNGKeyArray
 from transformers.models.bert.configuration_bert import BertConfig
 
 from ... import nn
-from ..._darray import DArray
+from ...distributed.array import DArray
 from ..._huggingface import HuggingFaceCompatibleModule
-from ..._masking_utils import make_full_mask
+from ...masking_utils import make_full_mask
 from ...nn import (
     AttentionModule,
     make_attention_module,
@@ -46,36 +46,26 @@ class BertEmbeddings(eqx.Module):
         self.word_embeddings = nn.Embedding(
             num_embeddings=config.vocab_size,
             embedding_dim=config.hidden_size,
-            dtype=dtype,
-            params_dtype=params_dtype,
             key=word_key,
         )
         self.position_embeddings = nn.Embedding(
             num_embeddings=config.max_position_embeddings,
             embedding_dim=config.hidden_size,
-            dtype=dtype,
-            params_dtype=params_dtype,
             key=position_key,
         )
 
         self.token_type_embeddings = nn.Embedding(
             num_embeddings=config.type_vocab_size,
             embedding_dim=config.hidden_size,
-            dtype=dtype,
-            params_dtype=params_dtype,
             key=token_type_key,
         )
 
         self.LayerNorm = nn.LayerNorm(
             config.hidden_size,
             eps=config.layer_norm_eps,
-            dtype=dtype,
-            params_dtype=params_dtype,
             key=layer_norm_key,
         )
-        self.dropout = nn.Dropout(
-            p=config.hidden_dropout_prob, dtype=dtype, params_dtype=params_dtype
-        )
+        self.dropout = nn.Dropout(p=config.hidden_dropout_prob)
 
     def __call__(
         self,
@@ -138,28 +128,21 @@ class BertSelfAttention(eqx.Module):
         self.query = nn.Linear(
             config.hidden_size,
             self.all_head_size,
-            dtype=dtype,
-            params_dtype=params_dtype,
             key=q_key,
         )
         self.key = nn.Linear(
             config.hidden_size,
             self.all_head_size,
-            dtype=dtype,
-            params_dtype=params_dtype,
             key=k_key,
         )
         self.value = nn.Linear(
             config.hidden_size,
             self.all_head_size,
-            dtype=dtype,
-            params_dtype=params_dtype,
             key=v_key,
         )
 
         self.sdpa = make_attention_module(
             config=config,
-            dtype=dtype,
         )
 
     def __call__(
@@ -187,14 +170,13 @@ class BertSelfAttention(eqx.Module):
         k_heads = _to_heads(k, self.num_attention_heads)
         v_heads = _to_heads(v, self.num_attention_heads)
 
-
         attn_heads = self.sdpa(
             query=q_heads,
             key=k_heads,
             value=v_heads,
             mask=attention_mask,
             dropout_rate=self.dropout_rate,
-            dropout_key = dropout_key,
+            dropout_key=dropout_key,
         )
 
         attn = attn_heads.reshape(*attn_heads.shape[:-2], self.all_head_size)
@@ -218,20 +200,14 @@ class BertSelfOutput(eqx.Module):
         self.dense = nn.Linear(
             config.hidden_size,
             config.hidden_size,
-            dtype=dtype,
-            params_dtype=params_dtype,
             key=dense_key,
         )
         self.LayerNorm = nn.LayerNorm(
             config.hidden_size,
             eps=config.layer_norm_eps,
-            dtype=dtype,
-            params_dtype=params_dtype,
             key=layer_key,
         )
-        self.dropout = nn.Dropout(
-            config.hidden_dropout_prob, dtype=dtype, params_dtype=params_dtype
-        )
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
     def __call__(
         self,
@@ -308,8 +284,6 @@ class BertIntermediate(eqx.Module):
         self.dense = nn.Linear(
             config.hidden_size,
             config.intermediate_size,
-            dtype=dtype,
-            params_dtype=params_dtype,
             key=dense_key,
         )
 
@@ -342,20 +316,14 @@ class BertOutput(eqx.Module):
         self.dense = nn.Linear(
             config.intermediate_size,
             config.hidden_size,
-            dtype=dtype,
-            params_dtype=params_dtype,
             key=dense_key,
         )
         self.LayerNorm = nn.LayerNorm(
             config.hidden_size,
             eps=config.layer_norm_eps,
-            dtype=dtype,
-            params_dtype=params_dtype,
             key=layer_norm_key,
         )
-        self.dropout = nn.Dropout(
-            config.hidden_dropout_prob, dtype=dtype, params_dtype=params_dtype
-        )
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
     def __call__(
         self,
@@ -624,15 +592,11 @@ class BertPredictionHeadTransform(eqx.Module):
         self.dense = nn.Linear(
             config.hidden_size,
             config.hidden_size,
-            dtype=dtype,
-            params_dtype=params_dtype,
             key=dense_key,
         )
         self.LayerNorm = nn.LayerNorm(
             config.hidden_size,
             eps=config.layer_norm_eps,
-            dtype=dtype,
-            params_dtype=params_dtype,
             key=ln_key,
         )
 
@@ -764,7 +728,7 @@ class BertForMaskedLM(
         # decoder tied weights: use embedding matrix for projection
         w = self.bert.embeddings.word_embeddings.weight  # (vocab_size, hidden_size)
         # Unwrap DArray if necessary
-        if hasattr(w, 'value'):
+        if hasattr(w, "value"):
             w = w.value
         logits = self.cls(sequence_output, w, key=cls_key)
         return logits

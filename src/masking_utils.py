@@ -5,9 +5,9 @@ import jax.numpy as jnp
 from jaxtyping import Array, Bool, Float, Int
 
 try:
-    from ._utils import GeneralInterface
+    from .utils import GeneralInterface
 except ImportError:
-    from src._utils import GeneralInterface
+    from src.utils import GeneralInterface
 
 
 _BlockMask = Array
@@ -113,7 +113,7 @@ def make_bool_mask(
     if padding_mask is not None:
         if mask_output.ndim == 3:
             expanded_padding_mask = padding_mask[:, None, :]
-            return jnp.asarray(mask_output & expanded_padding_mask, dtype = jnp.bool)
+            return jnp.asarray(mask_output & expanded_padding_mask, dtype=jnp.bool)
         else:
             expanded_padding_mask = padding_mask[:, None, None, :]
             return mask_output & expanded_padding_mask
@@ -258,7 +258,9 @@ def slliding_window_full_mask(
     B, T, H = input_embeds.shape
 
     mask_interface = ALL_MASK_ATTENTION_FUNCTIONS[mask_impl]
-    mask_factory_function = and_masks(sliding_window_mask_overlay(window_size), dummy_mask_function)
+    mask_factory_function = and_masks(
+        sliding_window_mask_overlay(window_size), dummy_mask_function
+    )
 
     padding_mask = None
     if segment_ids is not None:

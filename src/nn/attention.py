@@ -105,7 +105,6 @@ class JaxNNAttentionModule(AttentionModule):
     def __init__(
         self,
         config: PretrainedConfig | None = None,
-        dtype: Any = jnp.float32,
         implementation: str | None = None,
     ):
         self.attn_fn = jax.nn.dot_product_attention
@@ -152,10 +151,10 @@ class JaxNNAttentionModule(AttentionModule):
 
 class EagerAttentionModule(AttentionModule):
     broadcast_dropout: bool = eqx.field(static=True, default=True)
+
     def __init__(
         self,
         config: PretrainedConfig | None = None,
-        dtype: Any = jnp.float32,
         implementation: str | None = None,
         broadcast_dropout: bool = True,
     ):
@@ -193,22 +192,20 @@ class EagerAttentionModule(AttentionModule):
             mask=mask,
             dropout_rate=dropout_rate,
             dropout_rng=dropout_key,
-            broadcast_dropout=self.broadcast_dropout if broadcast_dropout is None else broadcast_dropout,
+            broadcast_dropout=self.broadcast_dropout
+            if broadcast_dropout is None
+            else broadcast_dropout,
             **kwargs,
         )
 
 
-def make_attention_module(
-    config: PretrainedConfig | None = None, dtype: jnp.dtype = jnp.float32
-) -> AttentionModule:
+def make_attention_module(config: PretrainedConfig | None = None) -> AttentionModule:
     implementation = (
         config.implementation if hasattr(config, "implementation") else "xla"
     )
     if config._attn_implementation == "sdpa":
-        return JaxNNAttentionModule(config=config, dtype=dtype, implementation=implementation)
+        return JaxNNAttentionModule(config=config, implementation=implementation)
     if config._attn_implementation == "eager":
-        return EagerAttentionModule(
-            config=config, dtype=dtype, implementation=implementation
-        )
+        return EagerAttentionModule(config=config, implementation=implementation)
 
     raise ValueError(f"Unsupported attention type: {config._attn_implementation}")

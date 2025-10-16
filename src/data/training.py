@@ -11,11 +11,11 @@ import jax.tree_util as jtu
 from grain import DatasetIterator, IterDataset, transforms as grain_transforms
 from jax.sharding import Mesh, PartitionSpec
 
-from ._dataset_transforms import (
+from .dataset_transforms import (
     BaseDatasetTransform,
     EnsureMapDataset,
 )
-from ._transforms import CollateToBatch
+from .transforms import CollateToBatch
 
 
 Batch = tp.Any
@@ -23,20 +23,18 @@ _T = tp.TypeVar("_T")
 _S = tp.TypeVar("_S")
 
 
-
 class _DatasetIteratorWithInputSpec(DatasetIterator[_T]):
-
     _SLEEP_SECONDS = 2.0
     _MAX_ATTEMPTS = 5
 
     def __init__(
         self,
         parent: DatasetIterator[_S],
-        pspec: PartitionSpec ,
-        mesh: Mesh, 
+        pspec: PartitionSpec,
+        mesh: Mesh,
     ):
         super().__init__(parent)
-        self._pspec = pspec 
+        self._pspec = pspec
         self._mesh = mesh
         self._logger = logging.getLogger(__name__)
 
@@ -73,8 +71,8 @@ class _DatasetIteratorWithInputSpec(DatasetIterator[_T]):
 
     def array_from_local_process(self, local_values: _T) -> _T:
         return jax.make_array_from_process_local_data(
-            sharding = jax.NamedSharding(self._mesh, self._pspec),
-            local_data = local_values,
+            sharding=jax.NamedSharding(self._mesh, self._pspec),
+            local_data=local_values,
         )
 
     def get_state(self):
@@ -99,14 +97,15 @@ class IterDatasetWithInputSpec(IterDataset[_T]):
     def __iter__(self) -> IterDatasetWithInputSpec:
         parent_iter = self._parent.__iter__()
         return _DatasetIteratorWithInputSpec(
-                parent_iter, 
-                pspec = self._pspec,
-                mesh = self._mesh
+            parent_iter, pspec=self._pspec, mesh=self._mesh
         )
+
 
 def make_dataloader(
     datasets: Sequence[tp.Any],
-    operations: Sequence[ grain_transforms.Map | grain_transforms.RandomMap | BaseDatasetTransform ],
+    operations: Sequence[
+        grain_transforms.Map | grain_transforms.RandomMap | BaseDatasetTransform
+    ],
     global_batch_size: int,
     pspec: PartitionSpec | None = None,
     mesh: Mesh | None = None,
@@ -124,7 +123,6 @@ def make_dataloader(
     drop_remainder: bool = True,
     batch_class: type[Batch] | None = None,
 ) -> IterDatasetWithInputSpec:
-
     if dataloading_host_index is None:
         dataloading_host_index = jax.process_index()
     if dataloading_host_count is None:
@@ -137,22 +135,24 @@ def make_dataloader(
             "global_batch_size must be divisible by dataloading_host_count"
         )
 
-
     prepared: list[grain.IterDataset] = []
     if isinstance(datasets, (str, bytes)) or not isinstance(datasets, Sequence):
         datasets = (datasets,)
     else:
         datasets = tuple(datasets)
 
-
-    read_options = grain.ReadOptions(num_threads = read_num_threads, prefetch_buffer_size = read_prefetch_buffer_size)
+    read_options = grain.ReadOptions(
+        num_threads=read_num_threads, prefetch_buffer_size=read_prefetch_buffer_size
+    )
     for dataset in datasets:
         if not operations:
             raise ValueError("No operations provided for dataset preparation")
 
         first_op, *rest_ops = operations
         if not isinstance(first_op, EnsureMapDataset):
-            raise ValueError("First operation must wrap dataset into a Grain MapDataset")
+            raise ValueError(
+                "First operation must wrap dataset into a Grain MapDataset"
+            )
 
         ds = first_op(dataset)
 
@@ -165,37 +165,39 @@ def make_dataloader(
         if dataloading_host_count > 1 and is_not_sharded:
             ds = ds[dataloading_host_index::dataloading_host_count]
 
-
         ds = ds.to_iter_dataset(read_options)
 
         for op in rest_ops:
-            #NOTES: pretty much all transformation just wrapping the dataset by another dataset class with new __iter__ and __next__ (the iterator part)
+            # NOTES: pretty much all transformation just wrapping the dataset by another dataset class with new __iter__ and __next__ (the iterator part)
             # so by this we shouldnt differentiate between BaseDatasetTransform and grain transforms
             # need to think more about makeing single interface for all transformation
             if isinstance(op, BaseDatasetTransform):
-                ds = op(ds)  
+                ds = op(ds)
             elif isinstance(op, grain_transforms.RandomMap):
-                ds = ds.random_map(op)  
+                ds = ds.random_map(op)
             elif isinstance(op, grain_transforms.Map):
-                ds = ds.map(op)  
+                ds = ds.map(op)
             else:
                 raise TypeError(f"Unsupported operation type: {type(op)}")
 
         prepared.append(ds)
 
-
-    mixed = grain.IterDataset.mix(prepared,  weights = dataset_weights) 
+    mixed = grain.IterDataset.mix(prepared, weights=dataset_weights)
     local_process_batch_size = global_batch_size // dataloading_host_count
 
-    mixed = mixed.batch(batch_size = local_process_batch_size, drop_remainder = drop_remainder) 
+    mixed = mixed.batch(
+        batch_size=local_process_batch_size, drop_remainder=drop_remainder
+    )
 
     if batch_class:
         mixed = mixed.map(CollateToBatch(batch_class=batch_class))
 
-    mp_options = grain.MultiprocessingOptions(num_workers=worker_count, per_worker_buffer_size=worker_buffer_size,)
+    mp_options = grain.MultiprocessingOptions(
+        num_workers=worker_count,
+        per_worker_buffer_size=worker_buffer_size,
+    )
     mixed = mixed.mp_prefetch(mp_options)
 
     if mesh:
-        return IterDatasetWithInputSpec(mixed, pspec = pspec, mesh = mesh)
+        return IterDatasetWithInputSpec(mixed, pspec=pspec, mesh=mesh)
     return mixed
-

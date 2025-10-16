@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import time
 import numpy as np
 
-from src._masking_utils import make_causal_mask
+from src.masking_utils import make_causal_mask
 
 
 def naive_causal_mask_tril(dummy_input):
