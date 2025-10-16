@@ -1,0 +1,30 @@
+
+================================================================================
+BENCHMARK: make_module_opt with Large Model (TP only)
+================================================================================
+
+Using 1D mesh: Mesh('tp': 4, axis_types=(Auto,))
+Devices: [TpuDevice(id=0, process_index=0, coords=(0,0,0), core_on_chip=0), TpuDevice(id=1, process_index=0, coords=(1,0,0), core_on_chip=0), TpuDevice(id=2, process_index=0, coords=(0,1,0), core_on_chip=0), TpuDevice(id=3, process_index=0, coords=(1,1,0), core_on_chip=0)]
+
+Model config: BERT-36L-2048H
+Estimated params: 1.9B
+Estimated size: 7.0GB (fp32)
+Per-device after sharding: ~1.7GB
+
+Creating model on CPU...
+Model creation time: 17.17s
+
+Found 216 submodules matching patterns
+This means 216 transformations will be batched into 1 tree_at call
+
+================================================================================
+FIRST RUN (JIT COMPILATION + EXECUTION)
+================================================================================
+
+================================================================================
+FIRST RUN TIME: 18.2247s (18224.73ms)
+================================================================================
+
+Model size: 7.0GB
+Transformations: 216
+Time: 18.2247s

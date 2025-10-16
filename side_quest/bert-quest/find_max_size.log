@@ -1,0 +1,75 @@
+================================================================================
+FINDING MAXIMUM MODEL SIZE
+================================================================================
+Mesh: Mesh('tp': 4, axis_types=(Auto,))
+
+================================================================================
+Trying: BERT-36L-2048H
+================================================================================
+Config: BERT-36L-2048H
+Params: 1.9B
+Size: 7.0GB (fp32)
+Per-device (TP4): ~1.7GB
+
+Creating model on CPU...
+Model creation: 17.08s
+Transformations: 216
+
+Running make_module_opt...
+✓ SUCCESS: 17.7441s
+
+================================================================================
+Trying: BERT-48L-2048H
+================================================================================
+Config: BERT-48L-2048H
+Params: 2.5B
+Size: 9.2GB (fp32)
+Per-device (TP4): ~2.3GB
+
+Creating model on CPU...
+Model creation: 21.74s
+Transformations: 288
+
+Running make_module_opt...
+✓ SUCCESS: 23.4388s
+
+================================================================================
+Trying: BERT-60L-2048H
+================================================================================
+Config: BERT-60L-2048H
+Params: 3.1B
+Size: 11.5GB (fp32)
+Per-device (TP4): ~2.9GB
+
+Creating model on CPU...
+Model creation: 25.38s
+Transformations: 360
+
+Running make_module_opt...
+✓ SUCCESS: 32.3788s
+
+================================================================================
+Trying: BERT-48L-2560H
+================================================================================
+Config: BERT-48L-2560H
+Params: 3.9B
+Size: 14.4GB (fp32)
+Per-device (TP4): ~3.6GB
+
+Creating model on CPU...
+Model creation: 29.78s
+Transformations: 288
+
+Running make_module_opt...
+✗ FAILED: RESOURCE_EXHAUSTED: Error allocating device buffer: Attempting to allocate 100.00M. That was not possible. There are 76.80M free.; (0x0x0_HBM0): while running replica 0 and partition 0 of a replicated computation (other replicas may have failed as well).
+
+⚠ Stopping at BERT-48L-2560H - too large
+
+================================================================================
+SUCCESSFUL BENCHMARKS
+================================================================================
+Model                    Params       Size   Transforms    First Run
+--------------------------------------------------------------------------------
+BERT-36L-2048H             1.9B       7.0GB          216     17.7441s
+BERT-48L-2048H             2.5B       9.2GB          288     23.4388s
+BERT-60L-2048H             3.1B      11.5GB          360     32.3788s

@@ -1,0 +1,41 @@
+Traceback (most recent call last):
+  File "/mnt/carles/fme/benchmark_100gb_model.py", line 177, in benchmark_100gb_model
+    sharded_model, opt = make_module_opt(
+                         ^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/src/_training.py", line 249, in make_module_opt
+    new_module, new_opt = build(module, key)
+                          ^^^^^^^^^^^^^^^^^^
+  File "/home/carlesoctav/.pyenv/versions/3.11.13/lib/python3.11/site-packages/equinox/_jit.py", line 209, in __call__
+    return _call(self, False, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/carlesoctav/.pyenv/versions/3.11.13/lib/python3.11/site-packages/equinox/_jit.py", line 263, in _call
+    marker, _, _ = out = jit_wrapper._cached(
+                         ^^^^^^^^^^^^^^^^^^^^
+jaxlib._jax.XlaRuntimeError: RESOURCE_EXHAUSTED: Error allocating device buffer: Attempting to allocate 100.00M. That was not possible. There are 56.05M free.; (0x0x0_HBM0): while running replica 0 and partition 0 of a replicated computation (other replicas may have failed as well).
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+
+================================================================================
+BENCHMARK: make_module_opt with ~100GB Model
+================================================================================
+
+Using mesh: Mesh('tp': 4, axis_types=(Auto,))
+Devices: [TpuDevice(id=0, process_index=0, coords=(0,0,0), core_on_chip=0), TpuDevice(id=1, process_index=0, coords=(1,0,0), core_on_chip=0), TpuDevice(id=2, process_index=0, coords=(0,1,0), core_on_chip=0), TpuDevice(id=3, process_index=0, coords=(1,1,0), core_on_chip=0)]
+
+Model config: BERT-100L-5120H
+Estimated params: 31.6B
+Estimated size: 117.8GB (fp32)
+Per-device after TP sharding: ~29.4GB
+
+Creating model with device sharding...
+Initializing model structure on CPU...
+Model structure creation time: 155.46s
+
+Found 600 submodules matching patterns
+This means 600 transformations will be batched into 1 tree_at call
+
+================================================================================
+FIRST RUN (JIT COMPILATION + EXECUTION)
+================================================================================
+
+ERROR during make_module_opt: RESOURCE_EXHAUSTED: Error allocating device buffer: Attempting to allocate 100.00M. That was not possible. There are 56.05M free.; (0x0x0_HBM0): while running replica 0 and partition 0 of a replicated computation (other replicas may have failed as well).

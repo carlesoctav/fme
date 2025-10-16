@@ -112,7 +112,12 @@ def apply_transforms(
             matches.append((path, _getter_from_path(path), transform(sub_module)))
             break
 
-    for _, getter, replacement in sorted(matches, key=lambda item: len(item[0])):
-        module = eqx.tree_at(getter, module, replacement)
+    if matches:
+        sorted_matches = sorted(matches, key=lambda item: len(item[0]))
+        getters = [getter for _, getter, _ in sorted_matches]
+        replacements = [replacement for _, _, replacement in sorted_matches]
+        module = eqx.tree_at(
+            lambda m: [getter(m) for getter in getters], module, replacements
+        )
 
     return module

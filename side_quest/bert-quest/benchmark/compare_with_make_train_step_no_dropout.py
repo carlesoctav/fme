@@ -7,8 +7,7 @@ from datasets import load_dataset
 from jax.sharding import Mesh, PartitionSpec
 from transformers import AutoTokenizer, BertConfig
 
-from src._training import make_module_opt
-from src._logger import TrackioLogger
+from src._training import make_module_opt, make_train_step, Optimizer
 from src.data._training import make_dataloader
 from src.data.masked_language_modeling import (
     masked_language_modeling_transforms,
@@ -47,7 +46,7 @@ def _get_position_ids(batch, seq_length):
     return jnp.broadcast_to(jnp.arange(seq_length)[None, :], (batch_size, seq_length))
 
 
-def loss_function(model, batch, key):
+def loss_function(model, optimizer, batch, key):
     logits = model(
         input_ids=batch.input_ids,
         position_ids=_get_position_ids(batch, MAX_LENGTH),
@@ -94,43 +93,27 @@ def unbox_params(module):
 
 
 def test_filter_jit(model, optimizer, train_loader, key):
-    print("\n=== Testing eqx.filter_jit ===")
+    print("\n=== Testing eqx.filter_jit (make_train_step) ===")
     
-    def loss_fn(model, batch, key):
-        return loss_function(model, batch, key)
-    
-    grad_fn = eqx.filter_value_and_grad(loss_fn, has_aux=True)
-    
-    @eqx.filter_jit
-    def train_step(model, opt_state, batch, key):
-        with jax.profiler.StepTraceAnnotation("gradient_compute"):
-            (loss, aux), grads = grad_fn(model, batch, key)
-        
-        with jax.profiler.StepTraceAnnotation("weight_update"):
-            updates, new_opt_state = optimizer.tx.update(
-                grads, opt_state, eqx.filter(model, eqx.is_array)
-            )
-            new_model = eqx.apply_updates(model, updates)
-        
-        return new_model, new_opt_state, aux
+    train_step = make_train_step(loss_function=loss_function, jit=True)
     
     step_times = []
     train_iterator = iter(train_loader)
     current_model = model
-    opt_state = optimizer.opt_state
+    current_opt = optimizer
     
     for step in range(NUM_STEPS):
         batch = next(train_iterator)
         key, step_key = jr.split(key)
         
         if step == 1:
-            jax.profiler.start_trace("./research/bert-mlm-dropout/trace_filter_jit")
+            jax.profiler.start_trace("./research/bert-mlm/trace_filter_jit_make_train_step")
         
         start = time.monotonic()
         with jax.profiler.StepTraceAnnotation("train_step", step_num=step):
-            current_model, opt_state, aux = train_step(current_model, opt_state, batch, step_key)
+            current_model, current_opt, aux = train_step(current_model, current_opt, batch, key=step_key)
             jtu.tree_map(lambda x: x.block_until_ready() if hasattr(x, 'block_until_ready') else x, current_model)
-            jtu.tree_map(lambda x: x.block_until_ready() if hasattr(x, 'block_until_ready') else x, opt_state)
+            jtu.tree_map(lambda x: x.block_until_ready() if hasattr(x, 'block_until_ready') else x, current_opt)
         end = time.monotonic()
         
         if step == 10:
@@ -157,7 +140,7 @@ def test_manual_jit(model, optimizer, train_loader, key):
     
     def loss_fn_params(params, batch, key):
         module_inst = eqx.combine(params, static_parts)
-        return loss_function(module_inst, batch, key)
+        return loss_function(module_inst, optimizer, batch, key)
     
     grad_fn = jax.value_and_grad(loss_fn_params, has_aux=True, allow_int=True)
     
@@ -182,7 +165,7 @@ def test_manual_jit(model, optimizer, train_loader, key):
         key, step_key = jr.split(key)
         
         if step == 1:
-            jax.profiler.start_trace("./research/bert-mlm-dropout/trace_manual_jit")
+            jax.profiler.start_trace("./research/bert-mlm/trace_manual_jit_make_train_step")
         
         start = time.monotonic()
         with jax.profiler.StepTraceAnnotation("train_step", step_num=step):
@@ -223,9 +206,9 @@ def main():
         intermediate_size=3072,
         max_position_embeddings=512,
         type_vocab_size=2,
-        hidden_dropout_prob=0.1,
-        attention_probs_dropout_prob=0.1,
-        _attn_implementation="eager",
+        hidden_dropout_prob=0.0,
+        attention_probs_dropout_prob=0.0,
+        _attn_implementation="sdpa",
     )
     
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
@@ -322,5 +305,5 @@ def main():
 
 
 if __name__ == "__main__":
-    setup_logger(log_file="./research/bert-mlm-dropout/benchmark.log")
+    setup_logger(log_file="./research/bert-mlm/benchmark_make_train_step.log")
     main()

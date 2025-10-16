@@ -1,0 +1,62 @@
+================================================================================
+LARGE MODEL BENCHMARK: apply_transforms
+================================================================================
+
+Configuration:
+  Model: BERT-100L-5120H
+  Intermediate: 20480
+  Heads: 40
+  TPU devices: [TpuDevice(id=0, process_index=0, coords=(0,0,0), core_on_chip=0), TpuDevice(id=1, process_index=0, coords=(1,0,0), core_on_chip=0)]
+  Mesh: Mesh('tp': 2, axis_types=(Auto,))
+  TP patterns: 6
+
+Model size:
+  Parameters: 31.62B
+  Memory (fp32): 117.78 GB
+  Expected transformations: 600
+
+================================================================================
+Creating model on CPU (this will take a while)...
+================================================================================
+Using device: TPU_0(process=0,(0,0,0,0))
+
+✓ Model created on CPU in 159.94s
+  Model leaves: 1610
+
+Warmup run (will transfer to TPU and compile)...
+  Warmup took: 0.63s
+
+================================================================================
+Benchmarking apply_transforms (batched mode)
+================================================================================
+  Run  1:  599.00ms
+  Run  2:  540.71ms
+  Run  3:  535.89ms
+  Run  4:  547.27ms
+  Run  5:  554.17ms
+  Run  6:  546.07ms
+  Run  7:  556.03ms
+  Run  8:  425.31ms
+  Run  9:  559.99ms
+  Run 10:  569.20ms
+
+Results (10 runs):
+  Mean:   543.36ms
+  Median: 550.72ms
+  Std:    42.82ms
+  Min:    425.31ms
+  Max:    599.00ms
+
+================================================================================
+Estimated Non-batched Performance:
+================================================================================
+  Transformations: 600
+  Estimated time: 4185.46ms (4.19s)
+  Time saved: 3634.74ms (3.63s)
+  Speedup: 7.60×
+
+================================================================================
+Per-transformation cost:
+================================================================================
+  Batched: 0.918ms per transformation
+  Estimated non-batched: 6.976ms per transformation

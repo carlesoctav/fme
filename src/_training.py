@@ -89,7 +89,8 @@ class Optimizer(eqx.Module):
             grads, self.opt_state, eqx.filter(model, self.wrt)
         )
         new_model = eqx.apply_updates(model, updates)
-        return new_model, replace(self, opt_state=opt_state) 
+        new_self = eqx.tree_at(lambda x: x.opt_state, self, opt_state)
+        return new_model, new_self
 
 
 _T = tp.TypeVar("_T")
