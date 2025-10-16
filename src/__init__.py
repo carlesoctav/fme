@@ -13,7 +13,6 @@ try:
         init_module,
         make_eval_step,
         make_train_step,
-        make_module_opt,
         train_loop,
         benchmark_loop,
     )
@@ -36,7 +35,6 @@ __all__ = [
     "SufficientMetric",
     "Eval",
     "Optimizer",
-    "make_module_opt",
     "make_train_step",
     "make_eval_step",
     "train_loop",

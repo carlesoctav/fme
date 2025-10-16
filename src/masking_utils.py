@@ -10,9 +10,9 @@ except ImportError:
     from src.utils import GeneralInterface
 
 
-_BlockMask = Array
-_MaskImpl = tp.Callable
-_MaskFn = tp.Any
+BlockMask = Array
+MaskImpl = tp.Callable
+MaskFn = tp.Any
 
 
 def and_masks(*mask_fns):
@@ -91,7 +91,7 @@ def make_bool_mask(
     batch_size: int,
     q_length: int,
     kv_length: int,
-    mask_function: _MaskFn,
+    mask_function: MaskFn,
     padding_mask: Bool[Array, "..."] | None = None,
     nheads: int | None = None,
 ) -> Bool[Array, "..."]:
@@ -121,7 +121,7 @@ def make_bool_mask(
         return mask_output
 
 
-class AttentionMaskInterface(GeneralInterface[str, _MaskImpl]):
+class AttentionMaskInterface(GeneralInterface[str, MaskImpl]):
     _global_mapping = {
         "eager": make_bool_mask,
         "sdpa": make_bool_mask,
@@ -136,7 +136,7 @@ def make_causal_mask(
     input_embeds: Float[Array, "B T H"],
     attention_mask: Bool[Array, "B T"] | None = None,
     segment_ids: Int[Array, "B T"] | None = None,
-) -> Bool[Array, "B T T"] | _BlockMask:
+) -> Bool[Array, "B T T"] | BlockMask:
     """
     Generates a mask for causal attention.
 
@@ -185,7 +185,7 @@ def make_full_mask(
     input_embeds: Float[Array, "B T H"],
     attention_mask: Bool[Array, "..."] | None = None,
     segment_ids: Int[Array, "..."] | None = None,
-) -> Bool[Array, "B T T"] | _BlockMask:
+) -> Bool[Array, "B T T"] | BlockMask:
     """
     Generates a mask for full attention.
 
@@ -235,7 +235,7 @@ def slliding_window_full_mask(
     window_size: int,
     attention_mask: Bool[Array, "..."] | None = None,
     segment_ids: Int[Array, "..."] | None = None,
-) -> Bool[Array, "B T T"] | _BlockMask:
+) -> Bool[Array, "B T T"] | BlockMask:
     """
     Generates a mask for sliding window attention.
 

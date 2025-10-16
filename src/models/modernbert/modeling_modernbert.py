@@ -16,7 +16,7 @@ from transformers import ModernBertConfig
 
 from ... import nn
 from ...distributed.array import DArray
-from ..._huggingface import HuggingFaceCompatibleModule
+from ...huggingface import HuggingFaceCompatibleModule
 from ...masking_utils import make_full_mask, slliding_window_full_mask
 from ...nn import (
     AttentionModule,

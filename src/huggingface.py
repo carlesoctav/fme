@@ -11,7 +11,7 @@ import transformers
 from jax.sharding import Mesh
 from jaxtyping import PRNGKeyArray
 
-from .distributed.array import DArray
+from .distributed.array import ArrayWithSharding as DArray
 
 
 LOGGER = logging.getLogger(__name__)

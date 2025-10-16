@@ -77,26 +77,20 @@ class Optimizer(eqx.Module):
     wrt: PyTree[AxisSpec] = eqx.field(static=True)
     tx: GradTx = eqx.field(static=True)
 
-
-
     def __init__(
         self,
         model: M,
-        tx: GradTx
+        tx: GradTx,
         wrt: Wrt,
     ):
         self.tx = tx
         self.wrt = wrt
-        self.opt_state= tx.init(eqx.filter(model, self.wrt))
+        self.opt_state = tx.init(eqx.filter(model, self.wrt))
 
     def __call__(
         self, grads: PyTree[Array], model: eqx.Module
     ) -> tuple[eqx.Module, Optimizer]:
-
-        updates, opt_state = self.tx.update(
-            grads,
-            self.opt_state
-        ) 
+        updates, opt_state = self.tx.update(grads, self.opt_state)
         new_model = eqx.apply_updates(model, updates)
         new_self = eqx.tree_at(lambda x: x.opt_state, self, opt_state)
         return new_model, new_self
@@ -210,59 +204,6 @@ def _module_has_abstract_params(m: eqx.Module) -> bool:
     return found
 
 
-def make_module_opt(
-    module: M,
-    tx: GradTx,
-    mesh: Mesh | None = None,
-    wrt: Wrt = eqx.is_inexact_array,
-    parallelism_plans: ParallelismPlans | None = None,
-    *,
-    key: PRNGKeyArray | None = None,
-) -> tuple[M, Optimizer]:
-    if not isinstance(module, eqx.Module):
-        raise TypeError("module must be an equinox.Module instance")
-    if not isinstance(
-        tx, (GradientTransformation, GradientTransformationExtraArgs)
-    ):
-        raise TypeError(
-            "grad_tx must be an optax.GradientTransformation or GradientTransformationExtraArgs instance"
-        )
-    if key is None:
-        raise ValueError("key must be provided for initialization")
-
-    plans = (
-        list(parallelism_plans or [])
-        if isinstance(parallelism_plans, (list, tuple))
-        else ([parallelism_plans] if parallelism_plans else [])
-    )
-
-    need_init =  _module_has_abstract_params(module):
-
-    def _build(
-        m: M,
-        rng: PRNGKeyArray,
-    ) -> tuple[M, Optimizer]:
-
-        if need_init:
-            m = init_module(m, key=key)
-
-        for plan in plans:
-            m = apply_transforms(m, plan)
-
-        m = unbox_params(m)
-        opt = Optimizer(m, tx, wrt)
-
-        return m_sharded, opt
-
-
-    _build = eqx.filter_jit(_build)
-
-    with mesh: 
-        new_module, new_opt = _build(module, key)
-
-    return new_module, new_opt
-
-
 def make_train_step(
     loss_function: LossFn | None = None,
     train_step: TrainStepCallable[tp.Sequence[M], tp.Sequence[Optimizer]]
@@ -272,7 +213,6 @@ def make_train_step(
     gradient_accumulation_steps: int = 1,
     jit: bool = True,
 ) -> TrainStepCallable[ModuleInput, OptimizerInput]:
-
     if train_step is None and loss_function is None:
         raise ValueError("Provide either train_step or loss_function")
 
@@ -350,8 +290,8 @@ class Eval:
     loss_function: LossFn | None = None
     eval_metric: SufficientMetric | None = None
     jit: bool = True
-    _compiled_eval_step: EvalStepCallable[ModuleInput, OptimizerInput] | None = (
-        field(default=None, init=False, repr=False)
+    _compiled_eval_step: EvalStepCallable[ModuleInput, OptimizerInput] | None = field(
+        default=None, init=False, repr=False
     )
 
     def __post_init__(self) -> None:
@@ -642,5 +582,3 @@ def train_loop(
             method(module, optimizer, logs, logger, train_step_idx)
 
     return module, optimizer, train_metric, eval_metrics if evals else {}
-
-

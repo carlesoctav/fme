@@ -9,11 +9,13 @@ from jax.nn.initializers import (
 )
 from jaxtyping import Float, PRNGKeyArray
 
+from ..module_utils import PrepareableModule
+
 
 Array = jax.Array
 
 
-class LayerNorm(eqx.Module):
+class LayerNorm(PrepareableModule):
     weight: Array | None
     bias: Array | None
     normalized_shape: tuple[int, ...] = eqx.field(static=True)
@@ -62,6 +64,8 @@ class LayerNorm(eqx.Module):
         *,
         key: PRNGKeyArray | None = None,
     ) -> Array:
+        (x,) = self.maybe_prepare_module((x,))
+
         nd = x.ndim
         k = len(self.normalized_shape)
 
@@ -86,7 +90,7 @@ class LayerNorm(eqx.Module):
         if self.bias is not None:
             y = y + self.bias
 
-        return y
+        return self.maybe_prepare_output(y)
 
     def init_weights(self, *, key: PRNGKeyArray | None = None) -> "LayerNorm":
         if key is None:

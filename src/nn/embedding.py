@@ -5,11 +5,13 @@ from equinox import field
 from jax.nn.initializers import Initializer, normal
 from jaxtyping import Array, Int, PRNGKeyArray
 
+from ..module_utils import PrepareableModule
+
 
 default_init = normal(stddev=0.02)
 
 
-class Embedding(eqx.Module):
+class Embedding(PrepareableModule):
     weight: Array
     num_embeddings: int = field(static=True)
     embedding_dim: int = field(static=True)
@@ -39,7 +41,9 @@ class Embedding(eqx.Module):
         *,
         key: PRNGKeyArray | None = None,
     ) -> Array:
-        return self.weight[x]
+        (x,) = self.maybe_prepare_module((x,))
+        output = self.weight[x]
+        return self.maybe_prepare_output(output)
 
     def init_weights(self, *, key: PRNGKeyArray | None = None) -> "Embedding":
         if key is None:

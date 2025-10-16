@@ -9,6 +9,8 @@ from jaxtyping import Array, ArrayLike, Bool, Float, PRNGKeyArray
 
 from transformers import PretrainedConfig
 
+from ..module_utils import PrepareableModule
+
 
 def eager_dot_product_attention(
     query: Float[Array, "B T N H"],
@@ -78,8 +80,8 @@ def eager_dot_product_attention(
     return attn
 
 
-class AttentionModule(eqx.Module):
-    attn_fn: Callable = eqx.field(static=True)
+class AttentionModule(PrepareableModule):
+    attn_fn: Callable = eqx.field(static=True, default=None)
     _attn_implementation: str = eqx.field(static=True, default="eager")
     implementation: str = eqx.field(static=True, default="xla")
     inference: bool = eqx.field(static=True, default=False)
@@ -125,6 +127,9 @@ class JaxNNAttentionModule(AttentionModule):
         broadcast_dropout: bool = True,
         **kwargs,
     ) -> Array:
+        query, key, value, bias, mask = self.maybe_prepare_module(
+            (query, key, value, bias, mask)
+        )
         if self.inference:
             dropout_rate = 0.0
 
@@ -139,7 +144,7 @@ class JaxNNAttentionModule(AttentionModule):
             elif mask.ndim == 4:
                 mask = mask.transpose(0, 2, 1, 3)
 
-        return self.attn_fn(
+        output = self.attn_fn(
             query,
             key,
             value,
@@ -147,6 +152,7 @@ class JaxNNAttentionModule(AttentionModule):
             **kwargs,
             implementation=self.implementation,
         )
+        return self.maybe_prepare_output(output)
 
 
 class EagerAttentionModule(AttentionModule):
@@ -177,6 +183,9 @@ class EagerAttentionModule(AttentionModule):
         broadcast_dropout: bool | None = None,
         **kwargs,
     ) -> Array:
+        query, key, value, bias, mask = self.maybe_prepare_module(
+            (query, key, value, bias, mask)
+        )
         if mask.ndim == 3:
             mask = mask[..., None, :]
 
@@ -185,7 +194,7 @@ class EagerAttentionModule(AttentionModule):
         if self.inference:
             dropout_rate = 0.0
 
-        return self.attn_fn(
+        output = self.attn_fn(
             query,
             key,
             value,
@@ -197,6 +206,7 @@ class EagerAttentionModule(AttentionModule):
             else broadcast_dropout,
             **kwargs,
         )
+        return self.maybe_prepare_output(output)
 
 
 def make_attention_module(config: PretrainedConfig | None = None) -> AttentionModule:

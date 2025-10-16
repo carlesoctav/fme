@@ -6,12 +6,14 @@ import jax.numpy as jnp
 from jax import lax
 from jaxtyping import PRNGKeyArray
 
+from ..module_utils import PrepareableModule
+
 
 Array = jax.Array
 A = TypeVar("A")
 
 
-class Dropout(eqx.Module):
+class Dropout(PrepareableModule):
     p: float = eqx.field(static=True)
     inference: bool = eqx.field(static=True)
 
@@ -34,8 +36,10 @@ class Dropout(eqx.Module):
         *,
         key: PRNGKeyArray | None = None,
     ) -> Array:
+        (x,) = self.maybe_prepare_module((x,))
+
         if self.inference or self.p == 0.0:
-            return x
+            return self.maybe_prepare_output(x)
 
         if not self.inference and key is None:
             raise RuntimeError(
@@ -49,4 +53,4 @@ class Dropout(eqx.Module):
         mask = jax.random.bernoulli(key, keep_prob, shape=x.shape)
         output = jax.lax.select(mask, x / keep_prob, jnp.zeros_like(x))
 
-        return output
+        return self.maybe_prepare_output(output)

@@ -69,7 +69,7 @@ class SufficientMetric:
 
     def per_N_metrics(self, step: int, *, skip_check: bool = False) -> dict[str, float]:
         if self.per_N_metrics_buffer.get(step) is not None:
-            return self.Per_N_metrics_buffer[step]
+            return self.per_N_metrics_buffer[step]
 
         if self._buffer_tree is None:
             return {}

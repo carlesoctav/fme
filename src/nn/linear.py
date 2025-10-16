@@ -4,11 +4,13 @@ import jax.numpy as jnp
 from jax.nn.initializers import Initializer, kaiming_normal, zeros
 from jaxtyping import Array, Float, PRNGKeyArray
 
+from ..module_utils import PrepareableModule
+
 
 default_init = kaiming_normal()
 
 
-class Linear(eqx.Module):
+class Linear(PrepareableModule):
     weight: Array
     bias: Array | None
     in_features: int = eqx.field(static=True)
@@ -47,11 +49,13 @@ class Linear(eqx.Module):
         *,
         key: PRNGKeyArray | None = None,
     ):
+        (x,) = self.maybe_prepare_module((x,))
+
         output = x @ self.weight.T
         if self.use_bias and self.bias is not None:
             output = output + self.bias
 
-        return output
+        return self.maybe_prepare_output(output)
 
     def init_weights(self, *, key: PRNGKeyArray | None = None) -> "Linear":
         if key is None:

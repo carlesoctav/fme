@@ -79,20 +79,6 @@ def _path_to_str(path: Path) -> str:
         parts.append(str(p))
     return ".".join(parts)
 
-
-def _getter_from_path(path: Path):
-    def get(root):
-        node = root
-        for p in path:
-            if isinstance(p, int):
-                node = node[p]
-            else:
-                node = getattr(node, p)
-        return node
-
-    return get
-
-
 def apply_transforms(
     module: tp.Any,
     pattern_to_transform: dict[str, tp.Callable[[tp.Any], tp.Any]],
@@ -102,22 +88,33 @@ def apply_transforms(
     Multiple patterns may match the same path; transforms are applied in the order they are inserted into the dictionary. When this happens, only the first match is applied.
     """
 
-    matches: list[tuple[Path, tp.Callable[[tp.Any], tp.Any], tp.Any]] = []
+    matches: list[tuple[Path, tp.Any]] = []
 
     for path, sub_module in iter_module(module):
         path_str = _path_to_str(path)
         for pattern, transform in pattern_to_transform.items():
             if not fnmatch.fnmatchcase(path_str, pattern):
                 continue
-            matches.append((path, _getter_from_path(path), transform(sub_module)))
+            matches.append((path, transform(sub_module)))
             break
 
     if matches:
         sorted_matches = sorted(matches, key=lambda item: len(item[0]))
-        getters = [getter for _, getter, _ in sorted_matches]
-        replacements = [replacement for _, _, replacement in sorted_matches]
-        module = eqx.tree_at(
-            lambda m: [getter(m) for getter in getters], module, replacements
-        )
+        paths = [path for path, _ in sorted_matches]
+        replacements = [replacement for _, replacement in sorted_matches]
+
+        def _collect(root):
+            values: list[tp.Any] = []
+            for path in paths:
+                node = root
+                for part in path:
+                    if isinstance(part, int):
+                        node = node[part]
+                    else:
+                        node = getattr(node, part)
+                values.append(node)
+            return values
+
+        module = eqx.tree_at(_collect, module, replacements)
 
     return module
