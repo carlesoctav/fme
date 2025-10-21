@@ -1,10 +1,7 @@
-from __future__ import annotations
-
 import logging
 import time
 import typing as tp
-from contextlib import nullcontext
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import Protocol
 
 import equinox as eqx
@@ -17,14 +14,13 @@ from jax.sharding import Mesh
 from jaxtyping import Array, PRNGKeyArray, PyTree
 from optax import GradientTransformation, GradientTransformationExtraArgs
 from tqdm.auto import tqdm
-import time
 
+from .callbacks import Callback
+from .distributed import unbox_params
 from .filter import apply_transforms, iter_module
 from .logger import Logger
 from .metrics import SufficientMetric
 from .utils import first_from, wallclock
-from .callbacks import Callback
-from .distributed import get_partition_spec, unbox_params
 
 
 LOGGER = logging.getLogger("distributed_logger")
@@ -71,7 +67,6 @@ class EvalStepCallable(Protocol[ModuleInput, OptimizerInput]):
     ) -> Aux: ...
 
 
-@dataclass
 class Optimizer(eqx.Module):
     opt_state: PyTree[Array]
     wrt: PyTree[AxisSpec] = eqx.field(static=True)
@@ -79,18 +74,19 @@ class Optimizer(eqx.Module):
 
     def __init__(
         self,
-        model: M,
+        module: M,
         tx: GradTx,
         wrt: Wrt,
     ):
         self.tx = tx
         self.wrt = wrt
-        self.opt_state = tx.init(eqx.filter(model, self.wrt))
+        self.opt_state = tx.init(eqx.filter(module, self.wrt))
 
     def __call__(
         self, grads: PyTree[Array], model: eqx.Module
-    ) -> tuple[eqx.Module, Optimizer]:
-        updates, opt_state = self.tx.update(grads, self.opt_state)
+    ) -> tuple[eqx.Module, "Optimizer"]:
+        params = eqx.filter(model, self.wrt)
+        updates, opt_state = self.tx.update(grads, self.opt_state, params)
         new_model = eqx.apply_updates(model, updates)
         new_self = eqx.tree_at(lambda x: x.opt_state, self, opt_state)
         return new_model, new_self
@@ -582,3 +578,51 @@ def train_loop(
             method(module, optimizer, logs, logger, train_step_idx)
 
     return module, optimizer, train_metric, eval_metrics if evals else {}
+
+
+def make_module_opts(
+    module: eqx.Module,
+    grad_tx: GradTx,
+    mesh: Mesh | None = None,
+    wrt: Wrt = eqx.is_inexact_array,
+    parallelism_plans: tp.Sequence[dict[str, tp.Callable[[eqx.Module], eqx.Module]]]
+    | None = None,
+    *,
+    key: PRNGKeyArray | None = None,
+) -> tuple[eqx.Module, Optimizer]:
+    if not isinstance(module, eqx.Module):
+        raise TypeError("module must be an equinox.Module instance")
+    if not isinstance(
+        grad_tx, (GradientTransformation, GradientTransformationExtraArgs)
+    ):
+        raise TypeError(
+            "grad_tx must be an optax.GradientTransformation or GradientTransformationExtraArgs instance"
+        )
+
+    if parallelism_plans is None:
+        plans = []
+    elif isinstance(parallelism_plans, dict):
+        plans = [parallelism_plans]
+    else:
+        plans = list(parallelism_plans)
+
+    needs_init = _module_has_abstract_params(module)
+
+    if key is None:
+        if needs_init:
+            raise ValueError("key must be provided for initialization")
+
+    def _build(m: eqx.Module, key: PRNGKeyArray) -> eqx.Module:
+        if needs_init:
+            m = init_module(m, key=key)
+        for plan in plans:
+            m = apply_transforms(m, plan)
+
+        return unbox_params(module)
+
+    build = eqx.filter_jit(_build)
+
+    with mesh:
+        module = build(module, key)
+
+    return module, Optimizer(module=module, tx=grad_tx, wrt=wrt)

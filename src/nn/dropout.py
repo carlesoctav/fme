@@ -4,9 +4,8 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jax import lax
-from jaxtyping import PRNGKeyArray
 
-from ..module_utils import PrepareableModule
+from ..modeling_utils import PrepareableModule, Rngs
 
 
 Array = jax.Array
@@ -22,7 +21,6 @@ class Dropout(PrepareableModule):
         p: float = 0.5,
         *,
         inference: bool = False,
-        key: PRNGKeyArray | None = None,
     ):
         if not 0.0 <= p <= 1.0:
             raise ValueError(f"Dropout probability must be between 0 and 1, got {p}")
@@ -34,22 +32,23 @@ class Dropout(PrepareableModule):
         self,
         x: Array,
         *,
-        key: PRNGKeyArray | None = None,
+        rngs: Rngs | None = None,
     ) -> Array:
-        (x,) = self.maybe_prepare_module((x,))
+        (x,) = self.maybe_prepare_input((x,))
 
         if self.inference or self.p == 0.0:
             return self.maybe_prepare_output(x)
 
-        if not self.inference and key is None:
+        if not self.inference and rngs is None:
             raise RuntimeError(
-                "Dropout requires a key when running in non-inference mode."
+                "Dropout requires rngs when running in non-inference mode."
             )
 
         if self.p == 1.0:
             return jnp.zeros_like(x)
 
         keep_prob = 1.0 - lax.stop_gradient(self.p)
+        key = rngs.make_rng("dropout")
         mask = jax.random.bernoulli(key, keep_prob, shape=x.shape)
         output = jax.lax.select(mask, x / keep_prob, jnp.zeros_like(x))
 

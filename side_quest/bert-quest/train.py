@@ -133,7 +133,8 @@ def main():
     )
 
     start_time = time.monotonic()
-    model, optimizer = make_module_opt(
+
+    model, optimizer = make_module_opts(
         model,
         grad_tx,
         mesh=mesh,

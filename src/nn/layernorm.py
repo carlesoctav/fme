@@ -7,9 +7,9 @@ from jax.nn.initializers import (
     ones as ones_init,
     zeros as zeros_init,
 )
-from jaxtyping import Float, PRNGKeyArray
+from jaxtyping import Float
 
-from ..module_utils import PrepareableModule
+from ..modeling_utils import PrepareableModule, Rngs
 
 
 Array = jax.Array
@@ -31,7 +31,7 @@ class LayerNorm(PrepareableModule):
         elementwise_affine: bool = True,
         bias: bool = True,
         initializer: Initializer = None,
-        key: PRNGKeyArray,
+        rngs: Rngs,
         weight_spec: str | tuple[str, ...] | None = None,
         bias_spec: str | tuple[str, ...] | None = None,
         input_pspec: jax.P | None = None,
@@ -48,7 +48,8 @@ class LayerNorm(PrepareableModule):
         self.initializer = ones_init if initializer is None else initializer
 
         if self.elementwise_affine:
-            wkey, bkey = jax.random.split(key, 2)
+            wkey = rngs.make_rng("params")
+            bkey = rngs.make_rng("params")
             self.weight = self.initializer(wkey, normalized_shape, dtype=jnp.float32)
             if bias:
                 self.bias = zeros_init(bkey, normalized_shape, dtype=jnp.float32)
@@ -62,9 +63,9 @@ class LayerNorm(PrepareableModule):
         self,
         x: Float[Array, " *normalized_shape"],
         *,
-        key: PRNGKeyArray | None = None,
+        rngs: Rngs | None = None,
     ) -> Array:
-        (x,) = self.maybe_prepare_module((x,))
+        (x,) = self.maybe_prepare_input((x,))
 
         nd = x.ndim
         k = len(self.normalized_shape)
@@ -92,11 +93,9 @@ class LayerNorm(PrepareableModule):
 
         return self.maybe_prepare_output(y)
 
-    def init_weights(self, *, key: PRNGKeyArray | None = None) -> "LayerNorm":
-        if key is None:
-            raise ValueError("A PRNGKeyArray 'key' must be provided.")
-
-        w_key, b_key = jax.random.split(key, 2)
+    def init_weights(self, *, rngs: Rngs) -> "LayerNorm":
+        w_key = rngs.make_rng("params")
+        b_key = rngs.make_rng("params")
 
         if not self.elementwise_affine:
             return self

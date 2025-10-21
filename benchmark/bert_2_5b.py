@@ -8,8 +8,10 @@ Config:
 - FSDP: Each BertLayer sharded on fsdp axis
 
 Timing results (single run):
-- Transform: TBD
-- Unbox: TBD
+- 89s
+- 78 s without transformation (single device array)
+- 87s so almost free apply_transforms?
+- 80s without unbox_params (just transforms)
 """
 
 import time
@@ -20,12 +22,15 @@ import jax.numpy as jnp
 import numpy as np
 from jax.sharding import Mesh, PartitionSpec as P, NamedSharding, SingleDeviceSharding
 from transformers.models.bert.configuration_bert import BertConfig
+import optax
 
 from src.distributed.params import fully_shard, unbox_params
 from src.filter import apply_transforms
+from src.training_utils import make_module_opts
 from src.distributed.tp import column_parallel, row_parallel
 from src.models.bert import BertModel
 from src.nn import Linear
+from src.modeling_utils import Rngs
 
 
 def create_bert_large_config():
@@ -39,6 +44,8 @@ def create_bert_large_config():
         vocab_size=30522,
         type_vocab_size=2,
         _attn_implementation="sdpa",
+        hidden_dropout_prob=0.0,
+        attention_probs_dropout_prob=0.0,
     )
 
 
@@ -113,92 +120,43 @@ def create_model_sharded(config, key, mesh):
 
 
 def main():
-    devices = jax.devices()
-    print(f"Number of devices: {len(devices)}")
-    print(f"Device type: {devices[0].platform}")
-
-    # Create 2D mesh: tp=2, fsdp=2 (for 4 TPU devices)
-    mesh_shape = (2, 2)
-    mesh = Mesh(np.array(devices[:4]).reshape(mesh_shape), axis_names=("tp", "fsdp"))
-    print(f"Mesh shape: {mesh_shape}, axes: tp={mesh_shape[0]}, fsdp={mesh_shape[1]}")
-
-    # Create model
     config = create_bert_large_config()
-    print(f"\nModel config:")
-    print(f"  Hidden size: {config.hidden_size}")
-    print(f"  Num layers: {config.num_hidden_layers}")
-    print(f"  Num heads: {config.num_attention_heads}")
-    print(f"  Intermediate size: {config.intermediate_size}")
-
-    # Estimate parameter count
-    # Embedding: vocab_size * hidden_size + max_pos * hidden_size + type_vocab * hidden_size
-    embed_params = (
-        config.vocab_size + config.max_position_embeddings + config.type_vocab_size
-    ) * config.hidden_size
-    # Per layer: 4 * hidden^2 (Q,K,V,O) + 2 * hidden * intermediate (FFN) + layer norms
-    layer_params = (
-        4 * config.hidden_size**2 + 2 * config.hidden_size * config.intermediate_size
-    ) * config.num_hidden_layers
-    total_params = embed_params + layer_params
-    print(f"  Estimated params: {total_params / 1e9:.2f}B")
-
-    key = jax.random.PRNGKey(42)
-
-    # Create model with arrays sharded across all devices from the start
-    print("\nCreating model with sharded arrays...")
-    model = create_model_sharded(config, key, mesh)
-
-    # Create transform dictionaries
-    print("\nCreating transform dictionaries...")
-    tp_transforms, fsdp_transforms = create_transform_dict(
-        mesh, config.num_hidden_layers
+    key = jax.random.key(10)
+    mesh = jax.make_mesh(
+        (
+            2,
+            2,
+        ),
+        ("fsdp", "tp"),
     )
-    print(f"  TP patterns: {len(tp_transforms)}")
-    print(f"  FSDP patterns: {len(fsdp_transforms)}")
+    tp, fsdp = create_transform_dict(mesh, config.num_hidden_layers)
+    grad_tx = optax.sgd(1e-3)
 
-    # Benchmark apply_transforms
-    print("\n" + "=" * 60)
-    print("Benchmarking apply_transforms with TP + FSDP")
-    print("=" * 60)
+    @jax.jit
+    def init_model():
+        module = BertModel(config, rngs = Rngs(params = jax.random.key(10)))
+        module = unbox_params(module)
+        return module
 
-    # Single timed run
-    print("\nApplying transforms...")
-    start = time.perf_counter()
-    model = apply_transforms(model, tp_transforms)
-    transformed_model = apply_transforms(model, fsdp_transforms)
-    jax.block_until_ready(jax.tree.leaves(transformed_model))
-    end = time.perf_counter()
 
-    transform_time = end - start
-    print(f"Transform time: {transform_time:.4f}s")
+    start = time.monotonic()
+    with mesh:
+        module = init_model()
 
-    # Verify sharding BEFORE unboxing
+    jax.block_until_ready(jax.tree.leaves(module))
+    diff = time.monotonic() - start
+    print(f"JIT init time: {diff:.2f}s")
+
+    print("\nVerifying shardings...")
+    first_layer = module.encoder.layer[0]
     print(
-        "\nVerifying sharding (before unbox) on encoder.layer.0.attention.self.query:"
+        f"  Q weight sharding: {first_layer.attention.self.query.weight.sharding.spec}"
     )
-    sample_weight_before = transformed_model.encoder.layer[
-        0
-    ].attention.self.query.weight.value
-    print(f"  Shape: {sample_weight_before.shape}")
-    print(f"  Sharding: {sample_weight_before.sharding}")
-
-    # Unbox and verify
-    print("\nUnboxing params...")
-    start = time.perf_counter()
-    unboxed = unbox_params(transformed_model, mesh)
-    jax.block_until_ready(jax.tree.leaves(unboxed))
-    end = time.perf_counter()
-
-    unbox_time = end - start
-    print(f"Unbox time: {unbox_time:.4f}s")
-
-    # Verify sharding AFTER unboxing (should be None)
-    print("\nVerifying after unbox:")
-    sample_weight_after = unboxed.encoder.layer[0].attention.self.query.weight
-    print(f"  Shape: {sample_weight_after.shape}")
-    print(f"  Sharding: {sample_weight_after.sharding}")
-
-    print("\nDone!")
+    print(
+        f"  output weight sharding: {first_layer.attention.output.dense.weight.sharding.spec}"
+    )
+    print(f"  FFN w1 sharding: {first_layer.intermediate.dense.weight.sharding.spec}")
+    print(f"  FFN w2 sharding: {first_layer.output.dense.weight.sharding.spec}")
 
 
 if __name__ == "__main__":

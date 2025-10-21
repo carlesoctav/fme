@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import contextlib
 import functools
 import logging
@@ -35,7 +33,7 @@ def rank_zero(fn: tp.Callable[..., A]) -> tp.Callable[..., A | None]:
 @contextlib.contextmanager
 def wallclock(
     name: str,
-    logger: Logger,
+    logger: "Logger",
     step: int | None = None,
     noop: bool = False,
 ):

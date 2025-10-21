@@ -174,15 +174,17 @@ def main():
     # Verify some shardings
     print("\nVerifying shardings...")
     first_layer = final_model.encoder.layer[0]
-    print(
-        f"  Q weight sharding: {first_layer.attention.self.query.weight.sharding.spec}"
-    )
-    print(
-        f"  output weight sharding: {first_layer.attention.output.dense.weight.sharding.spec}"
-    )
-    print(f"  FFN w1 sharding: {first_layer.intermediate.dense.weight.sharding.spec}")
-    print(f"  FFN w2 sharding: {first_layer.output.dense.weight.sharding.spec}")
+    print(f"DEBUGPRINT[31]: bert_1B.py:176: first_layer={first_layer}")
 
+    # print(
+    #     f"  Q weight sharding: {first_layer.attention.self.query.weight.sharding.spec}"
+    # )
+    # print(
+    #     f"  output weight sharding: {first_layer.attention.output.dense.weight.sharding.spec}"
+    # )
+    # print(f"  FFN w1 sharding: {first_layer.intermediate.dense.weight.sharding.spec}")
+    # print(f"  FFN w2 sharding: {first_layer.output.dense.weight.sharding.spec}")
+    #
     print("\nDone!")
 
 

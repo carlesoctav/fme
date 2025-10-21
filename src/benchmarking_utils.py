@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import logging
 import typing as tp
 
@@ -35,6 +33,8 @@ ParallelismPlans = (
 
 ModuleInput = tp.TypeVar("_ModuleInput", M, tp.Sequence[M])
 OptimizerInput = tp.TypeVar("_OptimizerInput", O, tp.Sequence[O])
+
+
 def benchmark_loop(
     module: ModuleInput,
     optimizer: OptimizerInput,
@@ -169,4 +169,3 @@ def benchmark_loop(
     finally:
         LOGGER.info("Benchmark loop ended")
     return module, optimizer, stats
-

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import typing as tp
 
 import logging
@@ -26,9 +24,8 @@ class SufficientMetric:
         self._count = 0
         self._show_log_every_n_steps_warning = False
 
-    def __iadd__(self, other: tp.Any) -> SufficientMetric:
+    def __iadd__(self, other: tp.Any) -> "SufficientMetric":
         return self.__add__(other)
-
 
     def reduce_fn(self, tree, count) -> tp.Callable[[tp.Any], tp.Any] | None:
         def _reduce_leaf(x: tp.Any) -> tp.Any:
@@ -38,9 +35,10 @@ class SufficientMetric:
                     return float(value / count)
                 return float(value / normaliser)
             return float(x)
+
         return jtu.tree_map(_reduce_leaf, tree, is_leaf=_is_tuple_leaf)
 
-    def add(self, other: tp.Any) -> SufficientMetric:
+    def add(self, other: tp.Any) -> "SufficientMetric":
         if other is None:
             return self
 
@@ -57,7 +55,7 @@ class SufficientMetric:
             )
         return self
 
-    def __add__(self, other: tp.Any) -> SufficientMetric:
+    def __add__(self, other: tp.Any) -> "SufficientMetric":
         return self.add(other)
 
     def step_metrics(self) -> dict[str, float]:
@@ -65,7 +63,7 @@ class SufficientMetric:
             return {}
         reduced = self.reduce_fn(self._last_added, count=1)
         reduced = {f"{self.name}/{k}": v for k, v in reduced.items()}
-        return reduced 
+        return reduced
 
     def per_N_metrics(self, step: int, *, skip_check: bool = False) -> dict[str, float]:
         if self.per_N_metrics_buffer.get(step) is not None:
@@ -93,7 +91,7 @@ class SufficientMetric:
         self._buffer_tree = None
         self._count = 0
         reduced = {f"{self.name}_per_N/{k}": v for k, v in reduced.items()}
-        return reduced 
+        return reduced
 
     def summary(self) -> dict[str, tp.Any]:
         return {
@@ -102,13 +100,11 @@ class SufficientMetric:
             "per_N_cache": dict(self.per_N_metrics_buffer),
         }
 
-    def _reduce_tree(self, tree: tp.Any, count = 1) -> tp.Any:
+    def _reduce_tree(self, tree: tp.Any, count=1) -> tp.Any:
         if tree is None:
             return {}
 
         return self.reduce_fn(tree)
-
-
 
 
 __all__ = ["SufficientMetric"]

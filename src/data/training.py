@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import logging
 import time
 import typing as tp
@@ -94,7 +92,7 @@ class IterDatasetWithInputSpec(IterDataset[_T]):
         self._pspec = pspec or PartitionSpec()
         self._mesh = mesh
 
-    def __iter__(self) -> IterDatasetWithInputSpec:
+    def __iter__(self) -> "IterDatasetWithInputSpec":
         parent_iter = self._parent.__iter__()
         return _DatasetIteratorWithInputSpec(
             parent_iter, pspec=self._pspec, mesh=self._mesh

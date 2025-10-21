@@ -1,0 +1,65 @@
+"""
+Benchmark jitted initialization of BERT 2.5B model (Flax).
+
+This measures compilation time by wrapping init in @jax.jit.
+"""
+
+import time
+import jax
+import jax.numpy as jnp
+from flaxformer.architectures.bert.bert import BertEncoder
+
+
+def create_bert_large_config():
+    return {
+        "vocab_size": 30522,
+        "hidden_size": 2560,
+        "intermediate_dim": 10240,
+        "max_length": 512,
+        "num_segments": 2,
+        "num_hidden_layers": 32,
+        "num_attention_heads": 20,
+        "dropout_rate": 0.0,
+    }
+
+
+def main():
+    config = create_bert_large_config()
+    key = jax.random.key(10)
+
+    encoder = BertEncoder(
+        vocab_size=config["vocab_size"],
+        hidden_size=config["hidden_size"],
+        intermediate_dim=config["intermediate_dim"],
+        max_length=config["max_length"],
+        num_segments=config["num_segments"],
+        num_hidden_layers=config["num_hidden_layers"],
+        num_attention_heads=config["num_attention_heads"],
+        dropout_rate=config["dropout_rate"],
+    )
+
+    dummy_input = {
+        "token_ids": jnp.zeros((1, config["max_length"]), dtype=jnp.int32),
+        "position_ids": jnp.arange(config["max_length"])[None, :],
+        "segment_ids": jnp.zeros((1, config["max_length"]), dtype=jnp.int32),
+        "input_mask": jnp.ones((1, config["max_length"]), dtype=jnp.int32),
+    }
+
+    @jax.jit
+    def init_module():
+        return encoder.init(
+            key,
+            **dummy_input,
+            enable_dropout=False,
+        )
+
+    print("Running jitted init (measures compilation + init)...")
+    start = time.monotonic()
+    params = init_module()
+    jax.block_until_ready(params)
+    diff = time.monotonic() - start
+    print(f"Flax jitted init time: {diff:.2f}s")
+
+
+if __name__ == "__main__":
+    main()

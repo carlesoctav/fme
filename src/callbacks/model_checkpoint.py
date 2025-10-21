@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import logging
 import typing as tp
 import warnings
@@ -113,7 +111,7 @@ class ModelCheckpoint:
     def save(
         self,
         module: tp.Any,
-        optimizer: Optimizer,
+        optimizer: "Optimizer",
         logs: Mapping[str, float] | None,
         step: int,
         force=False,

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from collections.abc import Callable
 
 import equinox as eqx
@@ -7,7 +5,7 @@ from jax import P
 from jax.sharding import Mesh
 
 from src import nn
-from ..module_utils import PrepareableModule, replace_prepare_hooks
+from ..modeling_utils import PrepareableModule, replace_prepare_hooks
 from .params import tensor_parallel
 
 
@@ -234,4 +232,3 @@ def prepare_input_output(
         prepare_input_fn=_prep_in,
         prepare_output_fn=_prep_out,
     )
-

@@ -9,7 +9,7 @@ from jaxtyping import Array, ArrayLike, Bool, Float, PRNGKeyArray
 
 from transformers import PretrainedConfig
 
-from ..module_utils import PrepareableModule
+from ..modeling_utils import PrepareableModule, Rngs
 
 
 def eager_dot_product_attention(
@@ -96,7 +96,7 @@ class AttentionModule(PrepareableModule):
         *,
         dropout_rate: float = 0.0,
         implementation: Literal["xla", "cudnn"] | None = None,
-        dropout_key: PRNGKeyArray | None = None,
+        rngs: Rngs | None = None,
         broadcast_dropout: bool = True,
         **kwargs,
     ) -> Array:
@@ -123,11 +123,11 @@ class JaxNNAttentionModule(AttentionModule):
         mask: Array | None = None,
         *,
         dropout_rate: float = 0.0,
-        dropout_key: PRNGKeyArray | None = None,
+        rngs: Rngs | None = None,
         broadcast_dropout: bool = True,
         **kwargs,
     ) -> Array:
-        query, key, value, bias, mask = self.maybe_prepare_module(
+        query, key, value, bias, mask = self.maybe_prepare_input(
             (query, key, value, bias, mask)
         )
         if self.inference:
@@ -179,11 +179,11 @@ class EagerAttentionModule(AttentionModule):
         mask: Array | None = None,
         *,
         dropout_rate: float = 0.0,
-        dropout_key: PRNGKeyArray | None = None,
+        rngs: Rngs | None = None,
         broadcast_dropout: bool | None = None,
         **kwargs,
     ) -> Array:
-        query, key, value, bias, mask = self.maybe_prepare_module(
+        query, key, value, bias, mask = self.maybe_prepare_input(
             (query, key, value, bias, mask)
         )
         if mask.ndim == 3:
@@ -193,6 +193,12 @@ class EagerAttentionModule(AttentionModule):
 
         if self.inference:
             dropout_rate = 0.0
+
+        dropout_key = (
+            rngs.make_rng("dropout")
+            if rngs is not None and dropout_rate > 0.0
+            else None
+        )
 
         output = self.attn_fn(
             query,

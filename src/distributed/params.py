@@ -26,6 +26,7 @@ def infer_value_sharding(x):
 def is_darray(x: tp.Any) -> bool:
     return isinstance(x, ArrayWithSharding)
 
+
 def fully_shard(
     module: eqx.Module,
     mesh: Mesh,
@@ -74,10 +75,9 @@ def fully_shard(
         if not isinstance(leaf, ArrayWithSharding | Array):
             return leaf
 
-        value, sharding = infer_value_sharding(x) 
+        value, sharding = infer_value_sharding(leaf)
         if value is None:
             return leaf
-
 
         if len(sharding) != value.ndim:
             raise ValueError(
@@ -85,7 +85,8 @@ def fully_shard(
             )
 
         if any(
-            (p == axis_name) or (isinstance(p, tuple) and axis_name in p) for p in sharding
+            (p == axis_name) or (isinstance(p, tuple) and axis_name in p)
+            for p in sharding
         ):
             logging.warning(
                 f"Parameter {value.shape} with names {jax.tree_util.keystr(path)} already sharded on axis {axis_name}. the partition spec is {sharding}."
@@ -140,19 +141,6 @@ def tensor_parallel(
     min_weight_size: int = 0,
     skip_on_dim_mismatch: bool = True,
 ):
-    """
-    Shard parameters along a specific tensor dimension using the given mesh axis.
-
-    This is similar to `fully_shard` but gives explicit control on which
-    dimension to shard, enabling typical tensor-parallel patterns like
-    column-parallel and row-parallel layers.
-
-    - Validates that `axis_name` exists in `mesh`.
-    - Respects existing sharding on each leaf by computing the effective shape
-      after prior shardings.
-    - If the effective size of `dim_to_sharded` is divisible by `mesh[axis_name]`,
-      append `axis_name` to that pspec entry; otherwise leave unchanged and warn.
-    """
     if axis_name not in mesh.shape:
         raise ValueError(
             f"axis {axis_name} is not in mesh; mesh contains {tuple(mesh.shape.keys())}"
@@ -193,7 +181,7 @@ def tensor_parallel(
         if not isinstance(leaf, ArrayWithSharding | Array):
             return leaf
 
-        value, sharding = infer_value_sharding(leaf) 
+        value, sharding = infer_value_sharding(leaf)
         if value is None:
             return leaf
 
@@ -203,7 +191,8 @@ def tensor_parallel(
             )
 
         if any(
-            (p == axis_name) or (isinstance(p, tuple) and axis_name in p) for p in sharding
+            (p == axis_name) or (isinstance(p, tuple) and axis_name in p)
+            for p in sharding
         ):
             logging.warning(
                 f"Parameter {value.shape} with names {jax.tree_util.keystr(path)} already sharded on axis {axis_name}. the partition spec is {sharding}."
@@ -252,15 +241,28 @@ def tensor_parallel(
 
 
 
+def unbox_get_partition_spec(tree):
+    def maybe_has_shape(leaf): # already include array
+        if hasattr(leaf, "shape"):
+            return P()
 
-def unbox_params(module: eqx.Module, mesh: Mesh) -> eqx.Module:
+    def f(leaf):
+        if isinstance(leaf, ArrayWithSharding):
+            return P(*leaf.sharding) if isinstance(leaf.sharding, tuple) else P(leaf.sharding)
+        return maybe_has_shape(leaf)
+        
+    return jtu.tree_map(f, tree, is_leaf = is_darray)
+
+
+def unbox_params(module: eqx.Module) -> eqx.Module:
+    def is_leaf(x):
+        return isinstance(x, ArrayWithSharding) or isinstance(x, jax.Array)
+
     def _unbox(leaf):
         if not isinstance(leaf, ArrayWithSharding):
             if isinstance(leaf, jax.Array):
                 pspec = P()
-                if is_in_jit():
-                    return lax.with_sharding_constraint(leaf, pspec)
-                return jax.device_put(leaf, jax.sharding.NamedSharding(mesh, pspec))
+                return lax.with_sharding_constraint(leaf, pspec)
             return leaf
 
         value = leaf.value
@@ -276,11 +278,7 @@ def unbox_params(module: eqx.Module, mesh: Mesh) -> eqx.Module:
                 else P(leaf.sharding)
             )
 
-        if is_in_jit():
             return lax.with_sharding_constraint(value, pspec)
-        else:
-            sharding = jax.sharding.NamedSharding(mesh, pspec)
-            return jax.device_put(value, sharding)
 
-    with mesh:
-        return jtu.tree_map(_unbox, module, is_leaf=is_darray)
+
+    return jtu.tree_map(_unbox, module, is_leaf=is_leaf)

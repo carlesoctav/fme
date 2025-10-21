@@ -3,9 +3,9 @@ import jax
 import jax.numpy as jnp
 from equinox import field
 from jax.nn.initializers import Initializer, normal
-from jaxtyping import Array, Int, PRNGKeyArray
+from jaxtyping import Array, Int
 
-from ..module_utils import PrepareableModule
+from ..modeling_utils import PrepareableModule, Rngs
 
 
 default_init = normal(stddev=0.02)
@@ -23,10 +23,10 @@ class Embedding(PrepareableModule):
         embedding_dim: int,
         *,
         initializer: Initializer = None,
-        key: PRNGKeyArray,
+        rngs: Rngs,
         weight_spec: str | tuple[str, ...] | None = None,
     ):
-        wkey, _ = jax.random.split(key, 2)
+        wkey = rngs.make_rng("params")
 
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
@@ -39,16 +39,15 @@ class Embedding(PrepareableModule):
         self,
         x: Int[Array, " ..."],
         *,
-        key: PRNGKeyArray | None = None,
+        rngs: Rngs | None = None,
     ) -> Array:
-        (x,) = self.maybe_prepare_module((x,))
+        (x,) = self.maybe_prepare_input((x,))
         output = self.weight[x]
         return self.maybe_prepare_output(output)
 
-    def init_weights(self, *, key: PRNGKeyArray | None = None) -> "Embedding":
-        if key is None:
-            raise ValueError("A PRNGKeyArray 'key' must be provided.")
-
-        new_w = self.initializer(key, (self.num_embeddings, self.embedding_dim))
+    def init_weights(self, *, rngs: Rngs) -> "Embedding":
+        new_w = self.initializer(
+            rngs.make_rng("params"), (self.num_embeddings, self.embedding_dim)
+        )
         new_self = eqx.tree_at(lambda m: m.weight, self, new_w)
         return new_self

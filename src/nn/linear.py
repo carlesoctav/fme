@@ -1,10 +1,9 @@
 import equinox as eqx
 import jax
-import jax.numpy as jnp
 from jax.nn.initializers import Initializer, kaiming_normal, zeros
-from jaxtyping import Array, Float, PRNGKeyArray
+from jaxtyping import Array, Float
 
-from ..module_utils import PrepareableModule
+from ..modeling_utils import PrepareableModule, Rngs
 
 
 default_init = kaiming_normal()
@@ -25,11 +24,10 @@ class Linear(PrepareableModule):
         use_bias: bool = True,
         *,
         initializer: Initializer = None,
-        key: PRNGKeyArray = None,
-        weight_spec: str | tuple[str, ...] | None = None,
-        bias_spec: str | tuple[str, ...] | None = None,
+        rngs: Rngs,
     ):
-        wkey, bkey = jax.random.split(key, 2)
+        wkey = rngs.make_rng("params")
+        bkey = rngs.make_rng("params")
 
         self.in_features = in_features
         self.out_features = out_features
@@ -47,9 +45,9 @@ class Linear(PrepareableModule):
         self,
         x: Float[Array, "... in_features"],
         *,
-        key: PRNGKeyArray | None = None,
+        rngs: Rngs | None = None,
     ):
-        (x,) = self.maybe_prepare_module((x,))
+        (x,) = self.maybe_prepare_input((x,))
 
         output = x @ self.weight.T
         if self.use_bias and self.bias is not None:
@@ -57,11 +55,9 @@ class Linear(PrepareableModule):
 
         return self.maybe_prepare_output(output)
 
-    def init_weights(self, *, key: PRNGKeyArray | None = None) -> "Linear":
-        if key is None:
-            raise ValueError("A PRNGKeyArray 'key' must be provided.")
-
-        k_w, k_b = jax.random.split(key, 2)
+    def init_weights(self, *, rngs: Rngs) -> "Linear":
+        k_w = rngs.make_rng("params")
+        k_b = rngs.make_rng("params")
         w_shape = (self.out_features, self.in_features)
         new_w = self.initializer(k_w, w_shape)
 

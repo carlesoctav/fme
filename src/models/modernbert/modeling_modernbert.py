@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import copy
 import warnings
 from collections.abc import Callable
@@ -18,6 +16,7 @@ from ... import nn
 from ...distributed.array import DArray
 from ...huggingface import HuggingFaceCompatibleModule
 from ...masking_utils import make_full_mask, slliding_window_full_mask
+from ...modeling_utils import Rngs
 from ...nn import (
     AttentionModule,
     make_attention_module,
@@ -130,10 +129,8 @@ class ModernBertAttention(eqx.Module):
         *,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
-        key: PRNGKeyArray,
+        rngs: Rngs,
     ):
-        qkv_key, out_key = jax.random.split(key, 2)
-
         if config.hidden_size % config.num_attention_heads != 0:
             raise ValueError(
                 "Hidden size must be divisible by the number of attention heads "
@@ -148,13 +145,13 @@ class ModernBertAttention(eqx.Module):
             config.hidden_size,
             3 * config.hidden_size,
             use_bias=config.attention_bias,
-            key=qkv_key,
+            rngs=rngs,
         )
         self.Wo = nn.Linear(
             config.hidden_size,
             config.hidden_size,
             use_bias=config.attention_bias,
-            key=out_key,
+            rngs=rngs,
         )
         self.out_drop = nn.Dropout(p=config.attention_dropout)
         self.attn_dropout_rate = float(config.attention_dropout)
@@ -185,14 +182,10 @@ class ModernBertAttention(eqx.Module):
         attention_mask: Bool[Array, "B T T"] | Bool[Array, "B T N T"] | None = None,
         position_ids: Int[Array, "B T"] | None = None,
         *,
-        key: PRNGKeyArray | None = None,
+        rngs: Rngs | None = None,
     ) -> Float[Array, "B T H"]:
         if hidden_states.ndim < 2:
             raise ValueError("hidden_states must be (..., seq_len, hidden_size)")
-
-        attn_key, out_key = (
-            jax.random.split(key, 2) if key is not None else (None, None)
-        )
 
         batch_shape = tuple(hidden_states.shape[:-2])
         seq_len = hidden_states.shape[-2]
@@ -222,12 +215,12 @@ class ModernBertAttention(eqx.Module):
             mask=attention_mask,
             bias=None,
             dropout_rate=self.attn_dropout_rate,
-            dropout_key=attn_key,
+            rngs=rngs,
         )
 
         attn_output = attn_output.reshape(*batch_shape, seq_len, self.all_head_size)
         attn_output = self.Wo(attn_output)
-        attn_output = self.out_drop(attn_output, key=out_key)
+        attn_output = self.out_drop(attn_output, rngs=rngs)
         return attn_output
 
 
@@ -243,20 +236,19 @@ class ModernBertMLP(eqx.Module):
         *,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
-        key: PRNGKeyArray,
+        rngs: Rngs,
     ):
-        wi_key, wo_key = jax.random.split(key, 2)
         self.Wi = nn.Linear(
             config.hidden_size,
             2 * int(config.intermediate_size),
             use_bias=config.mlp_bias,
-            key=wi_key,
+            rngs=rngs,
         )
         self.Wo = nn.Linear(
             int(config.intermediate_size),
             config.hidden_size,
             use_bias=config.mlp_bias,
-            key=wo_key,
+            rngs=rngs,
         )
         self.act = _get_activation(config.hidden_activation)
         self.drop = nn.Dropout(p=config.mlp_dropout)
@@ -265,13 +257,13 @@ class ModernBertMLP(eqx.Module):
         self,
         hidden_states: Float[Array, "B T H"],
         *,
-        key: PRNGKeyArray | None = None,
+        rngs: Rngs | None = None,
     ) -> Float[Array, "B T H"]:
         wi_out = self.Wi(hidden_states)
         input_part, gate = jnp.split(wi_out, 2, axis=-1)
         activated = self.act(input_part)
         gated = activated * gate
-        dropped = self.drop(gated, key=key)
+        dropped = self.drop(gated, rngs=rngs)
         return self.Wo(dropped)
 
 
@@ -289,9 +281,8 @@ class ModernBertEncoderLayer(eqx.Module):
         *,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
-        key: PRNGKeyArray,
+        rngs: Rngs,
     ):
-        attn_key, attn_norm_key, mlp_key, mlp_norm_key = jax.random.split(key, 4)
         if layer_id == 0:
             self.attn_norm = Identity()
         else:
@@ -299,26 +290,26 @@ class ModernBertEncoderLayer(eqx.Module):
                 config.hidden_size,
                 eps=config.norm_eps,
                 bias=config.norm_bias,
-                key=attn_norm_key,
+                rngs=rngs,
             )
         self.attention = ModernBertAttention(
             config,
             layer_id=layer_id,
             dtype=dtype,
             params_dtype=params_dtype,
-            key=attn_key,
+            rngs=rngs,
         )
         self.mlp_norm = nn.LayerNorm(
             config.hidden_size,
             eps=config.norm_eps,
             bias=config.norm_bias,
-            key=mlp_norm_key,
+            rngs=rngs,
         )
         self.mlp = ModernBertMLP(
             config,
             dtype=dtype,
             params_dtype=params_dtype,
-            key=mlp_key,
+            rngs=rngs,
         )
         self.use_global = (layer_id % max(config.global_attn_every_n_layers, 1)) == 0
 
@@ -329,27 +320,22 @@ class ModernBertEncoderLayer(eqx.Module):
         sliding_window_mask: Bool[Array, "B T T"] | None = None,
         position_ids: Int[Array, "B T"] | None = None,
         *,
-        key: PRNGKeyArray | None = None,
+        rngs: Rngs | None = None,
     ) -> Float[Array, "B T H"]:
-        attn_key, mlp_key = (
-            jax.random.split(key, 2) if key is not None else (None, None)
-        )
-
         residual = hidden_states
         normed = self.attn_norm(hidden_states)
-        # Select mask per layer type (global vs local)
         layer_mask = attention_mask if self.use_global else sliding_window_mask
         attn_out = self.attention(
             normed,
             attention_mask=layer_mask,
             position_ids=position_ids,
-            key=attn_key,
+            rngs=rngs,
         )
         hidden_states = residual + attn_out
 
         mlp_residual = hidden_states
         normed_mlp = self.mlp_norm(hidden_states)
-        mlp_out = self.mlp(normed_mlp, key=mlp_key)
+        mlp_out = self.mlp(normed_mlp, rngs=rngs)
         hidden_states = mlp_residual + mlp_out
 
         return hidden_states
@@ -364,16 +350,15 @@ class ModernBertEncoder(eqx.Module):
         *,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
-        key: PRNGKeyArray,
+        rngs: Rngs,
     ):
-        layer_keys = jax.random.split(key, config.num_hidden_layers)
         self.layers = tuple(
             ModernBertEncoderLayer(
                 config,
                 layer_id=layer_id,
                 dtype=dtype,
                 params_dtype=params_dtype,
-                key=layer_keys[layer_id],
+                rngs=rngs,
             )
             for layer_id in range(config.num_hidden_layers)
         )
@@ -385,21 +370,16 @@ class ModernBertEncoder(eqx.Module):
         sliding_window_mask: Bool[Array, "B T T"] | None = None,
         position_ids: Int[Array, "B T"] | None = None,
         *,
-        key: PRNGKeyArray | None = None,
+        rngs: Rngs | None = None,
     ) -> Float[Array, "B T H"]:
-        if key is not None:
-            layer_keys = jax.random.split(key, len(self.layers))
-        else:
-            layer_keys = [None] * len(self.layers)
-
         output = hidden_states
-        for layer, layer_key in zip(self.layers, layer_keys):
+        for layer in self.layers:
             output = layer(
                 output,
                 attention_mask=attention_mask,
                 sliding_window_mask=sliding_window_mask,
                 position_ids=position_ids,
-                key=layer_key,
+                rngs=rngs,
             )
         return output
 
@@ -415,19 +395,18 @@ class ModernBertEmbeddings(eqx.Module):
         *,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
-        key: PRNGKeyArray,
+        rngs: Rngs,
     ):
-        tok_key, norm_key = jax.random.split(key, 2)
         self.tok_embeddings = nn.Embedding(
             num_embeddings=config.vocab_size,
             embedding_dim=config.hidden_size,
-            key=tok_key,
+            rngs=rngs,
         )
         self.norm = nn.LayerNorm(
             config.hidden_size,
             eps=config.norm_eps,
             bias=config.norm_bias,
-            key=norm_key,
+            rngs=rngs,
         )
         self.drop = nn.Dropout(p=config.embedding_dropout)
 
@@ -436,7 +415,7 @@ class ModernBertEmbeddings(eqx.Module):
         input_ids: Int[Array, "B T"] | None = None,
         inputs_embeds: Float[Array, "B T H"] | None = None,
         *,
-        key: PRNGKeyArray | None = None,
+        rngs: Rngs | None = None,
     ) -> Float[Array, "B T H"]:
         if inputs_embeds is not None:
             hidden_states = inputs_embeds
@@ -446,7 +425,7 @@ class ModernBertEmbeddings(eqx.Module):
             raise ValueError("Either input_ids or inputs_embeds must be provided")
 
         hidden_states = self.norm(hidden_states)
-        hidden_states = self.drop(hidden_states, key=key)
+        hidden_states = self.drop(hidden_states, rngs=rngs)
         return hidden_states
 
 
@@ -541,27 +520,25 @@ class ModernBertModel(
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
         store_config: bool = True,
-        key: PRNGKeyArray,
+        rngs: Rngs,
     ):
-        embed_key, encoder_key, norm_key = jax.random.split(key, 3)
-
         self.embeddings = ModernBertEmbeddings(
             config,
             dtype=dtype,
             params_dtype=params_dtype,
-            key=embed_key,
+            rngs=rngs,
         )
         self.encoder = ModernBertEncoder(
             config,
             dtype=dtype,
             params_dtype=params_dtype,
-            key=encoder_key,
+            rngs=rngs,
         )
         self.final_norm = nn.LayerNorm(
             config.hidden_size,
             eps=config.norm_eps,
             bias=config.norm_bias,
-            key=norm_key,
+            rngs=rngs,
         )
 
         if store_config:
@@ -577,16 +554,12 @@ class ModernBertModel(
         position_ids: Int[Array, "B T"] | None = None,
         inputs_embeds: Float[Array, "B T H"] | None = None,
         *,
-        key: PRNGKeyArray | None = None,
+        rngs: Rngs | None = None,
     ) -> Float[Array, "B T H"]:
-        embed_key, encoder_key = (
-            jax.random.split(key, 2) if key is not None else (None, None)
-        )
-
         hidden_states = self.embeddings(
             input_ids,
             inputs_embeds=inputs_embeds,
-            key=embed_key,
+            rngs=rngs,
         )
 
         # Create position_ids if not provided, respecting attention_mask
@@ -626,7 +599,7 @@ class ModernBertModel(
             attention_mask=full_mask,
             sliding_window_mask=sliding_mask,
             position_ids=position_ids,
-            key=encoder_key,
+            rngs=rngs,
         )
         hidden_states = self.final_norm(hidden_states)
         return hidden_states
@@ -643,28 +616,27 @@ class ModernBertPredictionHead(eqx.Module):
         *,
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
-        key: PRNGKeyArray,
+        rngs: Rngs,
     ):
-        dense_key, norm_key = jax.random.split(key, 2)
         self.dense = nn.Linear(
             config.hidden_size,
             config.hidden_size,
             use_bias=config.classifier_bias,
-            key=dense_key,
+            rngs=rngs,
         )
         self.act = _get_activation(config.classifier_activation)
         self.norm = nn.LayerNorm(
             config.hidden_size,
             eps=config.norm_eps,
             bias=config.norm_bias,
-            key=norm_key,
+            rngs=rngs,
         )
 
     def __call__(
         self,
         hidden_states: Float[Array, "B T H"],
         *,
-        key: PRNGKeyArray | None = None,
+        rngs: Rngs | None = None,
     ) -> Float[Array, "B T H"]:
         out = self.dense(hidden_states)
         out = self.act(out)
@@ -689,27 +661,26 @@ class ModernBertForMaskedLM(
         dtype: jnp.dtype = jnp.float32,
         params_dtype: jnp.dtype = jnp.float32,
         store_config: bool = True,
-        key: PRNGKeyArray,
+        rngs: Rngs,
     ):
-        model_key, head_key, decoder_key = jax.random.split(key, 3)
         self.model = ModernBertModel(
             config,
             dtype=dtype,
             params_dtype=params_dtype,
             store_config=False,
-            key=model_key,
+            rngs=rngs,
         )
         self.head = ModernBertPredictionHead(
             config,
             dtype=dtype,
             params_dtype=params_dtype,
-            key=head_key,
+            rngs=rngs,
         )
         self.decoder = nn.Linear(
             config.hidden_size,
             config.vocab_size,
             use_bias=config.decoder_bias,
-            key=decoder_key,
+            rngs=rngs,
         )
         if store_config:
             self.config = config
@@ -724,20 +695,17 @@ class ModernBertForMaskedLM(
         segment_ids: Int[Array, "B T"] | None = None,
         inputs_embeds: Float[Array, "B T H"] | None = None,
         *,
-        key: PRNGKeyArray | None = None,
+        rngs: Rngs | None = None,
     ) -> Float[Array, "B T V"]:
-        model_key, head_key = (
-            jax.random.split(key, 2) if key is not None else (None, None)
-        )
         hidden_states = self.model(
             input_ids,
             attention_mask=attention_mask,
             segment_ids=segment_ids,
             position_ids=position_ids,
             inputs_embeds=inputs_embeds,
-            key=model_key,
+            rngs=rngs,
         )
-        hidden_states = self.head(hidden_states, key=head_key)
+        hidden_states = self.head(hidden_states, rngs=rngs)
         logits = self.decoder(hidden_states)
         return logits
 

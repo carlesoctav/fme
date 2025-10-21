@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import dataclasses as dc
 from collections.abc import Callable, Sequence
 import typing as tp
@@ -32,9 +30,13 @@ class EnsureMapDataset(BaseDatasetTransform):
             try:
                 import datasets as hf_datasets  # pylint: disable=import-error
             except ImportError as exc:  # pragma: no cover - import guard
-                raise ImportError("datasets package is required for huggingface datasets") from exc
+                raise ImportError(
+                    "datasets package is required for huggingface datasets"
+                ) from exc
             if not isinstance(dataset, hf_datasets.Dataset):
-                raise TypeError("Expected a `datasets.Dataset` instance for huggingface data")
+                raise TypeError(
+                    "Expected a `datasets.Dataset` instance for huggingface data"
+                )
             return grain.MapDataset.source(dataset)
         if self.dataset_type == "arrayrecord":
             from grain import sources
@@ -48,14 +50,18 @@ class EnsureMapDataset(BaseDatasetTransform):
                 data_source = sources.ArrayRecordDataSource(list(dataset))
                 return grain.MapDataset.source(data_source)
             raise TypeError("Unsupported input for arrayrecord dataset type")
-        raise NotImplementedError(f"Dataset type {self.dataset_type!r} is not supported")
+        raise NotImplementedError(
+            f"Dataset type {self.dataset_type!r} is not supported"
+        )
 
 
 @dc.dataclass
 class ToIterDataset(BaseDatasetTransform):
     """Convert map dataset to iter dataset if required."""
 
-    def __call__(self, dataset: grain.MapDataset | grain.IterDataset) -> grain.IterDataset:
+    def __call__(
+        self, dataset: grain.MapDataset | grain.IterDataset
+    ) -> grain.IterDataset:
         if isinstance(dataset, grain.IterDataset):
             return dataset
         return dataset.to_iter_dataset()
@@ -69,8 +75,12 @@ class ApplyFirstFitPacking(BaseDatasetTransform):
     num_packing_bins: int | None = None
     shuffle_bins: bool = True
 
-    def __call__(self, dataset: grain.IterDataset | grain.MapDataset) -> grain.IterDataset:
-        if not isinstance(dataset, grain.IterDataset):  # pragma: no cover - sanity guard
+    def __call__(
+        self, dataset: grain.IterDataset | grain.MapDataset
+    ) -> grain.IterDataset:
+        if not isinstance(
+            dataset, grain.IterDataset
+        ):  # pragma: no cover - sanity guard
             dataset = dataset.to_iter_dataset()
         bins = self.num_packing_bins or max(self.length_struct.values())
         packed = grain.experimental.FirstFitPackIterDataset(
@@ -89,10 +99,14 @@ class BatchDataset(BaseDatasetTransform):
     batch_size: int
     drop_remainder: bool = True
 
-    def __call__(self, dataset: grain.MapDataset | grain.IterDataset) -> grain.IterDataset:
+    def __call__(
+        self, dataset: grain.MapDataset | grain.IterDataset
+    ) -> grain.IterDataset:
         if isinstance(dataset, grain.MapDataset):
             dataset = dataset.to_iter_dataset()
-        return dataset.batch(batch_size=self.batch_size, drop_remainder=self.drop_remainder)
+        return dataset.batch(
+            batch_size=self.batch_size, drop_remainder=self.drop_remainder
+        )
 
 
 @dc.dataclass
@@ -103,14 +117,20 @@ class BatchRampUpDataset(BaseDatasetTransform):
     rampup_factors: dict[str, float]
     drop_remainder: bool = True
 
-    def __call__(self, dataset: grain.MapDataset | grain.IterDataset) -> grain.IterDataset:
+    def __call__(
+        self, dataset: grain.MapDataset | grain.IterDataset
+    ) -> grain.IterDataset:
         if isinstance(dataset, grain.MapDataset):
             dataset = dataset.to_iter_dataset()
         schedule = _build_batch_schedule(self.batch_size, self.rampup_factors)
-        return _BatchRampUpIterDataset(dataset, schedule, drop_remainder=self.drop_remainder)
+        return _BatchRampUpIterDataset(
+            dataset, schedule, drop_remainder=self.drop_remainder
+        )
 
 
-def _build_batch_schedule(batch_size: int, factors: dict[str, float]) -> Callable[[int], int]:
+def _build_batch_schedule(
+    batch_size: int, factors: dict[str, float]
+) -> Callable[[int], int]:
     parsed = sorted((int(step), scale) for step, scale in factors.items())
 
     def schedule(step: int) -> int:
