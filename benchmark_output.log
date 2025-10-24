@@ -1,0 +1,44 @@
+
+=== Testing eqx.filter_jit (make_train_step) ===
+Function creation time: 0.001s
+Traceback (most recent call last):
+  File "/mnt/carles/fme/side_quest/bert-quest/benchmark/compare_jit_methods_dropout.py", line 324, in <module>
+    main()
+  File "/mnt/carles/fme/side_quest/bert-quest/benchmark/compare_jit_methods_dropout.py", line 284, in main
+    filter_jit_stats = test_filter_jit(model, optimizer, train_loader, key)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/side_quest/bert-quest/benchmark/compare_jit_methods_dropout.py", line 105, in test_filter_jit
+    current_model, current_opt, aux = train_step(
+                                      ^^^^^^^^^^^
+  File "/mnt/carles/fme/.venv/lib/python3.11/site-packages/equinox/_jit.py", line 209, in __call__
+    return _call(self, False, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/.venv/lib/python3.11/site-packages/equinox/_jit.py", line 263, in _call
+    marker, _, _ = out = jit_wrapper._cached(
+                         ^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/src/training_utils.py", line 256, in _step
+    (_, aux), grad = grad_fn(module, optimizer, batch, key=key)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/side_quest/bert-quest/benchmark/compare_jit_methods_dropout.py", line 51, in loss_function
+    logits = model(
+             ^^^^^^
+  File "/mnt/carles/fme/src/models/bert/modeling_bert.py", line 648, in __call__
+    sequence_output = self.bert(
+                      ^^^^^^^^^^
+  File "/mnt/carles/fme/src/models/bert/modeling_bert.py", line 495, in __call__
+    hidden_states = self.embeddings(
+                    ^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/src/models/bert/modeling_bert.py", line 74, in __call__
+    inputs_embeddings = self.word_embeddings(input_ids)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/src/nn/embedding.py", line 44, in __call__
+    (x,) = self.maybe_prepare_module((x,))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/.venv/lib/python3.11/site-packages/equinox/_module/_module.py", line 549, in __getattribute__
+    out = super().__getattribute__(name)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'Embedding' object has no attribute 'maybe_prepare_module'. Did you mean: 'maybe_prepare_input'?
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+/home/carlesoctav/.pyenv/versions/3.11.13/lib/python3.11/multiprocessing/resource_tracker.py:254: UserWarning: resource_tracker: There appear to be 16 leaked shared_memory objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '

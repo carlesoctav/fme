@@ -3,7 +3,8 @@ from collections.abc import Iterable
 
 import equinox as eqx
 import jax
-from jaxtyping import PRNGKeyArray
+import jax.numpy as jnp
+from jaxtyping import PRNGKeyArray, Int
 
 
 PrepareInputFn = tp.Callable[[tp.Any, tuple], tuple]
@@ -62,14 +63,27 @@ def replace_prepare_hooks(
     return new_module
 
 
-class Rngs:
-    __slots__ = ("_keys", "_counters")
+class Rngs(eqx.Module):
+    _keys: dict[str, PRNGKeyArray]
+    _counters: dict[str, Int[jax.Array, ""]] 
 
     def __init__(self, **named_keys: PRNGKeyArray):
         if not named_keys:
             raise ValueError("Rngs requires at least one named key, e.g. params=...")
-        self._keys: dict[str, PRNGKeyArray] = dict(named_keys)
-        self._counters: dict[str, int] = {name: 0 for name in named_keys}
+
+        keys: dict[str, PRNGKeyArray] = {}
+        for name, key in named_keys.items():
+            if not isinstance(key, jax.Array):
+                raise TypeError(
+                    "Rngs expects JAX PRNGKey arrays; received type "
+                    f"{type(key)!r} for stream '{name}'."
+                )
+            keys[name] = key
+
+
+        self._keys = keys
+        self._counters = {name: jnp.asarray(0, dtype = jnp.int32) for name in named_keys}
+
 
     def make_rng(self, name: str) -> PRNGKeyArray:
         if name not in self._keys:
@@ -82,3 +96,26 @@ class Rngs:
 
     def keys(self) -> Iterable[str]:
         return self._keys.keys()
+
+    def split(self, nums: int) -> tp.Sequence["Rngs"]:
+        split_keys: dict[str, jax.Array] = {
+            name: jax.random.split(key, nums) for name, key in self._keys.items()
+        }
+
+        results: list[Rngs] = []
+        for i in range(nums):
+            new_keys = {name: value[i] for name, value in split_keys.items()}
+            results.append(Rngs(**new_keys))
+
+        return tuple(results)
+
+def split_rngs(rngs: Rngs, nums: int) -> tp.Sequence[Rngs]:
+    split_keys: dict[str, jax.Array] = {
+        name: jax.random.split(key, nums) for name, key in rngs._keys.items()
+    }
+    results: list[Rngs] = []
+    for i in range(nums):
+        new_keys = {name: value[i] for name, value in split_keys.items()}
+        results.append(Rngs(**new_keys))
+
+    return tuple(results)

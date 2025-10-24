@@ -21,6 +21,7 @@ from .filter import apply_transforms, iter_module
 from .logger import Logger
 from .metrics import SufficientMetric
 from .utils import first_from, wallclock
+from .modeling_utils import Rngs
 
 
 LOGGER = logging.getLogger("distributed_logger")
@@ -36,7 +37,8 @@ Aux = dict[str, tp.Any]
 Loss = float
 Batch = tp.Any
 
-LossFn = tp.Callable[[M, O, Batch, PRNGKeyArray], tuple[Loss, Aux]]
+RngArg = PRNGKeyArray | Rngs | None
+LossFn = tp.Callable[[M, O, Batch, RngArg], tuple[Loss, Aux]]
 ParallelismPlans = (
     dict[str, tp.Callable[[M], M]] | tp.Sequence[dict[str, tp.Callable[[M], M]]]
 )
@@ -52,7 +54,8 @@ class TrainStepCallable(Protocol[ModuleInput, OptimizerInput]):
         module: ModuleInput,
         optimizer: OptimizerInput,
         batch: tp.Any,
-        key: PRNGKeyArray | None = None,
+        *,
+        rngs: Rngs | None = None,
     ) -> tuple[ModuleInput, OptimizerInput, Aux]: ...
 
 
@@ -63,30 +66,30 @@ class EvalStepCallable(Protocol[ModuleInput, OptimizerInput]):
         optimizer: OptimizerInput,
         batch: tp.Any,
         *,
-        key: PRNGKeyArray | None = None,
+        rngs: Rngs | None = None,
     ) -> Aux: ...
 
 
 class Optimizer(eqx.Module):
     opt_state: PyTree[Array]
     wrt: PyTree[AxisSpec] = eqx.field(static=True)
-    tx: GradTx = eqx.field(static=True)
+    grad_tx: GradTx = eqx.field(static=True)
 
     def __init__(
         self,
         module: M,
-        tx: GradTx,
-        wrt: Wrt,
+        grad_tx: GradTx,
+        wrt: Wrt = eqx.is_inexact_array,
     ):
-        self.tx = tx
+        self.grad_tx = grad_tx
         self.wrt = wrt
-        self.opt_state = tx.init(eqx.filter(module, self.wrt))
+        self.opt_state = grad_tx.init(eqx.filter(module, self.wrt))
 
     def __call__(
         self, grads: PyTree[Array], model: eqx.Module
     ) -> tuple[eqx.Module, "Optimizer"]:
         params = eqx.filter(model, self.wrt)
-        updates, opt_state = self.tx.update(grads, self.opt_state, params)
+        updates, opt_state = self.grad_tx.update(grads, self.opt_state, params)
         new_model = eqx.apply_updates(model, updates)
         new_self = eqx.tree_at(lambda x: x.opt_state, self, opt_state)
         return new_model, new_self
@@ -228,18 +231,42 @@ def make_train_step(
         batch: tp.Any,
         *,
         key: PRNGKeyArray | None = None,
+        rngs: Rngs | None = None,
     ) -> tuple[M, Optimizer, Aux]:
-        def _minibatch_step(batch, step_key):
-            (_, step_aux), step_grad = grad_fn(module, optimizer, batch, key=step_key)
+        if key is not None and rngs is not None:
+            raise ValueError("Provide only one of 'key' or 'rngs', not both.")
+
+        def _loss_kwargs(rng_like: RngArg) -> dict[str, tp.Any]:
+            if isinstance(rng_like, Rngs):
+                return {"rngs": rng_like}
+            if rng_like is not None:
+                return {"key": rng_like}
+            return {}
+
+        def _minibatch_step(batch, rng_like):
+            kwargs = _loss_kwargs(rng_like)
+            (_, step_aux), step_grad = grad_fn(
+                module,
+                optimizer,
+                batch,
+                **kwargs,
+            )
             return step_grad, step_aux
 
-        def _scan_step(carry, batch):
-            grad, aux, scan_key = carry
-            scan_key, step_key = jr.split(scan_key)
-            step_grad, step_aux = _minibatch_step(batch, step_key)
+        def _scan_step(carry, minibatch):
+            grad, aux, scan_rng = carry
+            step_rng = None
+            next_scan_rng = scan_rng
+            if isinstance(scan_rng, jax.Array):
+                next_scan_rng, step_rng = jr.split(scan_rng)
+            elif isinstance(scan_rng, Rngs):
+                raise NotImplementedError(
+                    "gradient accumulation with 'rngs' is not supported yet"
+                )
+            step_grad, step_aux = _minibatch_step(minibatch, step_rng)
             new_grad = jtu.tree_map(jnp.add, grad, step_grad)
             new_aux = jtu.tree_map(jnp.add, aux, step_aux)
-            return (new_grad, new_aux, scan_key), None
+            return (new_grad, new_aux, next_scan_rng), None
 
         def _stack_batch(leaf):
             B = leaf.shape[0]
@@ -253,19 +280,39 @@ def make_train_step(
                     + leaf.shape[1:]
                 )
 
+        rng_like = rngs if rngs is not None else key
+
         if gradient_accumulation_steps == 1:
-            (_, aux), grad = grad_fn(module, optimizer, batch, key=key)
+            (_, aux), grad = grad_fn(
+                module,
+                optimizer,
+                batch,
+                **_loss_kwargs(rng_like),
+            )
             new_module, new_opt = optimizer(grad, module)
             return new_module, new_opt, aux or {}
         else:
-            grad_shapes, aux_shape = jax.eval_shape(_minibatch_step, 0, key)
-            grad = jax.tree.map(lambda x: jnp.zeros(x.shape, x.dtype), grad_shapes)
-            aux = jax.tree.map(lambda x: jnp.zeros(x.shape, x.dtype), aux_shape)
+            if isinstance(rng_like, Rngs):
+                raise NotImplementedError(
+                    "gradient accumulation with 'rngs' is not supported yet"
+                )
 
             batch = jtu.tree_map(_stack_batch, batch)
 
+            sample_minibatch = jtu.tree_map(lambda x: x[0], batch)
+            grad_shapes, aux_shape = jax.eval_shape(
+                _minibatch_step,
+                sample_minibatch,
+                rng_like,
+            )
+            grad = jax.tree.map(lambda x: jnp.zeros(x.shape, x.dtype), grad_shapes)
+            aux = jax.tree.map(lambda x: jnp.zeros(x.shape, x.dtype), aux_shape)
+
             (grad, aux, _), _ = jax.lax.scan(
-                _scan_step, (grad, aux, key), batch, length=gradient_accumulation_steps
+                _scan_step,
+                (grad, aux, rng_like),
+                batch,
+                length=gradient_accumulation_steps,
             )
 
             grad = jax.tree_util.tree_map(
@@ -386,8 +433,17 @@ def make_eval_step(
         batch: tp.Any,
         *,
         key: PRNGKeyArray | None = None,
+        rngs: Rngs | None = None,
     ) -> Aux:
-        _, aux = loss_function(module, optimizer, batch, key=key)
+        if key is not None and rngs is not None:
+            raise ValueError("Provide only one of 'key' or 'rngs', not both.")
+
+        rng_like = rngs if rngs is not None else key
+        kwargs = {"rngs": rng_like} if isinstance(rng_like, Rngs) else {}
+        if rng_like is not None and not kwargs:
+            kwargs = {"key": rng_like}
+
+        _, aux = loss_function(module, optimizer, batch, **kwargs)
         return aux
 
     return eqx.filter_jit(_step) if jit else _step
@@ -580,6 +636,7 @@ def train_loop(
     return module, optimizer, train_metric, eval_metrics if evals else {}
 
 
+#not sure about this api tho
 def make_module_opts(
     module: eqx.Module,
     grad_tx: GradTx,
@@ -625,4 +682,4 @@ def make_module_opts(
     with mesh:
         module = build(module, key)
 
-    return module, Optimizer(module=module, tx=grad_tx, wrt=wrt)
+    return module, Optimizer(module=module, grad_tx=grad_tx, wrt=wrt)
