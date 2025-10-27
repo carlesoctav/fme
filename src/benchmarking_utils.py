@@ -1,38 +1,23 @@
 import logging
 import typing as tp
 
-import equinox as eqx
 import jax
 import jax.tree_util as jtu
 import numpy as np
-from jaxtyping import PRNGKeyArray, PyTree
-from optax import GradientTransformation, GradientTransformationExtraArgs
 from tqdm.auto import tqdm
+
+from src.modeling_utils import Rngs, split_rngs
+from src.training_utils import (
+    ModuleInput,
+    OptimizerInput,
+    TrainStepCallable,
+)
 
 from .logger import Logger
 
 
 LOGGER = logging.getLogger("distributed_logger")
 
-
-M = tp.TypeVar("_M", bound=eqx.Module)
-O = tp.TypeVar("_O", bound="Optimizer")
-
-GradTx = GradientTransformation | GradientTransformationExtraArgs
-AxisSpec = bool | tp.Callable[[tp.Any], bool]
-Wrt = PyTree[AxisSpec]
-Aux = dict[str, tp.Any]
-Loss = float
-Batch = tp.Any
-
-LossFn = tp.Callable[[M, O, Batch, PRNGKeyArray], tuple[Loss, Aux]]
-ParallelismPlans = (
-    dict[str, tp.Callable[[M], M]] | tp.Sequence[dict[str, tp.Callable[[M], M]]]
-)
-
-
-ModuleInput = tp.TypeVar("_ModuleInput", M, tp.Sequence[M])
-OptimizerInput = tp.TypeVar("_OptimizerInput", O, tp.Sequence[O])
 
 
 def benchmark_loop(
@@ -46,7 +31,7 @@ def benchmark_loop(
     trace_steps: tuple[int, int] | None = None,
     trace_dir: str = "./benchmark_traces",
     *,
-    key: PRNGKeyArray | None = None,
+    rngs: Rngs, 
 ) -> tuple[ModuleInput, OptimizerInput, dict[str, tp.Any]]:
     import time
 
@@ -75,6 +60,7 @@ def benchmark_loop(
                 LOGGER.info("Train data loader exhausted, ending benchmark loop.")
                 break
             batch_end = time.perf_counter()
+            rngs, step_rngs = split_rngs(rngs, 2) 
             step_idx += 1
             if (
                 trace_steps is not None
@@ -87,7 +73,6 @@ def benchmark_loop(
                 trace_path.mkdir(parents=True, exist_ok=True)
                 LOGGER.info(f"Starting JAX profiler trace at step {step_idx}")
                 jax.profiler.start_trace(str(trace_path))
-            key, step_key = jax.random.split(key, 2) if key is not None else (key, None)
 
             if step_idx == 0 and jax.process_index() == 0:
                 LOGGER.info("Running step 0 (compilation step)...")
@@ -95,7 +80,7 @@ def benchmark_loop(
             step_start = time.monotonic()
             with jax.profiler.StepTraceAnnotation("train_step", step=step_idx):
                 module, optimizer, aux = train_step_fn(
-                    module, optimizer, batch, key=step_key
+                    module, optimizer, batch, rngs=step_rngs
                 )
             jtu.tree_map(
                 lambda x: x.block_until_ready()

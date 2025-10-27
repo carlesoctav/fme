@@ -396,8 +396,6 @@ def main():
         train_loader=train_loader,
         logger=None,
         num_steps=NUM_STEPS,
-        trace_steps=(1, 10),
-        trace_dir="./trace_flax_dropout",
         key=key,
     )
     

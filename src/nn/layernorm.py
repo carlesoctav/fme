@@ -34,8 +34,6 @@ class LayerNorm(PrepareableModule):
         rngs: Rngs,
         weight_spec: str | tuple[str, ...] | None = None,
         bias_spec: str | tuple[str, ...] | None = None,
-        input_pspec: jax.P | None = None,
-        output_pspec: jax.P | None = None,
     ):
         self.normalized_shape = (
             (normalized_shape,)

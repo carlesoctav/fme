@@ -6,17 +6,18 @@ import jax.numpy as jnp
 import transformers
 from equinox import field
 from jax.nn.initializers import normal, ones as ones_init, zeros as zeros_init
-from jaxtyping import Array, Float, Int, PRNGKeyArray
+from jaxtyping import Array, Float, Int
 from transformers.models.bert.configuration_bert import BertConfig
 
 from ... import nn
 from ...huggingface import HuggingFaceCompatibleModule
 from ...masking_utils import make_full_mask
+from ...modeling_utils import PrepareableModule, Rngs
 from ...nn import (
     AttentionModule,
     make_attention_module,
 )
-from ...modeling_utils import PrepareableModule, Rngs
+eqx.nn.Sequential
 
 
 Pytree = Any
@@ -393,15 +394,25 @@ class BertEncoder(PrepareableModule):
         *,
         rngs: Rngs | None = None,
     ) -> Float[Array, "T H"]:
-        hidden_states, attention_mask = self.maybe_prepare_input(
-            (hidden_states, attention_mask)
+        layer_dyn_list, layer_static_list = eqx.partition(self.layer, eqx.is_array)
+
+        static_template = layer_static_list[0]
+
+        dynamic_stacked = jax.tree_util.tree_map(lambda *xs: jnp.stack(xs, axis=0), *layer_dyn_list)
+        num_layers = next(iter(jax.tree_util.tree_leaves(dynamic_stacked))).shape[0]
+
+        def f(carry, dyn_t): 
+            hidden_states, attention_mask = carry
+            module_t = eqx.combine(dyn_t, static_template)  
+            hidden_states = module_t(hidden_states, attention_mask, rngs=rngs)
+            return (hidden_states, attention_mask), None
+
+        (hidden_states, _), _ = jax.lax.scan(
+            f,
+            (hidden_states, attention_mask),
+            dynamic_stacked, 
         )
-        for i, layer_module in enumerate(self.layer):
-            hidden_states = layer_module(
-                hidden_states,
-                attention_mask,
-                rngs=rngs,
-            )
+
         return self.maybe_prepare_output(hidden_states)
 
 

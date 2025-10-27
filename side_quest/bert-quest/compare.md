@@ -7,6 +7,7 @@ Comparing `eqx.filter_jit` vs manual `jax.jit` with partition/combine for BERT t
 **Key Finding**: The overhead is **structure-dependent, not computation-dependent** - it remains constant at ~47ms regardless of dropout settings or attention implementation (SDPA vs eager).
 
 ### Quick Comparison
+flax: 80ms, 150s
 
 |  | No Dropout (SDPA) | With Dropout (Eager) |
 |--|-------------------|----------------------|

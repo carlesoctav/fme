@@ -17,6 +17,7 @@ import jax.numpy as jnp
 import jax.random as jr
 import optax
 from datasets import load_dataset
+import jax.tree_util as jtu
 from jax.sharding import Mesh, PartitionSpec
 from transformers import AutoTokenizer, BertConfig
 
@@ -58,6 +59,16 @@ MESH_SHAPE = (4,)
 MESH_AXIS_NAMES = ("dp",)
 
 
+def _cast_floating(tree, dtype: jnp.dtype):
+    """Recursively cast floating-point JAX arrays in a pytree to ``dtype``."""
+
+    def _cast(x):
+        if isinstance(x, jax.Array) and jnp.issubdtype(x.dtype, jnp.floating):
+            return x.astype(dtype)
+        return x
+
+    return jtu.tree_map(_cast, tree, is_leaf=lambda x: isinstance(x, jax.Array))
+
 
 def _get_position_ids(batch, seq_length):
     if batch.position_ids is not None:
@@ -77,6 +88,8 @@ def loss_function(model, optimizer, batch, *, rngs):
             segment_ids=batch.segment_ids,
             rngs = rngs,
             )
+
+    logits = logits.astype(jnp.float32)
 
     labels = batch.labels
     valid_mask = labels != -100
@@ -123,8 +136,8 @@ def main():
             intermediate_size=3072,
             max_position_embeddings=512,
             type_vocab_size=2,
-            hidden_dropout_prob=0,
-            attention_probs_dropout_prob=0,
+            hidden_dropout_prob=0.1,
+            attention_probs_dropout_prob=0.1,
             _attn_implementation="eager",
             )
 
@@ -151,6 +164,7 @@ def main():
 
     with mesh:
         model = unbox_params(model)
+        model = _cast_floating(model, jnp.bfloat16)
         optimizer = Optimizer(model, grad_tx)
 
     start_time = time.monotonic()
@@ -203,7 +217,7 @@ def main():
     batch = next(iter(train_loader))
     compile =train_step_fn.lower(model, optimizer, batch, rngs = rngs).compile()
     hlo =train_step_fn.lower(model, optimizer, batch, rngs = rngs).as_text()
-    with open("./benchmark/eqx_no_dropout_hlo.txt", "w") as f:
+    with open("./benchmark/stabhlo2.txt", "w") as f:
         f.write(hlo)
 
     diff = time.monotonic() - start
