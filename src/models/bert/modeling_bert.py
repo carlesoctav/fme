@@ -399,7 +399,6 @@ class BertEncoder(PrepareableModule):
         static_template = layer_static_list[0]
 
         dynamic_stacked = jax.tree_util.tree_map(lambda *xs: jnp.stack(xs, axis=0), *layer_dyn_list)
-        num_layers = next(iter(jax.tree_util.tree_leaves(dynamic_stacked))).shape[0]
 
         def f(carry, dyn_t): 
             hidden_states, attention_mask = carry

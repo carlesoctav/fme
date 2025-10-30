@@ -1,0 +1,235 @@
+[0,0,2128371] 2025-10-24 07:24:06,813 [benchmarking_utils.py] INFO Running step 0 (compilation step)...
+[0,0,2128371] 2025-10-24 07:24:06,814 [benchmarking_utils.py] ERROR Exception during benchmark loop
+Traceback (most recent call last):
+  File "/mnt/carles/fme/src/benchmarking_utils.py", line 82, in benchmark_loop
+    module, optimizer, aux = train_step_fn(
+                             ^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/.venv/lib/python3.11/site-packages/equinox/_jit.py", line 209, in __call__
+    return _call(self, False, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/.venv/lib/python3.11/site-packages/equinox/_jit.py", line 239, in _call
+    dynamic_donate, dynamic_nodonate, static = _preprocess(  # pyright: ignore
+                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/.venv/lib/python3.11/site-packages/equinox/_jit.py", line 75, in _preprocess
+    args, kwargs = _bind(signature, args, kwargs)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/.venv/lib/python3.11/site-packages/equinox/_jit.py", line 67, in _bind
+    bound = signature.bind(*args, **kwargs)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/inspect.py", line 3195, in bind
+    return self._bind(args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/inspect.py", line 3184, in _bind
+    raise TypeError(
+TypeError: got an unexpected keyword argument 'rngs'
+[0,0,2128371] 2025-10-24 07:24:06,823 [benchmarking_utils.py] INFO Benchmark loop ended
+[0,0,2131449] 2025-10-24 07:26:10,254 [benchmarking_utils.py] INFO Running step 0 (compilation step)...
+[0,0,2131449] 2025-10-24 07:26:10,255 [benchmarking_utils.py] ERROR Exception during benchmark loop
+Traceback (most recent call last):
+  File "/mnt/carles/fme/src/benchmarking_utils.py", line 82, in benchmark_loop
+    module, optimizer, aux = train_step_fn(
+                             ^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/.venv/lib/python3.11/site-packages/equinox/_jit.py", line 209, in __call__
+    return _call(self, False, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/.venv/lib/python3.11/site-packages/equinox/_jit.py", line 239, in _call
+    dynamic_donate, dynamic_nodonate, static = _preprocess(  # pyright: ignore
+                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/.venv/lib/python3.11/site-packages/equinox/_jit.py", line 75, in _preprocess
+    args, kwargs = _bind(signature, args, kwargs)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/carles/fme/.venv/lib/python3.11/site-packages/equinox/_jit.py", line 67, in _bind
+    bound = signature.bind(*args, **kwargs)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/inspect.py", line 3195, in bind
+    return self._bind(args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/inspect.py", line 3184, in _bind
+    raise TypeError(
+TypeError: got an unexpected keyword argument 'rngs'
+[0,0,2131449] 2025-10-24 07:26:10,256 [benchmarking_utils.py] INFO Benchmark loop ended
+[0,0,2135273] 2025-10-24 07:33:43,763 [benchmarking_utils.py] INFO Running step 0 (compilation step)...
+[0,0,2135273] 2025-10-24 07:38:17,789 [benchmarking_utils.py] INFO Step 0 (compilation) took 274.0260s
+[0,0,2135273] 2025-10-24 07:46:39,896 [benchmarking_utils.py] INFO Benchmark loop ended
+[0,0,2153037] 2025-10-24 08:14:46,918 [benchmarking_utils.py] INFO Running step 0 (compilation step)...
+[0,0,2153037] 2025-10-24 08:14:47,361 [benchmarking_utils.py] INFO Step 0 (compilation) took 0.4423s
+[0,0,2153037] 2025-10-24 08:15:00,827 [benchmarking_utils.py] INFO ==============================
+[0,0,2153037] 2025-10-24 08:15:00,827 [benchmarking_utils.py] INFO ===== Benchmark Results ======
+[0,0,2153037] 2025-10-24 08:15:00,827 [benchmarking_utils.py] INFO ==============================
+[0,0,2153037] 2025-10-24 08:15:00,828 [benchmarking_utils.py] INFO Train Step Time (avg): 0.1289s
+[0,0,2153037] 2025-10-24 08:15:00,828 [benchmarking_utils.py] INFO Train Step Time (median): 0.1173s
+[0,0,2153037] 2025-10-24 08:15:00,829 [benchmarking_utils.py] INFO Train Step Time (std): 0.0642s
+[0,0,2153037] 2025-10-24 08:15:00,829 [benchmarking_utils.py] INFO Next Batch Time (avg): 0.0021s
+[0,0,2153037] 2025-10-24 08:15:00,829 [benchmarking_utils.py] INFO Batches/sec (avg): 7.76
+[0,0,2153037] 2025-10-24 08:15:00,830 [benchmarking_utils.py] INFO Compile Time: 0.4423s
+[0,0,2153037] 2025-10-24 08:15:00,830 [benchmarking_utils.py] INFO ==============================
+[0,0,2153037] 2025-10-24 08:15:00,830 [benchmarking_utils.py] INFO Benchmark loop ended
+[0,0,2159631] 2025-10-24 08:26:09,188 [benchmarking_utils.py] INFO Running step 0 (compilation step)...
+[0,0,2159631] 2025-10-24 08:26:09,333 [benchmarking_utils.py] INFO Step 0 (compilation) took 0.1443s
+[0,0,2159631] 2025-10-24 08:26:20,708 [benchmarking_utils.py] INFO ==============================
+[0,0,2159631] 2025-10-24 08:26:20,709 [benchmarking_utils.py] INFO ===== Benchmark Results ======
+[0,0,2159631] 2025-10-24 08:26:20,709 [benchmarking_utils.py] INFO ==============================
+[0,0,2159631] 2025-10-24 08:26:20,709 [benchmarking_utils.py] INFO Train Step Time (avg): 0.1044s
+[0,0,2159631] 2025-10-24 08:26:20,709 [benchmarking_utils.py] INFO Train Step Time (median): 0.0926s
+[0,0,2159631] 2025-10-24 08:26:20,709 [benchmarking_utils.py] INFO Train Step Time (std): 0.0644s
+[0,0,2159631] 2025-10-24 08:26:20,709 [benchmarking_utils.py] INFO Next Batch Time (avg): 0.0060s
+[0,0,2159631] 2025-10-24 08:26:20,709 [benchmarking_utils.py] INFO Batches/sec (avg): 9.58
+[0,0,2159631] 2025-10-24 08:26:20,709 [benchmarking_utils.py] INFO Compile Time: 0.1443s
+[0,0,2159631] 2025-10-24 08:26:20,709 [benchmarking_utils.py] INFO ==============================
+[0,0,2159631] 2025-10-24 08:26:20,710 [benchmarking_utils.py] INFO Benchmark loop ended
+[0,0,2171358] 2025-10-24 08:49:28,219 [benchmarking_utils.py] INFO Running step 0 (compilation step)...
+[0,0,2171358] 2025-10-24 08:49:28,407 [benchmarking_utils.py] INFO Step 0 (compilation) took 0.1876s
+[0,0,2171358] 2025-10-24 08:49:41,587 [benchmarking_utils.py] INFO ==============================
+[0,0,2171358] 2025-10-24 08:49:41,587 [benchmarking_utils.py] INFO ===== Benchmark Results ======
+[0,0,2171358] 2025-10-24 08:49:41,587 [benchmarking_utils.py] INFO ==============================
+[0,0,2171358] 2025-10-24 08:49:41,587 [benchmarking_utils.py] INFO Train Step Time (avg): 0.1265s
+[0,0,2171358] 2025-10-24 08:49:41,587 [benchmarking_utils.py] INFO Train Step Time (median): 0.1155s
+[0,0,2171358] 2025-10-24 08:49:41,587 [benchmarking_utils.py] INFO Train Step Time (std): 0.0617s
+[0,0,2171358] 2025-10-24 08:49:41,588 [benchmarking_utils.py] INFO Next Batch Time (avg): 0.0018s
+[0,0,2171358] 2025-10-24 08:49:41,588 [benchmarking_utils.py] INFO Batches/sec (avg): 7.91
+[0,0,2171358] 2025-10-24 08:49:41,588 [benchmarking_utils.py] INFO Compile Time: 0.1876s
+[0,0,2171358] 2025-10-24 08:49:41,588 [benchmarking_utils.py] INFO ==============================
+[0,0,2171358] 2025-10-24 08:49:41,588 [benchmarking_utils.py] INFO Benchmark loop ended
+[0,0,2176797] 2025-10-24 09:03:02,833 [benchmarking_utils.py] INFO Running step 0 (compilation step)...
+[0,0,2176797] 2025-10-24 09:03:03,310 [benchmarking_utils.py] INFO Step 0 (compilation) took 0.4760s
+[0,0,2176797] 2025-10-24 09:03:16,611 [benchmarking_utils.py] INFO ==============================
+[0,0,2176797] 2025-10-24 09:03:16,611 [benchmarking_utils.py] INFO ===== Benchmark Results ======
+[0,0,2176797] 2025-10-24 09:03:16,611 [benchmarking_utils.py] INFO ==============================
+[0,0,2176797] 2025-10-24 09:03:16,611 [benchmarking_utils.py] INFO Train Step Time (avg): 0.1255s
+[0,0,2176797] 2025-10-24 09:03:16,611 [benchmarking_utils.py] INFO Train Step Time (median): 0.1148s
+[0,0,2176797] 2025-10-24 09:03:16,611 [benchmarking_utils.py] INFO Train Step Time (std): 0.0599s
+[0,0,2176797] 2025-10-24 09:03:16,612 [benchmarking_utils.py] INFO Next Batch Time (avg): 0.0041s
+[0,0,2176797] 2025-10-24 09:03:16,612 [benchmarking_utils.py] INFO Batches/sec (avg): 7.97
+[0,0,2176797] 2025-10-24 09:03:16,612 [benchmarking_utils.py] INFO Compile Time: 0.4760s
+[0,0,2176797] 2025-10-24 09:03:16,612 [benchmarking_utils.py] INFO ==============================
+[0,0,2176797] 2025-10-24 09:03:16,612 [benchmarking_utils.py] INFO Benchmark loop ended
+[0,0,2189404] 2025-10-24 09:37:07,635 [benchmarking_utils.py] INFO Running step 0 (compilation step)...
+[0,0,2189404] 2025-10-24 09:37:07,827 [benchmarking_utils.py] INFO Step 0 (compilation) took 0.1925s
+[0,0,2189404] 2025-10-24 09:37:21,446 [benchmarking_utils.py] INFO ==============================
+[0,0,2189404] 2025-10-24 09:37:21,446 [benchmarking_utils.py] INFO ===== Benchmark Results ======
+[0,0,2189404] 2025-10-24 09:37:21,446 [benchmarking_utils.py] INFO ==============================
+[0,0,2189404] 2025-10-24 09:37:21,446 [benchmarking_utils.py] INFO Train Step Time (avg): 0.1292s
+[0,0,2189404] 2025-10-24 09:37:21,447 [benchmarking_utils.py] INFO Train Step Time (median): 0.1179s
+[0,0,2189404] 2025-10-24 09:37:21,447 [benchmarking_utils.py] INFO Train Step Time (std): 0.0626s
+[0,0,2189404] 2025-10-24 09:37:21,447 [benchmarking_utils.py] INFO Next Batch Time (avg): 0.0031s
+[0,0,2189404] 2025-10-24 09:37:21,447 [benchmarking_utils.py] INFO Batches/sec (avg): 7.74
+[0,0,2189404] 2025-10-24 09:37:21,447 [benchmarking_utils.py] INFO Compile Time: 0.1925s
+[0,0,2189404] 2025-10-24 09:37:21,447 [benchmarking_utils.py] INFO ==============================
+[0,0,2189404] 2025-10-24 09:37:21,447 [benchmarking_utils.py] INFO Benchmark loop ended
+[0,0,2206100] 2025-10-24 10:58:24,854 [benchmarking_utils.py] INFO Running step 0 (compilation step)...
+[0,0,2206100] 2025-10-24 10:58:25,000 [benchmarking_utils.py] INFO Step 0 (compilation) took 0.1455s
+[0,0,2206100] 2025-10-24 10:58:36,380 [benchmarking_utils.py] INFO ==============================
+[0,0,2206100] 2025-10-24 10:58:36,380 [benchmarking_utils.py] INFO ===== Benchmark Results ======
+[0,0,2206100] 2025-10-24 10:58:36,380 [benchmarking_utils.py] INFO ==============================
+[0,0,2206100] 2025-10-24 10:58:36,380 [benchmarking_utils.py] INFO Train Step Time (avg): 0.1031s
+[0,0,2206100] 2025-10-24 10:58:36,381 [benchmarking_utils.py] INFO Train Step Time (median): 0.0927s
+[0,0,2206100] 2025-10-24 10:58:36,381 [benchmarking_utils.py] INFO Train Step Time (std): 0.0591s
+[0,0,2206100] 2025-10-24 10:58:36,381 [benchmarking_utils.py] INFO Next Batch Time (avg): 0.0074s
+[0,0,2206100] 2025-10-24 10:58:36,381 [benchmarking_utils.py] INFO Batches/sec (avg): 9.70
+[0,0,2206100] 2025-10-24 10:58:36,381 [benchmarking_utils.py] INFO Compile Time: 0.1455s
+[0,0,2206100] 2025-10-24 10:58:36,381 [benchmarking_utils.py] INFO ==============================
+[0,0,2206100] 2025-10-24 10:58:36,381 [benchmarking_utils.py] INFO Benchmark loop ended
+[0,0,2686535] 2025-10-25 13:06:51,199 [benchmarking_utils.py] INFO Running step 0 (compilation step)...
+[0,0,2686535] 2025-10-25 13:06:51,350 [benchmarking_utils.py] INFO Step 0 (compilation) took 0.1502s
+[0,0,2686535] 2025-10-25 13:07:02,264 [benchmarking_utils.py] INFO ==============================
+[0,0,2686535] 2025-10-25 13:07:02,265 [benchmarking_utils.py] INFO ===== Benchmark Results ======
+[0,0,2686535] 2025-10-25 13:07:02,265 [benchmarking_utils.py] INFO ==============================
+[0,0,2686535] 2025-10-25 13:07:02,265 [benchmarking_utils.py] INFO Train Step Time (avg): 0.1038s
+[0,0,2686535] 2025-10-25 13:07:02,265 [benchmarking_utils.py] INFO Train Step Time (median): 0.0930s
+[0,0,2686535] 2025-10-25 13:07:02,265 [benchmarking_utils.py] INFO Train Step Time (std): 0.0613s
+[0,0,2686535] 2025-10-25 13:07:02,265 [benchmarking_utils.py] INFO Next Batch Time (avg): 0.0020s
+[0,0,2686535] 2025-10-25 13:07:02,266 [benchmarking_utils.py] INFO Batches/sec (avg): 9.64
+[0,0,2686535] 2025-10-25 13:07:02,266 [benchmarking_utils.py] INFO Compile Time: 0.1502s
+[0,0,2686535] 2025-10-25 13:07:02,266 [benchmarking_utils.py] INFO ==============================
+[0,0,2686535] 2025-10-25 13:07:02,266 [benchmarking_utils.py] INFO Benchmark loop ended
+[0,0,2863927] 2025-10-25 14:07:27,032 [benchmarking_utils.py] INFO Running step 0 (compilation step)...
+[0,0,2863927] 2025-10-25 14:07:27,183 [benchmarking_utils.py] INFO Step 0 (compilation) took 0.1506s
+[0,0,2863927] 2025-10-25 14:07:38,712 [benchmarking_utils.py] INFO ==============================
+[0,0,2863927] 2025-10-25 14:07:38,712 [benchmarking_utils.py] INFO ===== Benchmark Results ======
+[0,0,2863927] 2025-10-25 14:07:38,712 [benchmarking_utils.py] INFO ==============================
+[0,0,2863927] 2025-10-25 14:07:38,713 [benchmarking_utils.py] INFO Train Step Time (avg): 0.1036s
+[0,0,2863927] 2025-10-25 14:07:38,713 [benchmarking_utils.py] INFO Train Step Time (median): 0.0919s
+[0,0,2863927] 2025-10-25 14:07:38,713 [benchmarking_utils.py] INFO Train Step Time (std): 0.0645s
+[0,0,2863927] 2025-10-25 14:07:38,713 [benchmarking_utils.py] INFO Next Batch Time (avg): 0.0085s
+[0,0,2863927] 2025-10-25 14:07:38,713 [benchmarking_utils.py] INFO Batches/sec (avg): 9.65
+[0,0,2863927] 2025-10-25 14:07:38,713 [benchmarking_utils.py] INFO Compile Time: 0.1506s
+[0,0,2863927] 2025-10-25 14:07:38,713 [benchmarking_utils.py] INFO ==============================
+[0,0,2863927] 2025-10-25 14:07:38,713 [benchmarking_utils.py] INFO Benchmark loop ended
+[0,0,3101851] 2025-10-27 04:36:52,997 [benchmarking_utils.py] INFO Running step 0 (compilation step)...
+[0,0,3101851] 2025-10-27 04:36:53,139 [benchmarking_utils.py] INFO Step 0 (compilation) took 0.1408s
+[0,0,3101851] 2025-10-27 04:37:05,865 [benchmarking_utils.py] INFO ==============================
+[0,0,3101851] 2025-10-27 04:37:05,865 [benchmarking_utils.py] INFO ===== Benchmark Results ======
+[0,0,3101851] 2025-10-27 04:37:05,865 [benchmarking_utils.py] INFO ==============================
+[0,0,3101851] 2025-10-27 04:37:05,865 [benchmarking_utils.py] INFO Train Step Time (avg): 0.1219s
+[0,0,3101851] 2025-10-27 04:37:05,865 [benchmarking_utils.py] INFO Train Step Time (median): 0.1132s
+[0,0,3101851] 2025-10-27 04:37:05,865 [benchmarking_utils.py] INFO Train Step Time (std): 0.0485s
+[0,0,3101851] 2025-10-27 04:37:05,865 [benchmarking_utils.py] INFO Next Batch Time (avg): 0.0020s
+[0,0,3101851] 2025-10-27 04:37:05,866 [benchmarking_utils.py] INFO Batches/sec (avg): 8.21
+[0,0,3101851] 2025-10-27 04:37:05,866 [benchmarking_utils.py] INFO Compile Time: 0.1408s
+[0,0,3101851] 2025-10-27 04:37:05,866 [benchmarking_utils.py] INFO ==============================
+[0,0,3101851] 2025-10-27 04:37:05,866 [benchmarking_utils.py] INFO Benchmark loop ended
+[0,0,3107263] 2025-10-27 04:43:34,943 [benchmarking_utils.py] INFO Running step 0 (compilation step)...
+[0,0,3107263] 2025-10-27 04:43:35,121 [benchmarking_utils.py] INFO Step 0 (compilation) took 0.1773s
+[0,0,3107263] 2025-10-27 04:43:51,436 [benchmarking_utils.py] INFO ==============================
+[0,0,3107263] 2025-10-27 04:43:51,436 [benchmarking_utils.py] INFO ===== Benchmark Results ======
+[0,0,3107263] 2025-10-27 04:43:51,436 [benchmarking_utils.py] INFO ==============================
+[0,0,3107263] 2025-10-27 04:43:51,436 [benchmarking_utils.py] INFO Train Step Time (avg): 0.1573s
+[0,0,3107263] 2025-10-27 04:43:51,437 [benchmarking_utils.py] INFO Train Step Time (median): 0.1501s
+[0,0,3107263] 2025-10-27 04:43:51,437 [benchmarking_utils.py] INFO Train Step Time (std): 0.0403s
+[0,0,3107263] 2025-10-27 04:43:51,437 [benchmarking_utils.py] INFO Next Batch Time (avg): 0.0026s
+[0,0,3107263] 2025-10-27 04:43:51,437 [benchmarking_utils.py] INFO Batches/sec (avg): 6.36
+[0,0,3107263] 2025-10-27 04:43:51,437 [benchmarking_utils.py] INFO Compile Time: 0.1773s
+[0,0,3107263] 2025-10-27 04:43:51,437 [benchmarking_utils.py] INFO ==============================
+[0,0,3107263] 2025-10-27 04:43:51,437 [benchmarking_utils.py] INFO Benchmark loop ended
+[0,0,3112220] 2025-10-27 04:51:03,429 [benchmarking_utils.py] INFO Running step 0 (compilation step)...
+[0,0,3112220] 2025-10-27 04:51:03,570 [benchmarking_utils.py] INFO Step 0 (compilation) took 0.1406s
+[0,0,3112220] 2025-10-27 04:51:16,274 [benchmarking_utils.py] INFO ==============================
+[0,0,3112220] 2025-10-27 04:51:16,274 [benchmarking_utils.py] INFO ===== Benchmark Results ======
+[0,0,3112220] 2025-10-27 04:51:16,274 [benchmarking_utils.py] INFO ==============================
+[0,0,3112220] 2025-10-27 04:51:16,274 [benchmarking_utils.py] INFO Train Step Time (avg): 0.1217s
+[0,0,3112220] 2025-10-27 04:51:16,275 [benchmarking_utils.py] INFO Train Step Time (median): 0.1135s
+[0,0,3112220] 2025-10-27 04:51:16,275 [benchmarking_utils.py] INFO Train Step Time (std): 0.0460s
+[0,0,3112220] 2025-10-27 04:51:16,275 [benchmarking_utils.py] INFO Next Batch Time (avg): 0.0019s
+[0,0,3112220] 2025-10-27 04:51:16,275 [benchmarking_utils.py] INFO Batches/sec (avg): 8.22
+[0,0,3112220] 2025-10-27 04:51:16,275 [benchmarking_utils.py] INFO Compile Time: 0.1406s
+[0,0,3112220] 2025-10-27 04:51:16,275 [benchmarking_utils.py] INFO ==============================
+[0,0,3112220] 2025-10-27 04:51:16,275 [benchmarking_utils.py] INFO Benchmark loop ended
+[0,0,3157218] 2025-10-27 06:01:41,140 [benchmarking_utils.py] INFO Running step 0 (compilation step)...
+[0,0,3157218] 2025-10-27 06:01:41,255 [benchmarking_utils.py] INFO Step 0 (compilation) took 0.1149s
+[0,0,3157218] 2025-10-27 06:01:51,642 [benchmarking_utils.py] INFO ==============================
+[0,0,3157218] 2025-10-27 06:01:51,642 [benchmarking_utils.py] INFO ===== Benchmark Results ======
+[0,0,3157218] 2025-10-27 06:01:51,643 [benchmarking_utils.py] INFO ==============================
+[0,0,3157218] 2025-10-27 06:01:51,643 [benchmarking_utils.py] INFO Train Step Time (avg): 0.0965s
+[0,0,3157218] 2025-10-27 06:01:51,643 [benchmarking_utils.py] INFO Train Step Time (median): 0.0865s
+[0,0,3157218] 2025-10-27 06:01:51,643 [benchmarking_utils.py] INFO Train Step Time (std): 0.0561s
+[0,0,3157218] 2025-10-27 06:01:51,643 [benchmarking_utils.py] INFO Next Batch Time (avg): 0.0040s
+[0,0,3157218] 2025-10-27 06:01:51,643 [benchmarking_utils.py] INFO Batches/sec (avg): 10.36
+[0,0,3157218] 2025-10-27 06:01:51,643 [benchmarking_utils.py] INFO Compile Time: 0.1149s
+[0,0,3157218] 2025-10-27 06:01:51,643 [benchmarking_utils.py] INFO ==============================
+[0,0,3157218] 2025-10-27 06:01:51,644 [benchmarking_utils.py] INFO Benchmark loop ended
+[0,0,3162127] 2025-10-27 06:03:46,912 [benchmarking_utils.py] INFO Running step 0 (compilation step)...
+[0,0,3162127] 2025-10-27 06:03:47,029 [benchmarking_utils.py] INFO Step 0 (compilation) took 0.1167s
+[0,0,3162127] 2025-10-27 06:03:57,258 [benchmarking_utils.py] INFO ==============================
+[0,0,3162127] 2025-10-27 06:03:57,258 [benchmarking_utils.py] INFO ===== Benchmark Results ======
+[0,0,3162127] 2025-10-27 06:03:57,258 [benchmarking_utils.py] INFO ==============================
+[0,0,3162127] 2025-10-27 06:03:57,258 [benchmarking_utils.py] INFO Train Step Time (avg): 0.0972s
+[0,0,3162127] 2025-10-27 06:03:57,259 [benchmarking_utils.py] INFO Train Step Time (median): 0.0864s
+[0,0,3162127] 2025-10-27 06:03:57,259 [benchmarking_utils.py] INFO Train Step Time (std): 0.0568s
+[0,0,3162127] 2025-10-27 06:03:57,259 [benchmarking_utils.py] INFO Next Batch Time (avg): 0.0019s
+[0,0,3162127] 2025-10-27 06:03:57,259 [benchmarking_utils.py] INFO Batches/sec (avg): 10.29
+[0,0,3162127] 2025-10-27 06:03:57,259 [benchmarking_utils.py] INFO Compile Time: 0.1167s
+[0,0,3162127] 2025-10-27 06:03:57,259 [benchmarking_utils.py] INFO ==============================
+[0,0,3162127] 2025-10-27 06:03:57,259 [benchmarking_utils.py] INFO Benchmark loop ended
+[0,0,3936996] 2025-10-29 09:10:00,208 [benchmarking_utils.py] INFO Running step 0 (compilation step)...
+[0,0,3936996] 2025-10-29 09:10:00,324 [benchmarking_utils.py] INFO Step 0 (compilation) took 0.1153s
+[0,0,3936996] 2025-10-29 09:10:10,554 [benchmarking_utils.py] INFO ==============================
+[0,0,3936996] 2025-10-29 09:10:10,555 [benchmarking_utils.py] INFO ===== Benchmark Results ======
+[0,0,3936996] 2025-10-29 09:10:10,555 [benchmarking_utils.py] INFO ==============================
+[0,0,3936996] 2025-10-29 09:10:10,555 [benchmarking_utils.py] INFO Train Step Time (avg): 0.0969s
+[0,0,3936996] 2025-10-29 09:10:10,555 [benchmarking_utils.py] INFO Train Step Time (median): 0.0879s
+[0,0,3936996] 2025-10-29 09:10:10,555 [benchmarking_utils.py] INFO Train Step Time (std): 0.0507s
+[0,0,3936996] 2025-10-29 09:10:10,555 [benchmarking_utils.py] INFO Next Batch Time (avg): 0.0020s
+[0,0,3936996] 2025-10-29 09:10:10,555 [benchmarking_utils.py] INFO Batches/sec (avg): 10.32
+[0,0,3936996] 2025-10-29 09:10:10,555 [benchmarking_utils.py] INFO Compile Time: 0.1153s
+[0,0,3936996] 2025-10-29 09:10:10,555 [benchmarking_utils.py] INFO ==============================
+[0,0,3936996] 2025-10-29 09:10:10,556 [benchmarking_utils.py] INFO Benchmark loop ended
